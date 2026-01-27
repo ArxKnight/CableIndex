@@ -1,0 +1,123 @@
+import { DatabaseAdapter, DatabaseConfig } from './adapters/base.js';
+import { SQLiteAdapter } from './adapters/sqlite.js';
+import path from 'path';
+
+class DatabaseConnection {
+  private static instance: DatabaseConnection;
+  private adapter: DatabaseAdapter | null = null;
+  private config: DatabaseConfig | null = null;
+
+  private constructor() { }
+
+  public static getInstance(): DatabaseConnection {
+    if (!DatabaseConnection.instance) {
+      DatabaseConnection.instance = new DatabaseConnection();
+    }
+    return DatabaseConnection.instance;
+  }
+
+  public async connect(config?: DatabaseConfig): Promise<void> {
+    if (!config) {
+      config = this.getDefaultConfig();
+    }
+
+    this.config = config;
+
+    // Create appropriate adapter based on database type
+    switch (config.type) {
+      case 'sqlite':
+        this.adapter = new SQLiteAdapter(config);
+        break;
+      case 'mysql':
+        try {
+          // Try to import the real MySQL adapter
+          const { MySQLAdapter } = await import('./adapters/mysql.js');
+          this.adapter = new MySQLAdapter(config);
+        } catch (error) {
+          // Fall back to stub if mysql2 is not available
+          console.warn('MySQL driver not available, using stub. Install mysql2 for MySQL support.');
+          const { MySQLAdapter: MySQLStub } = await import('./adapters/mysql-stub.js');
+          this.adapter = new MySQLStub(config);
+        }
+        break;
+      default:
+        throw new Error(`Unsupported database type: ${(config as any).type}`);
+    }
+
+    await this.adapter.connect();
+  }
+
+  public async disconnect(): Promise<void> {
+    if (this.adapter) {
+      await this.adapter.disconnect();
+      this.adapter = null;
+      this.config = null;
+    }
+  }
+
+  public getAdapter(): DatabaseAdapter {
+    if (!this.adapter) {
+      throw new Error('Database not connected. Call connect() first.');
+    }
+    return this.adapter;
+  }
+
+  public testConnection(): boolean {
+    return this.adapter ? this.adapter.testConnection() : false;
+  }
+
+  public getConfig(): DatabaseConfig | null {
+    return this.config;
+  }
+
+  public isConnected(): boolean {
+    return this.adapter ? this.adapter.isConnected() : false;
+  }
+
+  // Legacy method for backward compatibility with SQLite-specific code
+  public getConnection(): any {
+    if (!this.adapter) {
+      throw new Error('Database not connected. Call connect() first.');
+    }
+
+    // For SQLite, return the direct database instance
+    if (this.config?.type === 'sqlite') {
+      const sqliteAdapter = this.adapter as any;
+      if (sqliteAdapter.getDatabase) {
+        return sqliteAdapter.getDatabase();
+      }
+    }
+
+    // For MySQL, return the adapter itself
+    return this.adapter;
+  }
+
+  private getDefaultConfig(): DatabaseConfig {
+    // Check if MySQL config is provided via environment variables
+    if (process.env.DB_TYPE === 'mysql' || process.env.MYSQL_HOST) {
+      return {
+        type: 'mysql',
+        mysql: {
+          host: process.env.MYSQL_HOST || 'localhost',
+          port: parseInt(process.env.MYSQL_PORT || '3306'),
+          user: process.env.MYSQL_USER || 'root',
+          password: process.env.MYSQL_PASSWORD || '',
+          database: process.env.MYSQL_DATABASE || 'cable_manager',
+          ssl: process.env.MYSQL_SSL === 'true',
+        }
+      };
+    }
+
+    // Default to SQLite
+    return {
+      type: 'sqlite',
+      sqlite: {
+        filename: process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'cable-manager.db'),
+      }
+    };
+  }
+}
+
+// Export singleton instance
+const connection = DatabaseConnection.getInstance();
+export default connection;

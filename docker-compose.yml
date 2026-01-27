@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  wireindex:
+    build: .
+    container_name: wireindex
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-this}
+      - DATABASE_PATH=/app/data/wireindex.db
+      - UPLOADS_PATH=/app/uploads
+    volumes:
+      - wireindex-data:/app/data
+      - wireindex-uploads:/app/uploads
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  wireindex-data:
+  wireindex-uploads:

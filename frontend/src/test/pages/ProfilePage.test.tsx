@@ -1,0 +1,189 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { BrowserRouter } from 'react-router-dom';
+import ProfilePage from '../../pages/ProfilePage';
+
+// Mock the auth context
+const mockUser = {
+  id: 1,
+  email: 'test@example.com',
+  full_name: 'John Doe',
+  role: 'user' as const,
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+};
+
+vi.mock('../../contexts/AuthContext', () => ({
+  useAuth: () => ({
+    user: mockUser,
+    updateUser: vi.fn(),
+  }),
+}));
+
+// Mock the API client
+vi.mock('../../lib/api', () => ({
+  default: {
+    updateProfile: vi.fn(),
+    changePassword: vi.fn(),
+  },
+  apiClient: {
+    updateProfile: vi.fn(),
+    changePassword: vi.fn(),
+  },
+}));
+
+const renderProfilePage = () => {
+  return render(
+    <BrowserRouter>
+      <ProfilePage />
+    </BrowserRouter>
+  );
+};
+
+describe('ProfilePage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should render profile page with user information', () => {
+    renderProfilePage();
+
+    expect(screen.getByText('Profile')).toBeInTheDocument();
+    expect(screen.getByText('Manage your account information and settings.')).toBeInTheDocument();
+  });
+
+  it('should render tabs for different sections', () => {
+    renderProfilePage();
+
+    expect(screen.getByText('Overview')).toBeInTheDocument();
+    expect(screen.getByText('Edit Profile')).toBeInTheDocument();
+    expect(screen.getByText('Change Password')).toBeInTheDocument();
+  });
+
+  it('should display user information in overview tab', () => {
+    renderProfilePage();
+
+    // Overview tab should be active by default
+    expect(screen.getByText('Account Information')).toBeInTheDocument();
+    expect(screen.getByText('John Doe')).toBeInTheDocument();
+    expect(screen.getByText('test@example.com')).toBeInTheDocument();
+    expect(screen.getByText('user')).toBeInTheDocument();
+  });
+
+  it('should format and display member since date', () => {
+    renderProfilePage();
+
+    expect(screen.getByText('Member Since')).toBeInTheDocument();
+    expect(screen.getByText('January 1, 2024')).toBeInTheDocument();
+  });
+
+  it('should display role with correct styling', () => {
+    renderProfilePage();
+
+    const roleElement = screen.getByText('user');
+    expect(roleElement).toHaveClass('text-blue-600', 'bg-blue-100');
+  });
+
+  it('should switch to edit profile tab when clicked', async () => {
+    const user = userEvent.setup();
+    renderProfilePage();
+
+    const editTab = screen.getByText('Edit Profile');
+    await user.click(editTab);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('John Doe')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('test@example.com')).toBeInTheDocument();
+    });
+  });
+
+  it('should switch to change password tab when clicked', async () => {
+    const user = userEvent.setup();
+    renderProfilePage();
+
+    const passwordTab = screen.getByText('Change Password');
+    await user.click(passwordTab);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/current password/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/new password/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/confirm new password/i)).toBeInTheDocument();
+    });
+  });
+
+  it('should render breadcrumb navigation', () => {
+    renderProfilePage();
+
+    // Breadcrumb should be present (home icon)
+    const homeIcon = document.querySelector('svg');
+    expect(homeIcon).toBeInTheDocument();
+  });
+
+  it('should handle admin role styling', () => {
+    const adminUser = { ...mockUser, role: 'admin' as const };
+    
+    vi.mocked(require('../../contexts/AuthContext')).useAuth.mockReturnValue({
+      user: adminUser,
+      updateUser: vi.fn(),
+    });
+
+    renderProfilePage();
+
+    const roleElement = screen.getByText('admin');
+    expect(roleElement).toHaveClass('text-red-600', 'bg-red-100');
+  });
+
+  it('should handle moderator role styling', () => {
+    const moderatorUser = { ...mockUser, role: 'moderator' as const };
+    
+    vi.mocked(require('../../contexts/AuthContext')).useAuth.mockReturnValue({
+      user: moderatorUser,
+      updateUser: vi.fn(),
+    });
+
+    renderProfilePage();
+
+    const roleElement = screen.getByText('moderator');
+    expect(roleElement).toHaveClass('text-yellow-600', 'bg-yellow-100');
+  });
+
+  it('should not render when user is null', () => {
+    vi.mocked(require('../../contexts/AuthContext')).useAuth.mockReturnValue({
+      user: null,
+      updateUser: vi.fn(),
+    });
+
+    const { container } = renderProfilePage();
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('should display all required user information fields', () => {
+    renderProfilePage();
+
+    expect(screen.getByText('Full Name')).toBeInTheDocument();
+    expect(screen.getByText('Email Address')).toBeInTheDocument();
+    expect(screen.getByText('Role')).toBeInTheDocument();
+    expect(screen.getByText('Member Since')).toBeInTheDocument();
+  });
+
+  it('should have proper tab navigation structure', () => {
+    renderProfilePage();
+
+    const tabsList = screen.getByRole('tablist');
+    expect(tabsList).toBeInTheDocument();
+
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs).toHaveLength(3);
+    expect(tabs[0]).toHaveTextContent('Overview');
+    expect(tabs[1]).toHaveTextContent('Edit Profile');
+    expect(tabs[2]).toHaveTextContent('Change Password');
+  });
+
+  it('should have overview tab selected by default', () => {
+    renderProfilePage();
+
+    const overviewTab = screen.getByRole('tab', { name: /overview/i });
+    expect(overviewTab).toHaveAttribute('data-state', 'active');
+  });
+});

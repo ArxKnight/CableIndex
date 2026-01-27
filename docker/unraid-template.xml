@@ -1,0 +1,112 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>WireIndex</Name>
+  <Repository>wireindex:latest</Repository>
+  <Registry>https://hub.docker.com/</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/your-username/wireindex</Support>
+  <Project>https://github.com/your-username/wireindex</Project>
+  <Overview>WireIndex - A professional cable labeling system for Brady printers with automatic reference numbering, comprehensive user management, and role-based permissions. Features modern React frontend with Express backend supporting both SQLite and MySQL databases.</Overview>
+  <Category>Tools:</Category>
+  <WebUI>http://[IP]:[PORT:3000]/</WebUI>
+  <TemplateURL/>
+  <Icon>https://raw.githubusercontent.com/your-username/wireindex/main/frontend/public/wireindex-icon.png</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled>1640995200</DateInstalled>
+  <DonateText/>
+  <DonateLink/>
+  <Description>WireIndex - A professional cable labeling system for Brady printers with automatic reference numbering, comprehensive user management, and role-based permissions. Features modern React frontend with Express backend supporting both SQLite and MySQL databases.</Description>
+  <Networking>
+    <Mode>bridge</Mode>
+    <Publish>
+      <Port>
+        <HostPort>3000</HostPort>
+        <ContainerPort>3000</ContainerPort>
+        <Protocol>tcp</Protocol>
+      </Port>
+    </Publish>
+  </Networking>
+  <Data>
+    <Volume>
+      <HostDir>/mnt/user/appdata/wireindex/data</HostDir>
+      <ContainerDir>/app/data</ContainerDir>
+      <Mode>rw</Mode>
+    </Volume>
+    <Volume>
+      <HostDir>/mnt/user/appdata/wireindex/uploads</HostDir>
+      <ContainerDir>/app/uploads</ContainerDir>
+      <Mode>rw</Mode>
+    </Volume>
+  </Data>
+  <Environment>
+    <Variable>
+      <Value>3000</Value>
+      <Name>PORT</Name>
+      <Mode/>
+    </Variable>
+    <Variable>
+      <Value>production</Value>
+      <Name>NODE_ENV</Name>
+      <Mode/>
+    </Variable>
+    <Variable>
+      <Value>/app/data/wireindex.db</Value>
+      <Name>DATABASE_PATH</Name>
+      <Mode/>
+    </Variable>
+    <Variable>
+      <Value>/app/uploads</Value>
+      <Name>UPLOADS_PATH</Name>
+      <Mode/>
+    </Variable>
+    <Variable>
+      <Value></Value>
+      <Name>JWT_SECRET</Name>
+      <Mode/>
+    </Variable>
+    <Variable>
+      <Value>sqlite</Value>
+      <Name>DB_TYPE</Name>
+      <Mode/>
+    </Variable>
+    <Variable>
+      <Value></Value>
+      <Name>MYSQL_HOST</Name>
+      <Mode/>
+    </Variable>
+    <Variable>
+      <Value>3306</Value>
+      <Name>MYSQL_PORT</Name>
+      <Mode/>
+    </Variable>
+    <Variable>
+      <Value></Value>
+      <Name>MYSQL_USER</Name>
+      <Mode/>
+    </Variable>
+    <Variable>
+      <Value></Value>
+      <Name>MYSQL_PASSWORD</Name>
+      <Mode/>
+    </Variable>
+    <Variable>
+      <Value>wireindex</Value>
+      <Name>MYSQL_DATABASE</Name>
+      <Mode/>
+    </Variable>
+  </Environment>
+  <Labels/>
+  <Config Name="WebUI Port" Target="3000" Default="3000" Mode="tcp" Description="Port for the web interface" Type="Port" Display="always" Required="true" Mask="false">3000</Config>
+  <Config Name="Data Directory" Target="/app/data" Default="/mnt/user/appdata/wireindex/data" Mode="rw" Description="Directory for database and application data" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/wireindex/data</Config>
+  <Config Name="Uploads Directory" Target="/app/uploads" Default="/mnt/user/appdata/wireindex/uploads" Mode="rw" Description="Directory for uploaded files" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/wireindex/uploads</Config>
+  <Config Name="Application Port" Target="PORT" Default="3000" Mode="" Description="Internal application port (should match container port)" Type="Variable" Display="always" Required="true" Mask="false">3000</Config>
+  <Config Name="Environment" Target="NODE_ENV" Default="production" Mode="" Description="Node.js environment" Type="Variable" Display="advanced" Required="false" Mask="false">production</Config>
+  <Config Name="Database Path" Target="DATABASE_PATH" Default="/app/data/wireindex.db" Mode="" Description="Path to SQLite database file" Type="Variable" Display="advanced" Required="false" Mask="false">/app/data/wireindex.db</Config>
+  <Config Name="Uploads Path" Target="UPLOADS_PATH" Default="/app/uploads" Mode="" Description="Path to uploads directory" Type="Variable" Display="advanced" Required="false" Mask="false">/app/uploads</Config>
+  <Config Name="JWT Secret" Target="JWT_SECRET" Default="" Mode="" Description="Secret key for JWT tokens (leave empty to auto-generate)" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+</Container>
