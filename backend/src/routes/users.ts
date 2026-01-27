@@ -93,7 +93,7 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
  */
 router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const userId = parseInt(req.params.id);
+    const userId = parseInt(String(req.params.id));
     if (isNaN(userId)) {
       return res.status(400).json({
         success: false,
@@ -111,7 +111,12 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
       });
     }
 
-    const updateData = validation.data;
+    const updateDataRaw = validation.data;
+    const updateData = {
+      ...(updateDataRaw.email ? { email: updateDataRaw.email } : {}),
+      ...(updateDataRaw.full_name ? { full_name: updateDataRaw.full_name } : {}),
+      ...(updateDataRaw.role ? { role: updateDataRaw.role } : {}),
+    };
 
     // Check if user exists
     const existingUser = userModel.findById(userId);
@@ -123,7 +128,8 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     // Check if email is already taken (if updating email)
-    if (updateData.email && userModel.emailExists(updateData.email, userId)) {
+    const emailToCheck = updateData.email;
+    if (emailToCheck && userModel.emailExists(emailToCheck, userId)) {
       return res.status(409).json({
         success: false,
         error: 'Email already exists',
@@ -166,7 +172,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
  */
 router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const userId = parseInt(req.params.id);
+    const userId = parseInt(String(req.params.id));
     if (isNaN(userId)) {
       return res.status(400).json({
         success: false,

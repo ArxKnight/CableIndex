@@ -109,7 +109,7 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
  */
 router.get('/invitations', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const stmt = db.prepare(`
+    const stmt = getDb().prepare(`
       SELECT 
         ui.id,
         ui.email,
@@ -143,7 +143,7 @@ router.get('/invitations', authenticateToken, requireAdmin, async (req, res) => 
  */
 router.delete('/invitations/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const invitationId = parseInt(req.params.id);
+    const invitationId = parseInt(String(req.params.id));
     if (isNaN(invitationId)) {
       return res.status(400).json({
         success: false,
@@ -151,7 +151,7 @@ router.delete('/invitations/:id', authenticateToken, requireAdmin, async (req, r
       });
     }
 
-    const stmt = db.prepare('DELETE FROM user_invitations WHERE id = ? AND used_at IS NULL');
+    const stmt = getDb().prepare('DELETE FROM user_invitations WHERE id = ? AND used_at IS NULL');
     const result = stmt.run(invitationId);
 
     if (result.changes === 0) {
@@ -192,7 +192,7 @@ router.post('/accept-invite', async (req, res) => {
     const { token, full_name, password } = validation.data;
 
     // Find valid invitation
-    const invitation = db.prepare(`
+    const invitation = getDb().prepare(`
       SELECT * FROM user_invitations 
       WHERE token = ? AND used_at IS NULL AND expires_at > datetime('now')
     `).get(token) as any;
@@ -205,7 +205,7 @@ router.post('/accept-invite', async (req, res) => {
     }
 
     // Check if user already exists
-    if (userModel.emailExists(invitation.email)) {
+    if (getUserModel().emailExists(invitation.email)) {
       return res.status(409).json({
         success: false,
         error: 'User with this email already exists',
@@ -213,7 +213,7 @@ router.post('/accept-invite', async (req, res) => {
     }
 
     // Create user account
-    const user = await userModel.create({
+    const user = await getUserModel().create({
       email: invitation.email,
       full_name,
       password,
@@ -221,7 +221,7 @@ router.post('/accept-invite', async (req, res) => {
     });
 
     // Mark invitation as used
-    db.prepare(`
+    getDb().prepare(`
       UPDATE user_invitations 
       SET used_at = datetime('now') 
       WHERE id = ?
@@ -251,10 +251,10 @@ router.get('/validate-invite/:token', async (req, res) => {
   try {
     const { token } = req.params;
 
-    const invitation = db.prepare(`
+    const invitation = getDb().prepare(`
       SELECT email, role, expires_at FROM user_invitations 
       WHERE token = ? AND used_at IS NULL AND expires_at > datetime('now')
-    `).get(token) as any;
+    `).get(String(token)) as any;
 
     if (!invitation) {
       return res.status(400).json({
@@ -325,7 +325,7 @@ router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
       ORDER BY u.created_at DESC
     `;
 
-    const stmt = db.prepare(query);
+    const stmt = getDb().prepare(query);
     const users = stmt.all(...params);
 
     res.json({
@@ -346,8 +346,8 @@ router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
  */
 router.put('/users/:id/role', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const userId = parseInt(req.params.id);
-    const { role } = req.body;
+    const userId = parseInt(String(req.params.id));
+    const { role } = req.body as { role?: string };
 
     if (isNaN(userId)) {
       return res.status(400).json({
@@ -356,7 +356,7 @@ router.put('/users/:id/role', authenticateToken, requireAdmin, async (req, res) 
       });
     }
 
-    if (!['admin', 'moderator', 'user'].includes(role)) {
+    if (!role || !['admin', 'moderator', 'user'].includes(role)) {
       return res.status(400).json({
         success: false,
         error: 'Invalid role',
@@ -364,7 +364,7 @@ router.put('/users/:id/role', authenticateToken, requireAdmin, async (req, res) 
     }
 
     // Check if user exists
-    const user = userModel.findById(userId);
+    const user = getUserModel().findById(userId);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -373,8 +373,9 @@ router.put('/users/:id/role', authenticateToken, requireAdmin, async (req, res) 
     }
 
     // Update user role
-    const stmt = db.prepare('UPDATE users SET role = ?, updated_at = datetime("now") WHERE id = ?');
-    const result = stmt.run(role, userId);
+    const validRole = role as 'admin' | 'moderator' | 'user';
+    const stmt = getDb().prepare('UPDATE users SET role = ?, updated_at = datetime("now") WHERE id = ?');
+    const result = stmt.run(validRole, userId);
 
     if (result.changes === 0) {
       return res.status(404).json({
@@ -401,7 +402,7 @@ router.put('/users/:id/role', authenticateToken, requireAdmin, async (req, res) 
  */
 router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const userId = parseInt(req.params.id);
+    const userId = parseInt(String(req.params.id));
 
     if (isNaN(userId)) {
       return res.status(400).json({
@@ -411,7 +412,7 @@ router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) =>
     }
 
     // Check if user exists
-    const user = userModel.findById(userId);
+    const user = getUserModel().findById(userId);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -428,6 +429,7 @@ router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) =>
     }
 
     // Delete user and cascade delete their data
+    const db = getDb();
     const deleteUser = db.prepare('DELETE FROM users WHERE id = ?');
     const deleteLabels = db.prepare('DELETE FROM labels WHERE user_id = ?');
     const deleteSites = db.prepare('DELETE FROM sites WHERE user_id = ?');
@@ -459,7 +461,7 @@ router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) =>
  */
 router.get('/settings', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const settings = db.prepare(`
+    const settings = getDb().prepare(`
       SELECT * FROM app_settings ORDER BY created_at DESC LIMIT 1
     `).get() as any;
 
@@ -524,13 +526,13 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     // Check if settings exist
-    const existingSettings = db.prepare(`
+    const existingSettings = getDb().prepare(`
       SELECT id FROM app_settings ORDER BY created_at DESC LIMIT 1
     `).get() as any;
 
     if (existingSettings) {
       // Update existing settings
-      const stmt = db.prepare(`
+      const stmt = getDb().prepare(`
         UPDATE app_settings SET
           public_registration_enabled = ?,
           default_user_role = ?,
@@ -557,7 +559,7 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
       );
     } else {
       // Create new settings
-      const stmt = db.prepare(`
+      const stmt = getDb().prepare(`
         INSERT INTO app_settings (
           public_registration_enabled,
           default_user_role,
@@ -601,7 +603,7 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
 router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
   try {
     // User statistics
-    const userStats = db.prepare(`
+    const userStats = getDb().prepare(`
       SELECT 
         COUNT(*) as total,
         COUNT(CASE WHEN created_at >= date('now', '-30 days') THEN 1 END) as new_this_month,
@@ -611,7 +613,7 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
       FROM users
     `).get() as any;
 
-    const roleStats = db.prepare(`
+    const roleStats = getDb().prepare(`
       SELECT 
         role,
         COUNT(*) as count
@@ -630,7 +632,7 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
     });
 
     // Label statistics
-    const labelStats = db.prepare(`
+    const labelStats = getDb().prepare(`
       SELECT 
         COUNT(*) as total,
         COUNT(CASE WHEN created_at >= date('now', '-30 days') THEN 1 END) as created_this_month,
@@ -638,7 +640,7 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
       FROM labels
     `).get() as any;
 
-    const mostActiveUser = db.prepare(`
+    const mostActiveUser = getDb().prepare(`
       SELECT 
         u.full_name,
         COUNT(l.id) as count
@@ -650,7 +652,7 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
     `).get() as any;
 
     // Site statistics
-    const siteStats = db.prepare(`
+    const siteStats = getDb().prepare(`
       SELECT 
         COUNT(*) as total,
         COUNT(CASE WHEN created_at >= date('now', '-30 days') THEN 1 END) as created_this_month,
@@ -667,14 +669,14 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
     `).get() as any;
 
     // Recent activity
-    const recentRegistrations = db.prepare(`
+    const recentRegistrations = getDb().prepare(`
       SELECT id, full_name, email, role, created_at
       FROM users
       ORDER BY created_at DESC
       LIMIT 5
     `).all();
 
-    const recentLabels = db.prepare(`
+    const recentLabels = getDb().prepare(`
       SELECT 
         l.id,
         l.reference_number,

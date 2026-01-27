@@ -248,7 +248,8 @@ router.put('/profile', authenticateToken, async (req: Request, res: Response) =>
       full_name: z.string().min(2, 'Full name must be at least 2 characters').optional(),
     });
 
-    const { email, full_name } = updateProfileSchema.parse(req.body);
+    const parsed = updateProfileSchema.parse(req.body);
+    const { email, full_name } = parsed;
 
     // Check if email is already taken (if updating email)
     if (email && userModel.emailExists(email, req.user.userId)) {
@@ -259,7 +260,11 @@ router.put('/profile', authenticateToken, async (req: Request, res: Response) =>
     }
 
     // Update user profile
-    const updatedUser = await userModel.update(req.user.userId, { email, full_name });
+    const updatePayload = {
+      ...(email ? { email } : {}),
+      ...(full_name ? { full_name } : {}),
+    };
+    const updatedUser = await userModel.update(req.user.userId, updatePayload);
     if (!updatedUser) {
       return res.status(500).json({
         success: false,

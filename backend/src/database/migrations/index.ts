@@ -102,12 +102,15 @@ export function getMigrationStatus(): Array<{ id: string; name: string; applied:
     const appliedMap = new Map(appliedMigrations.map(m => [m.id, m.applied_at]));
     
     // Return status for all migrations
-    return migrations.map(migration => ({
-      id: migration.id,
-      name: migration.name,
-      applied: appliedMap.has(migration.id),
-      appliedAt: appliedMap.get(migration.id),
-    }));
+    return migrations.map(migration => {
+      const appliedAt = appliedMap.get(migration.id);
+      return {
+        id: migration.id,
+        name: migration.name,
+        applied: appliedMap.has(migration.id),
+        ...(appliedAt ? { appliedAt } : {})
+      };
+    });
   } catch (error) {
     console.error('❌ Failed to get migration status:', error);
     throw error;

@@ -1,9 +1,11 @@
 # Multi-stage build for WireIndex
-FROM node:18-alpine AS base
+FROM node:22-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
+# Native build prerequisites for node-gyp (e.g., better-sqlite3)
+RUN apk add --no-cache libc6-compat python3 make g++
+ENV PYTHON=/usr/bin/python3
 WORKDIR /app
 
 # Copy package files
@@ -29,7 +31,7 @@ COPY --from=deps /app/backend/node_modules ./backend/node_modules
 RUN cd backend && npm run build
 
 # Production image
-FROM node:18-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 # Create app user

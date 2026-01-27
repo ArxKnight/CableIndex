@@ -52,19 +52,19 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
 
     if (include_counts === 'true') {
       sites = siteModel.findByUserIdWithLabelCounts(req.user.userId, {
-        search,
+        ...(search ? { search } : {}),
         limit,
         offset,
       });
     } else {
       sites = siteModel.findByUserId(req.user.userId, {
-        search,
+        ...(search ? { search } : {}),
         limit,
         offset,
       });
     }
 
-    total = siteModel.countByUserId(req.user.userId, search);
+    total = siteModel.countByUserId(req.user.userId, search ?? undefined);
 
     res.json({
       success: true,
@@ -158,7 +158,12 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
     }
 
     // Validate request body
-    const siteData = createSiteSchema.parse(req.body);
+    const siteDataParsed = createSiteSchema.parse(req.body);
+    const siteData = {
+      name: siteDataParsed.name,
+      ...(siteDataParsed.location ? { location: siteDataParsed.location } : {}),
+      ...(siteDataParsed.description ? { description: siteDataParsed.description } : {}),
+    };
 
     // Create site
     const site = siteModel.create({
@@ -204,7 +209,12 @@ router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
 
     // Validate site ID and request body
     const { id } = siteIdSchema.parse(req.params);
-    const siteData = updateSiteSchema.parse(req.body);
+    const siteDataParsed = updateSiteSchema.parse(req.body);
+    const siteData = {
+      ...(siteDataParsed.name !== undefined ? { name: siteDataParsed.name } : {}),
+      ...(siteDataParsed.location !== undefined ? { location: siteDataParsed.location } : {}),
+      ...(siteDataParsed.description !== undefined ? { description: siteDataParsed.description } : {}),
+    };
 
     // Check if site exists and belongs to user
     if (!siteModel.existsForUser(id, req.user.userId)) {

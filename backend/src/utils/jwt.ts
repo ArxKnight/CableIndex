@@ -25,21 +25,28 @@ export function generateTokens(user: User): TokenPair {
     role: user.role,
   };
 
+  const secret = process.env.JWT_SECRET ?? '';
+  const envAccess = process.env.JWT_EXPIRES_IN;
+  const envRefresh = process.env.JWT_REFRESH_EXPIRES_IN;
+  const accessSeconds = envAccess && !isNaN(Number(envAccess)) ? Number(envAccess) : 24 * 60 * 60;
+  const refreshSeconds = envRefresh && !isNaN(Number(envRefresh)) ? Number(envRefresh) : 7 * 24 * 60 * 60;
+  const accessOpts = { expiresIn: accessSeconds };
   const accessToken = jwt.sign(
     payload,
-    process.env.JWT_SECRET!,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
+    secret,
+    accessOpts
   );
 
+  const refreshOpts = { expiresIn: refreshSeconds };
   const refreshToken = jwt.sign(
     payload,
-    process.env.JWT_SECRET!,
-    { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' }
+    secret,
+    refreshOpts
   );
 
   // Calculate expiration time in seconds
-  const expiresIn = jwt.decode(accessToken) as any;
-  const expirationTime = expiresIn.exp - expiresIn.iat;
+  const decoded = jwt.decode(accessToken) as jwt.JwtPayload | null;
+  const expirationTime = decoded && decoded.exp && decoded.iat ? decoded.exp - decoded.iat : 0;
 
   return {
     accessToken,
@@ -53,7 +60,7 @@ export function generateTokens(user: User): TokenPair {
  */
 export function verifyToken(token: string): JWTPayload {
   try {
-    return jwt.verify(token, process.env.JWT_SECRET!) as JWTPayload;
+    return jwt.verify(token, process.env.JWT_SECRET ?? '') as JWTPayload;
   } catch (error) {
     throw new Error('Invalid or expired token');
   }
@@ -78,4 +85,11 @@ export function isTokenExpired(token: string): boolean {
   if (!decoded || !decoded.exp) return true;
   
   return Date.now() >= decoded.exp * 1000;
+}
+
+/**
+ * Backward compatibility: generate only an access token
+ */
+export function generateToken(user: User): string {
+  return generateTokens(user).accessToken;
 }

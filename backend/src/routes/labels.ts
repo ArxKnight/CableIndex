@@ -96,11 +96,11 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
     } = getLabelsQuerySchema.parse(req.query);
 
     const searchOptions = {
-      search,
-      site_id,
-      source,
-      destination,
-      reference_number,
+      ...(search ? { search } : {}),
+      ...(site_id ? { site_id } : {}),
+      ...(source ? { source } : {}),
+      ...(destination ? { destination } : {}),
+      ...(reference_number ? { reference_number } : {}),
       limit,
       offset,
       sort_by,
@@ -115,11 +115,11 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
     }
 
     const total = labelModel.countByUserId(req.user.userId, {
-      search,
-      site_id,
-      source,
-      destination,
-      reference_number,
+      ...(search ? { search } : {}),
+      ...(site_id ? { site_id } : {}),
+      ...(source ? { source } : {}),
+      ...(destination ? { destination } : {}),
+      ...(reference_number ? { reference_number } : {}),
     });
 
     res.json({
@@ -285,7 +285,14 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
     }
 
     // Validate request body
-    const labelData = createLabelSchema.parse(req.body);
+    const labelDataParsed = createLabelSchema.parse(req.body);
+    const labelData = {
+      source: labelDataParsed.source,
+      destination: labelDataParsed.destination,
+      site_id: labelDataParsed.site_id,
+      ...(labelDataParsed.notes ? { notes: labelDataParsed.notes } : {}),
+      ...(labelDataParsed.zpl_content ? { zpl_content: labelDataParsed.zpl_content } : {}),
+    };
 
     // Verify that the site exists and belongs to the user
     if (!siteModel.existsForUser(labelData.site_id, req.user.userId)) {
@@ -356,7 +363,13 @@ router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
 
     // Validate label ID and request body
     const { id } = labelIdSchema.parse(req.params);
-    const labelData = updateLabelSchema.parse(req.body);
+    const labelDataParsed = updateLabelSchema.parse(req.body);
+    const labelData = {
+      ...(labelDataParsed.source !== undefined ? { source: labelDataParsed.source } : {}),
+      ...(labelDataParsed.destination !== undefined ? { destination: labelDataParsed.destination } : {}),
+      ...(labelDataParsed.notes !== undefined ? { notes: labelDataParsed.notes } : {}),
+      ...(labelDataParsed.zpl_content !== undefined ? { zpl_content: labelDataParsed.zpl_content } : {}),
+    };
 
     // Check if label exists and belongs to user
     if (!labelModel.existsForUser(id, req.user.userId)) {

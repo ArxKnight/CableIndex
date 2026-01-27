@@ -21,21 +21,24 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
     const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
     
     if (!token) {
-      return res.status(401).json({ 
+      res.status(401).json({ 
         success: false,
         error: 'Access denied. No token provided.' 
       });
+      return;
     }
 
     const decoded = verifyToken(token);
     req.user = decoded;
     req.userId = decoded.userId;
     next();
+    return;
   } catch (error) {
-    return res.status(401).json({ 
+    res.status(401).json({ 
       success: false,
       error: 'Invalid or expired token.' 
     });
+    return;
   }
 };
 
@@ -54,9 +57,11 @@ export const optionalAuth = (req: Request, res: Response, next: NextFunction) =>
     }
     
     next();
+    return;
   } catch (error) {
     // Continue without authentication if token is invalid
     next();
+    return;
   }
 };
 

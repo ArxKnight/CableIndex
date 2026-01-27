@@ -10,22 +10,25 @@ const getRoleService = () => new RoleService();
 export const requireRole = (requiredRole: UserRole) => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return res.status(401).json({ 
+      res.status(401).json({ 
         success: false,
         error: 'Authentication required' 
       });
+      return;
     }
 
     const userId = req.user.userId;
     
     if (!getRoleService().hasRole(userId, requiredRole)) {
-      return res.status(403).json({ 
+      res.status(403).json({ 
         success: false,
         error: 'Insufficient permissions' 
       });
+      return;
     }
 
     next();
+    return;
   };
 };
 
@@ -35,22 +38,25 @@ export const requireRole = (requiredRole: UserRole) => {
 export const requireToolPermission = (toolName: string, action: 'create' | 'read' | 'update' | 'delete') => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return res.status(401).json({ 
+      res.status(401).json({ 
         success: false,
         error: 'Authentication required' 
       });
+      return;
     }
 
     const userId = req.user.userId;
     
     if (!getRoleService().hasPermission(userId, toolName, action)) {
-      return res.status(403).json({ 
+      res.status(403).json({ 
         success: false,
         error: `Insufficient permissions for ${action} on ${toolName}` 
       });
+      return;
     }
 
     next();
+    return;
   };
 };
 
@@ -70,30 +76,34 @@ export const requireModerator = requireRole('moderator');
 export const requireOwnershipOrAdmin = (userIdField: string = 'user_id') => {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
-      return res.status(401).json({ 
+      res.status(401).json({ 
         success: false,
         error: 'Authentication required' 
       });
+      return;
     }
 
     const userId = req.user.userId;
     
     // Admin can access everything
     if (getRoleService().hasRole(userId, 'admin')) {
-      return next();
+      next();
+      return;
     }
 
     // Check ownership based on request parameters or body
     const resourceUserId = req.params[userIdField] || req.body[userIdField];
     
     if (resourceUserId && parseInt(resourceUserId) !== userId) {
-      return res.status(403).json({ 
+      res.status(403).json({ 
         success: false,
         error: 'Access denied. You can only access your own resources.' 
       });
+      return;
     }
 
     next();
+    return;
   };
 };
 
@@ -102,22 +112,25 @@ export const requireOwnershipOrAdmin = (userIdField: string = 'user_id') => {
  */
 export const requireUserManagement = (req: Request, res: Response, next: NextFunction) => {
   if (!req.user) {
-    return res.status(401).json({ 
+    res.status(401).json({ 
       success: false,
       error: 'Authentication required' 
     });
+    return;
   }
 
   const userId = req.user.userId;
   
   if (!getRoleService().hasPermission(userId, 'users', 'read')) {
-    return res.status(403).json({ 
+    res.status(403).json({ 
       success: false,
       error: 'Insufficient permissions for user management' 
     });
+    return;
   }
 
   next();
+  return;
 };
 
 // Default export for backward compatibility
