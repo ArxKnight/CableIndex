@@ -5,6 +5,7 @@ import { generateTokens, verifyToken } from '../utils/jwt.js';
 import { validatePassword } from '../utils/password.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { ApiResponse } from '../types/index.js';
+import { default as DatabaseConnection } from '../database/connection.js';
 
 const router = Router();
 const userModel = new UserModel();
@@ -31,24 +32,36 @@ const refreshTokenSchema = z.object({
  */
 router.post('/login', async (req: Request, res: Response) => {
   try {
+    const { email, password } = req.body;
+    const dbType = process.env.DB_TYPE || 'sqlite';
+    console.log(`🔐 Login attempt for email: ${email} [DB: ${dbType.toUpperCase()}]`);
+
     // Validate request body
-    const { email, password } = loginSchema.parse(req.body);
+    const validated = loginSchema.parse(req.body);
+    console.log(`✓ Login validation passed for: ${email}`);
 
     // Verify credentials
-    const user = await userModel.verifyCredentials(email, password);
+    console.log(`🔍 Verifying credentials against ${dbType.toUpperCase()} for: ${email}`);
+    const user = await userModel.verifyCredentials(validated.email, validated.password);
+    
     if (!user) {
+      console.warn(`✗ Invalid credentials for: ${email}`);
       return res.status(401).json({
         success: false,
         error: 'Invalid email or password',
       } as ApiResponse);
     }
 
+    console.log(`✓ Credentials verified for user: ${user.id} (${user.email})`);
+
     // Generate tokens
+    console.log(`🔑 Generating tokens for user: ${user.id}`);
     const tokens = generateTokens(user);
 
     // Return user data (without password hash) and tokens
     const { password_hash, ...userWithoutPassword } = user;
     
+    console.log(`✓ Login successful for: ${email}`);
     res.json({
       success: true,
       data: {
@@ -59,7 +72,14 @@ router.post('/login', async (req: Request, res: Response) => {
     } as ApiResponse);
 
   } catch (error) {
+    console.error(`❌ Login error for ${req.body?.email}:`, error);
+    if (error instanceof Error) {
+      console.error(`Error message: ${error.message}`);
+      console.error(`Error stack: ${error.stack}`);
+    }
+
     if (error instanceof z.ZodError) {
+      console.error('Validation errors:', error.errors);
       return res.status(400).json({
         success: false,
         error: 'Validation failed',
@@ -67,7 +87,6 @@ router.post('/login', async (req: Request, res: Response) => {
       } as ApiResponse);
     }
 
-    console.error('Login error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -81,41 +100,56 @@ router.post('/login', async (req: Request, res: Response) => {
  */
 router.post('/register', async (req: Request, res: Response) => {
   try {
+    const { email, full_name } = req.body;
+    const dbType = process.env.DB_TYPE || 'sqlite';
+    console.log(`📝 Registration attempt for email: ${email}, name: ${full_name} [DB: ${dbType.toUpperCase()}]`);
+
     // Validate request body
-    const { email, full_name, password } = registerSchema.parse(req.body);
+    const { email: validEmail, full_name: validFullName, password } = registerSchema.parse(req.body);
+    console.log(`✓ Registration validation passed for: ${validEmail}`);
 
     // Validate password strength
     const passwordValidation = validatePassword(password);
     if (!passwordValidation.isValid) {
+      console.warn(`✗ Weak password for: ${validEmail}`);
       return res.status(400).json({
         success: false,
         error: 'Password does not meet requirements',
         details: passwordValidation.errors,
       } as ApiResponse);
     }
+    console.log(`✓ Password strength validated for: ${validEmail}`);
 
     // Check if email already exists
-    if (userModel.emailExists(email)) {
+    console.log(`🔍 Checking if email exists in ${dbType.toUpperCase()}: ${validEmail}`);
+    const emailExists = await userModel.emailExists(validEmail);
+    if (emailExists) {
+      console.warn(`✗ Email already registered: ${validEmail}`);
       return res.status(409).json({
         success: false,
         error: 'Email already registered',
       } as ApiResponse);
     }
+    console.log(`✓ Email is available: ${validEmail}`);
 
     // Create user
+    console.log(`📝 Creating user in ${dbType.toUpperCase()}: ${validEmail}`);
     const user = await userModel.create({
-      email,
-      full_name,
+      email: validEmail,
+      full_name: validFullName,
       password,
       role: 'user', // Default role
     });
+    console.log(`✓ User created with ID: ${user.id}`);
 
     // Generate tokens
+    console.log(`🔑 Generating tokens for user: ${user.id}`);
     const tokens = generateTokens(user);
 
     // Return user data (without password hash) and tokens
     const { password_hash, ...userWithoutPassword } = user;
     
+    console.log(`✓ Registration successful for: ${validEmail}`);
     res.status(201).json({
       success: true,
       data: {
@@ -126,7 +160,15 @@ router.post('/register', async (req: Request, res: Response) => {
     } as ApiResponse);
 
   } catch (error) {
+    const email = req.body?.email || 'unknown';
+    console.error(`❌ Registration error for ${email}:`, error);
+    if (error instanceof Error) {
+      console.error(`Error message: ${error.message}`);
+      console.error(`Error stack: ${error.stack}`);
+    }
+
     if (error instanceof z.ZodError) {
+      console.error('Validation errors:', error.errors);
       return res.status(400).json({
         success: false,
         error: 'Validation failed',
@@ -134,7 +176,7 @@ router.post('/register', async (req: Request, res: Response) => {
       } as ApiResponse);
     }
 
-    console.error('Registration error:', error);
+    console.error('Registration error (non-zod):', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',
@@ -155,7 +197,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
     const decoded = verifyToken(refresh_token);
     
     // Get current user data
-    const user = userModel.findById(decoded.userId);
+    const user = await userModel.findById(decoded.userId);
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -204,7 +246,7 @@ router.get('/me', authenticateToken, async (req: Request, res: Response) => {
     }
 
     // Get current user data
-    const user = userModel.findById(req.user.userId);
+    const user = await userModel.findById(req.user.userId);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -252,7 +294,7 @@ router.put('/profile', authenticateToken, async (req: Request, res: Response) =>
     const { email, full_name } = parsed;
 
     // Check if email is already taken (if updating email)
-    if (email && userModel.emailExists(email, req.user.userId)) {
+    if (email && await userModel.emailExists(email, req.user.userId)) {
       return res.status(409).json({
         success: false,
         error: 'Email already exists',
@@ -320,7 +362,7 @@ router.put('/password', authenticateToken, async (req: Request, res: Response) =
     const { current_password, new_password } = changePasswordSchema.parse(req.body);
 
     // Get current user
-    const user = userModel.findById(req.user.userId);
+    const user = await userModel.findById(req.user.userId);
     if (!user) {
       return res.status(404).json({
         success: false,

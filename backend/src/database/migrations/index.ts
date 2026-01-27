@@ -1,12 +1,13 @@
 import connection from '../connection.js';
+import { DatabaseAdapter } from '../adapters/base.js';
 import { Migration001_InitialSchema } from './001_initial_schema.js';
 import { Migration002_AddRoleToUsers } from './002_add_role_to_users.js';
 
 export interface Migration {
   id: string;
   name: string;
-  up: (db: import('better-sqlite3').Database) => void;
-  down: (db: import('better-sqlite3').Database) => void;
+  up: (adapter: DatabaseAdapter) => Promise<void>;
+  down: (adapter: DatabaseAdapter) => Promise<void>;
 }
 
 // List of all migrations in order
@@ -16,21 +17,29 @@ const migrations: Migration[] = [
 ];
 
 export async function runMigrations(): Promise<void> {
-  const db = connection.getConnection();
+  const adapter = connection.getAdapter();
+  const config = connection.getConfig();
+  const dbType = config?.type || 'sqlite';
   
   try {
     // Create migrations table if it doesn't exist
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS migrations (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+    const createMigrationsTable = dbType === 'sqlite' 
+      ? `CREATE TABLE IF NOT EXISTS migrations (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`
+      : `CREATE TABLE IF NOT EXISTS migrations (
+          id VARCHAR(255) PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`;
+    
+    await adapter.execute(createMigrationsTable);
     
     // Get applied migrations
-    const appliedMigrations = db.prepare('SELECT id FROM migrations').all() as { id: string }[];
-    const appliedIds = new Set(appliedMigrations.map(m => m.id));
+    const appliedMigrations = await adapter.query('SELECT id FROM migrations');
+    const appliedIds = new Set(appliedMigrations.map((m: any) => m.id));
     
     // Run pending migrations
     for (const migration of migrations) {
@@ -38,16 +47,21 @@ export async function runMigrations(): Promise<void> {
         console.log(`🔄 Running migration: ${migration.name}`);
         
         // Begin transaction for migration
-        const transaction = db.transaction(() => {
+        await adapter.beginTransaction();
+        
+        try {
           // Run migration
-          migration.up(db);
+          await migration.up(adapter);
           
           // Record migration as applied
-          db.prepare('INSERT INTO migrations (id, name) VALUES (?, ?)').run(migration.id, migration.name);
-        });
-        
-        transaction();
-        console.log(`✅ Migration completed: ${migration.name}`);
+          await adapter.execute('INSERT INTO migrations (id, name) VALUES (?, ?)', [migration.id, migration.name]);
+          
+          await adapter.commit();
+          console.log(`✅ Migration completed: ${migration.name}`);
+        } catch (error) {
+          await adapter.rollback();
+          throw error;
+        }
       }
     }
     
@@ -59,7 +73,7 @@ export async function runMigrations(): Promise<void> {
 }
 
 export async function rollbackMigration(migrationId: string): Promise<void> {
-  const db = connection.getConnection();
+  const adapter = connection.getAdapter();
   
   try {
     // Find migration
@@ -69,37 +83,42 @@ export async function rollbackMigration(migrationId: string): Promise<void> {
     }
     
     // Check if migration is applied
-    const applied = db.prepare('SELECT id FROM migrations WHERE id = ?').get(migrationId);
-    if (!applied) {
+    const applied = await adapter.query('SELECT id FROM migrations WHERE id = ?', [migrationId]);
+    if (applied.length === 0) {
       throw new Error(`Migration not applied: ${migrationId}`);
     }
     
     console.log(`🔄 Rolling back migration: ${migration.name}`);
     
     // Begin transaction for rollback
-    const transaction = db.transaction(() => {
+    await adapter.beginTransaction();
+    
+    try {
       // Run rollback
-      migration.down(db);
+      await migration.down(adapter);
       
       // Remove migration record
-      db.prepare('DELETE FROM migrations WHERE id = ?').run(migrationId);
-    });
-    
-    transaction();
-    console.log(`✅ Migration rolled back: ${migration.name}`);
+      await adapter.execute('DELETE FROM migrations WHERE id = ?', [migrationId]);
+      
+      await adapter.commit();
+      console.log(`✅ Migration rolled back: ${migration.name}`);
+    } catch (error) {
+      await adapter.rollback();
+      throw error;
+    }
   } catch (error) {
     console.error('❌ Migration rollback failed:', error);
     throw error;
   }
 }
 
-export function getMigrationStatus(): Array<{ id: string; name: string; applied: boolean; appliedAt?: string }> {
-  const db = connection.getConnection();
+export async function getMigrationStatus(): Promise<Array<{ id: string; name: string; applied: boolean; appliedAt?: string }>> {
+  const adapter = connection.getAdapter();
   
   try {
     // Get applied migrations
-    const appliedMigrations = db.prepare('SELECT id, applied_at FROM migrations').all() as Array<{ id: string; applied_at: string }>;
-    const appliedMap = new Map(appliedMigrations.map(m => [m.id, m.applied_at]));
+    const appliedMigrations = await adapter.query('SELECT id, applied_at FROM migrations');
+    const appliedMap = new Map(appliedMigrations.map((m: any) => [m.id, m.applied_at]));
     
     // Return status for all migrations
     return migrations.map(migration => {

@@ -24,28 +24,81 @@ export class MySQLAdapter extends BaseDatabaseAdapter {
 
       const mysqlConfig = this.config.mysql!;
       
-      // Create connection pool for better performance
-      this.pool = this.mysql.createPool({
-        host: mysqlConfig.host,
-        port: mysqlConfig.port,
-        user: mysqlConfig.user,
-        password: mysqlConfig.password,
-        database: mysqlConfig.database,
-        ssl: mysqlConfig.ssl,
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0,
-        acquireTimeout: 60000,
-        timeout: 60000,
-      });
+      // First, try to connect to the database
+      try {
+        // Create connection pool for better performance
+        this.pool = this.mysql.createPool({
+          host: mysqlConfig.host,
+          port: mysqlConfig.port,
+          user: mysqlConfig.user,
+          password: mysqlConfig.password,
+          database: mysqlConfig.database,
+          ssl: mysqlConfig.ssl,
+          waitForConnections: true,
+          connectionLimit: 10,
+          queueLimit: 0,
+        });
 
-      // Test the connection
-      this.connection = await this.pool.getConnection();
-      await this.connection.ping();
-      this.connection.release();
+        // Test the connection
+        this.connection = await this.pool.getConnection();
+        await this.connection.ping();
+        this.connection.release();
 
-      this.connected = true;
-      console.log(`✅ MySQL connected: ${mysqlConfig.host}:${mysqlConfig.port}/${mysqlConfig.database}`);
+        this.connected = true;
+        console.log(`✅ MySQL connected: ${mysqlConfig.host}:${mysqlConfig.port}/${mysqlConfig.database}`);
+      } catch (error: any) {
+        // If database doesn't exist, create it
+        if (error.errno === 1049 || error.code === 'ER_BAD_DB_ERROR') {
+          console.log(`📦 Database '${mysqlConfig.database}' does not exist. Creating...`);
+          
+          // Connect without specifying a database
+          const tempPool = this.mysql.createPool({
+            host: mysqlConfig.host,
+            port: mysqlConfig.port,
+            user: mysqlConfig.user,
+            password: mysqlConfig.password,
+            ssl: mysqlConfig.ssl,
+            waitForConnections: true,
+            connectionLimit: 10,
+            queueLimit: 0,
+          });
+
+          try {
+            const tempConn = await tempPool.getConnection();
+            // Create the database
+            await tempConn.query(`CREATE DATABASE IF NOT EXISTS \`${mysqlConfig.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+            tempConn.release();
+            await tempPool.end();
+            
+            console.log(`✅ Database '${mysqlConfig.database}' created successfully`);
+
+            // Now connect to the newly created database
+            this.pool = this.mysql.createPool({
+              host: mysqlConfig.host,
+              port: mysqlConfig.port,
+              user: mysqlConfig.user,
+              password: mysqlConfig.password,
+              database: mysqlConfig.database,
+              ssl: mysqlConfig.ssl,
+              waitForConnections: true,
+              connectionLimit: 10,
+              queueLimit: 0,
+            });
+
+            this.connection = await this.pool.getConnection();
+            await this.connection.ping();
+            this.connection.release();
+
+            this.connected = true;
+            console.log(`✅ MySQL connected: ${mysqlConfig.host}:${mysqlConfig.port}/${mysqlConfig.database}`);
+          } catch (createError) {
+            await tempPool.end();
+            throw createError;
+          }
+        } else {
+          throw error;
+        }
+      }
     } catch (error) {
       console.error('❌ MySQL connection failed:', error);
       throw new Error(`Failed to connect to MySQL: ${error instanceof Error ? error.message : 'Unknown error'}`);

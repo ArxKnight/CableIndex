@@ -55,11 +55,6 @@
       <Mode/>
     </Variable>
     <Variable>
-      <Value>/app/data/wireindex.db</Value>
-      <Name>DATABASE_PATH</Name>
-      <Mode/>
-    </Variable>
-    <Variable>
       <Value>/app/uploads</Value>
       <Name>UPLOADS_PATH</Name>
       <Mode/>
@@ -69,49 +64,11 @@
       <Name>JWT_SECRET</Name>
       <Mode/>
     </Variable>
-    <Variable>
-      <Value>sqlite</Value>
-      <Name>DB_TYPE</Name>
-      <Mode/>
-    </Variable>
-    <Variable>
-      <Value></Value>
-      <Name>MYSQL_HOST</Name>
-      <Mode/>
-    </Variable>
-    <Variable>
-      <Value>3306</Value>
-      <Name>MYSQL_PORT</Name>
-      <Mode/>
-    </Variable>
-    <Variable>
-      <Value></Value>
-      <Name>MYSQL_USER</Name>
-      <Mode/>
-    </Variable>
-    <Variable>
-      <Value></Value>
-      <Name>MYSQL_PASSWORD</Name>
-      <Mode/>
-    </Variable>
-    <Variable>
-      <Value>wireindex</Value>
-      <Name>MYSQL_DATABASE</Name>
-      <Mode/>
-    </Variable>
   </Environment>
   <Labels/>
   <Config Name="WebUI Port" Target="3000" Default="3000" Mode="tcp" Description="Port to access WireIndex on your host (container always uses 3000 internally)" Type="Port" Display="always" Required="true" Mask="false">3000</Config>
   <Config Name="Data Directory" Target="/app/data" Default="/mnt/user/appdata/wireindex/data" Mode="rw" Description="Directory for database and application data" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/wireindex/data</Config>
   <Config Name="Uploads Directory" Target="/app/uploads" Default="/mnt/user/appdata/wireindex/uploads" Mode="rw" Description="Directory for uploaded files" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/wireindex/uploads</Config>
   <Config Name="Environment" Target="NODE_ENV" Default="production" Mode="" Description="Node.js environment" Type="Variable" Display="advanced" Required="false" Mask="false">production</Config>
-  <Config Name="Database Path" Target="DATABASE_PATH" Default="/app/data/wireindex.db" Mode="" Description="Path to SQLite database file" Type="Variable" Display="advanced" Required="false" Mask="false">/app/data/wireindex.db</Config>
-  <Config Name="Uploads Path" Target="UPLOADS_PATH" Default="/app/uploads" Mode="" Description="Path to uploads directory" Type="Variable" Display="advanced" Required="false" Mask="false">/app/uploads</Config>
   <Config Name="JWT Secret" Target="JWT_SECRET" Default="" Mode="" Description="Secret key for JWT tokens (leave empty to auto-generate on first start, but recommended to set a persistent value for production)" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
-  <Config Name="Database Type" Target="DB_TYPE" Default="sqlite" Mode="" Description="Database type: sqlite or mysql" Type="Variable" Display="advanced" Required="false" Mask="false">sqlite</Config>
-  <Config Name="MySQL Host" Target="MYSQL_HOST" Default="" Mode="" Description="MySQL host (only if using MySQL)" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-  <Config Name="MySQL Port" Target="MYSQL_PORT" Default="3306" Mode="" Description="MySQL port (only if using MySQL)" Type="Variable" Display="advanced" Required="false" Mask="false">3306</Config>
-  <Config Name="MySQL User" Target="MYSQL_USER" Default="" Mode="" Description="MySQL username (only if using MySQL)" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-  <Config Name="MySQL Password" Target="MYSQL_PASSWORD" Default="" Mode="" Description="MySQL password (only if using MySQL)" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
-  <Config Name="MySQL Database" Target="MYSQL_DATABASE" Default="wireindex" Mode="" Description="MySQL database name (only if using MySQL)" Type="Variable" Display="advanced" Required="false" Mask="false">wireindex</Config>
 </Container>

@@ -18,10 +18,23 @@ export class SQLiteAdapter extends BaseDatabaseAdapter {
     try {
       const filename = this.config.sqlite!.filename;
       
-      // Ensure directory exists
+      // Ensure directory exists with proper permissions
       const dir = path.dirname(filename);
       if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+        try {
+          fs.mkdirSync(dir, { recursive: true, mode: 0o777 });
+          console.log(`📁 Created directory: ${dir}`);
+        } catch (mkdirError) {
+          console.error(`❌ Failed to create directory ${dir}:`, mkdirError);
+          throw new Error(`Cannot create database directory: ${mkdirError instanceof Error ? mkdirError.message : 'Permission denied'}`);
+        }
+      }
+      
+      // Check if directory is writable
+      try {
+        fs.accessSync(dir, fs.constants.W_OK);
+      } catch (accessError) {
+        throw new Error(`Database directory ${dir} is not writable. Please check permissions.`);
       }
 
       this.db = new Database(filename, {

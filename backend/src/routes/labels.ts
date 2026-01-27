@@ -109,18 +109,12 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
 
     let labels;
     if (include_site_info === 'true') {
-      labels = labelModel.findByUserIdWithSiteInfo(req.user.userId, searchOptions);
+      labels = await labelModel.findByUserIdWithSiteInfo(req.user.userId, searchOptions);
     } else {
-      labels = labelModel.findByUserId(req.user.userId, searchOptions);
+      labels = await labelModel.findByUserId(req.user.userId, searchOptions);
     }
 
-    const total = labelModel.countByUserId(req.user.userId, {
-      ...(search ? { search } : {}),
-      ...(site_id ? { site_id } : {}),
-      ...(source ? { source } : {}),
-      ...(destination ? { destination } : {}),
-      ...(reference_number ? { reference_number } : {}),
-    });
+    const total = await labelModel.countByUserId(req.user.userId);
 
     res.json({
       success: true,
@@ -165,7 +159,7 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response) => {
       } as ApiResponse);
     }
 
-    const stats = labelModel.getStatsByUserId(req.user.userId);
+    const stats = await labelModel.getStatsByUserId(req.user.userId);
 
     res.json({
       success: true,
@@ -199,7 +193,7 @@ router.get('/recent', authenticateToken, async (req: Request, res: Response) => 
     });
 
     const { limit } = limitSchema.parse(req.query);
-    const recentLabels = labelModel.findRecentByUserId(req.user.userId, limit);
+    const recentLabels = await labelModel.findRecentByUserId(req.user.userId, limit);
 
     res.json({
       success: true,
@@ -240,9 +234,9 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
     const { id } = labelIdSchema.parse(req.params);
 
     // Get label
-    const label = labelModel.findById(id);
+    const label = await labelModel.findById(id, req.user.userId);
 
-    if (!label || label.user_id !== req.user.userId) {
+    if (!label) {
       return res.status(404).json({
         success: false,
         error: 'Label not found',
@@ -295,7 +289,7 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
     };
 
     // Verify that the site exists and belongs to the user
-    if (!siteModel.existsForUser(labelData.site_id, req.user.userId)) {
+    if (!await siteModel.existsForUser(labelData.site_id, req.user.userId)) {
       return res.status(400).json({
         success: false,
         error: 'Invalid site ID or site does not belong to user',
@@ -303,7 +297,7 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
     }
 
     // Create label
-    const label = labelModel.create({
+    const label = await labelModel.create({
       ...labelData,
       user_id: req.user.userId,
     });
@@ -372,7 +366,7 @@ router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
     };
 
     // Check if label exists and belongs to user
-    if (!labelModel.existsForUser(id, req.user.userId)) {
+    if (!await labelModel.existsForUser(id, req.user.userId)) {
       return res.status(404).json({
         success: false,
         error: 'Label not found',
@@ -380,7 +374,7 @@ router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
     }
 
     // Update label
-    const label = labelModel.update(id, req.user.userId, labelData);
+    const label = await labelModel.update(id, req.user.userId, labelData);
 
     if (!label) {
       return res.status(404).json({
@@ -439,7 +433,7 @@ router.delete('/:id', authenticateToken, async (req: Request, res: Response) => 
     const { id } = labelIdSchema.parse(req.params);
 
     // Check if label exists and belongs to user
-    if (!labelModel.existsForUser(id, req.user.userId)) {
+    if (!await labelModel.existsForUser(id, req.user.userId)) {
       return res.status(404).json({
         success: false,
         error: 'Label not found',
@@ -447,7 +441,7 @@ router.delete('/:id', authenticateToken, async (req: Request, res: Response) => 
     }
 
     // Delete label
-    const deleted = labelModel.delete(id, req.user.userId);
+    const deleted = await labelModel.delete(id, req.user.userId);
 
     if (!deleted) {
       return res.status(404).json({
@@ -495,7 +489,7 @@ router.post('/bulk-delete', authenticateToken, async (req: Request, res: Respons
     const { ids } = bulkDeleteSchema.parse(req.body);
 
     // Perform bulk delete
-    const deletedCount = labelModel.bulkDelete(ids, req.user.userId);
+    const deletedCount = await labelModel.bulkDelete(ids, req.user.userId);
 
     res.json({
       success: true,
@@ -537,8 +531,8 @@ router.get('/:id/zpl', authenticateToken, async (req: Request, res: Response) =>
     const { id } = labelIdSchema.parse(req.params);
 
     // Get label and verify ownership
-    const label = labelModel.findById(id);
-    if (!label || label.user_id !== req.user.userId) {
+    const label = await labelModel.findById(id, req.user.userId);
+    if (!label) {
       return res.status(404).json({
         success: false,
         error: 'Label not found',
@@ -546,7 +540,7 @@ router.get('/:id/zpl', authenticateToken, async (req: Request, res: Response) =>
     }
 
     // Get site information
-    const site = siteModel.findById(label.site_id);
+    const site = await siteModel.findById(label.site_id);
     if (!site) {
       return res.status(404).json({
         success: false,
@@ -601,8 +595,8 @@ router.post('/bulk-zpl', authenticateToken, async (req: Request, res: Response) 
     const sites = new Map();
 
     for (const id of ids) {
-      const label = labelModel.findById(id);
-      if (!label || label.user_id !== req.user.userId) {
+      const label = await labelModel.findById(id, req.user.userId);
+      if (!label) {
         continue; // Skip labels that don't exist or don't belong to user
       }
       

@@ -17,34 +17,49 @@ class DatabaseConnection {
   }
 
   public async connect(config?: DatabaseConfig): Promise<void> {
-    if (!config) {
-      config = this.getDefaultConfig();
+    try {
+      if (!config) {
+        console.log('🔄 Using default database configuration...');
+        config = this.getDefaultConfig();
+      }
+
+      console.log(`🔄 Connecting to ${config.type} database...`);
+      this.config = config;
+
+      // Create appropriate adapter based on database type
+      switch (config.type) {
+        case 'sqlite':
+          console.log(`📂 SQLite database path: ${config.sqlite?.filename}`);
+          this.adapter = new SQLiteAdapter(config);
+          break;
+        case 'mysql':
+          try {
+            console.log(`🔗 MySQL connection: ${config.mysql?.host}:${config.mysql?.port}/${config.mysql?.database}`);
+            // Try to import the real MySQL adapter
+            const { MySQLAdapter } = await import('./adapters/mysql.js');
+            this.adapter = new MySQLAdapter(config);
+          } catch (error) {
+            // Fall back to stub if mysql2 is not available
+            console.error('❌ MySQL driver not available:', error);
+            console.warn('⚠️  Falling back to stub. Install mysql2 for MySQL support.');
+            const { MySQLAdapter: MySQLStub } = await import('./adapters/mysql-stub.js');
+            this.adapter = new MySQLStub(config);
+          }
+          break;
+        default:
+          throw new Error(`Unsupported database type: ${(config as any).type}`);
+      }
+
+      await this.adapter.connect();
+      console.log('✅ Database adapter connected successfully');
+    } catch (error) {
+      console.error('❌ Database connection failed:', error);
+      if (error instanceof Error) {
+        console.error('Error details:', error.message);
+        console.error('Stack trace:', error.stack);
+      }
+      throw error;
     }
-
-    this.config = config;
-
-    // Create appropriate adapter based on database type
-    switch (config.type) {
-      case 'sqlite':
-        this.adapter = new SQLiteAdapter(config);
-        break;
-      case 'mysql':
-        try {
-          // Try to import the real MySQL adapter
-          const { MySQLAdapter } = await import('./adapters/mysql.js');
-          this.adapter = new MySQLAdapter(config);
-        } catch (error) {
-          // Fall back to stub if mysql2 is not available
-          console.warn('MySQL driver not available, using stub. Install mysql2 for MySQL support.');
-          const { MySQLAdapter: MySQLStub } = await import('./adapters/mysql-stub.js');
-          this.adapter = new MySQLStub(config);
-        }
-        break;
-      default:
-        throw new Error(`Unsupported database type: ${(config as any).type}`);
-    }
-
-    await this.adapter.connect();
   }
 
   public async disconnect(): Promise<void> {
@@ -53,6 +68,17 @@ class DatabaseConnection {
       this.adapter = null;
       this.config = null;
     }
+  }
+
+  /**
+   * Reset the connection - disconnects current adapter and clears config
+   * Used when database configuration changes (e.g., after setup completes)
+   */
+  public async reset(): Promise<void> {
+    console.log('🔄 Resetting database connection...');
+    await this.disconnect();
+    this.adapter = null;
+    this.config = null;
   }
 
   public getAdapter(): DatabaseAdapter {
@@ -102,7 +128,7 @@ class DatabaseConnection {
           port: parseInt(process.env.MYSQL_PORT || '3306'),
           user: process.env.MYSQL_USER || 'root',
           password: process.env.MYSQL_PASSWORD || '',
-          database: process.env.MYSQL_DATABASE || 'cable_manager',
+          database: process.env.MYSQL_DATABASE || 'wireindex',
           ssl: process.env.MYSQL_SSL === 'true',
         }
       };
@@ -112,7 +138,7 @@ class DatabaseConnection {
     return {
       type: 'sqlite',
       sqlite: {
-        filename: process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'cable-manager.db'),
+        filename: process.env.DATABASE_PATH || path.join('/app', 'data', 'wireindex.db'),
       }
     };
   }

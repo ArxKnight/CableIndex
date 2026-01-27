@@ -1,6 +1,7 @@
-import Database from 'better-sqlite3';
 import connection from '../database/connection.js';
+import { DatabaseAdapter } from '../database/adapters/base.js';
 import { Label } from '../types/index.js';
+import { ZPLService } from '../services/ZPLService.js';
 
 export interface CreateLabelData {
   source: string;
@@ -31,41 +32,47 @@ export interface LabelSearchOptions {
 }
 
 export class LabelModel {
-  private get db(): Database.Database {
-    return connection.getConnection();
+  private get adapter(): DatabaseAdapter {
+    return connection.getAdapter();
   }
 
   /**
    * Generate next reference number for a site
    */
-  private generateReferenceNumber(siteId: number): string {
+  private async generateReferenceNumber(siteId: number): Promise<string> {
     // Get site name for reference prefix
-    const siteStmt = this.db.prepare('SELECT name FROM sites WHERE id = ?');
-    const site = siteStmt.get(siteId) as { name: string } | null;
+    const siteRows = await this.adapter.query('SELECT name FROM sites WHERE id = ?', [siteId]);
     
-    if (!site) {
+    if (siteRows.length === 0) {
       throw new Error('Site not found');
     }
+    
+    const siteName = siteRows[0].name;
 
     // Get the next reference number for this site
-    const refStmt = this.db.prepare(`
-      SELECT COALESCE(
-        MAX(CAST(SUBSTR(reference_number, INSTR(reference_number, '-') + 1) AS INTEGER)), 
-        0
-      ) + 1 as next_ref
-      FROM labels 
-      WHERE site_id = ? AND is_active = 1
-      AND reference_number LIKE ?
-    `);
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
     
-    const result = refStmt.get(siteId, `${site.name}-%`) as { next_ref: number };
-    return `${site.name}-${result.next_ref}`;
+    const refRows = await this.adapter.query(isMySQL
+      ? `SELECT COALESCE(MAX(CAST(SUBSTRING(reference_number, INSTR(reference_number, '-') + 1) AS UNSIGNED)), 0) + 1 as next_ref
+         FROM labels 
+         WHERE site_id = ? AND is_active = 1
+         AND reference_number LIKE ?`
+      : `SELECT COALESCE(MAX(CAST(SUBSTR(reference_number, INSTR(reference_number, '-') + 1) AS INTEGER)), 0) + 1 as next_ref
+         FROM labels 
+         WHERE site_id = ? AND is_active = 1
+         AND reference_number LIKE ?`,
+      [siteId, `${siteName}-%`]
+    );
+    
+    const nextRef = refRows[0]?.next_ref || 1;
+    return `${siteName}-${nextRef}`;
   }
 
   /**
    * Create a new label
    */
-  create(labelData: CreateLabelData): Label {
+  async create(labelData: CreateLabelData): Promise<Label> {
     const { source, destination, site_id, user_id, notes, zpl_content } = labelData;
     
     // Validate required fields
@@ -78,154 +85,144 @@ export class LabelModel {
     }
 
     // Generate reference number
-    const reference_number = this.generateReferenceNumber(site_id);
+    const reference_number = await this.generateReferenceNumber(site_id);
     
     // Generate ZPL content if not provided
     let finalZplContent = zpl_content;
     if (!finalZplContent) {
-      // Get site information for ZPL generation
-      const siteStmt = this.db.prepare('SELECT name FROM sites WHERE id = ?');
-      const site = siteStmt.get(site_id) as { name: string } | null;
+      const siteRows = await this.adapter.query('SELECT name FROM sites WHERE id = ?', [site_id]);
       
-      if (site) {
-        // Import ZPLService dynamically to avoid circular dependencies
-        const { ZPLService } = require('../services/ZPLService.js');
+      if (siteRows.length > 0) {
         const zplService = new ZPLService();
-        
         const refNumber = reference_number.split('-')[1] || reference_number;
         finalZplContent = zplService.generateCableLabel({
-          site: site.name,
+          site: siteRows[0].name,
           referenceNumber: refNumber,
           source: source.trim(),
           destination: destination.trim()
         });
       }
     }
-    
-    const stmt = this.db.prepare(`
-      INSERT INTO labels (reference_number, source, destination, site_id, user_id, notes, zpl_content)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-    
-    const result = stmt.run(
-      reference_number, 
-      source.trim(), 
-      destination.trim(), 
-      site_id, 
-      user_id, 
-      notes || null, 
-      finalZplContent || null
+
+    const result = await this.adapter.execute(
+      `INSERT INTO labels (reference_number, site_id, user_id, source, destination, notes, zpl_content)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [reference_number, site_id, user_id, source.trim(), destination.trim(), notes || null, finalZplContent || null]
     );
     
-    if (!result.lastInsertRowid) {
+    if (!result.insertId) {
       throw new Error('Failed to create label');
     }
     
-    return this.findById(Number(result.lastInsertRowid))!;
+    return (await this.findById(Number(result.insertId), user_id))!;
   }
 
   /**
    * Find label by ID
    */
-  findById(id: number): Label | null {
-    const stmt = this.db.prepare(`
-      SELECT id, reference_number, source, destination, site_id, user_id, notes, zpl_content, is_active, created_at, updated_at
-      FROM labels 
-      WHERE id = ? AND is_active = 1
-    `);
+  async findById(id: number, userId: number): Promise<Label | null> {
+    const rows = await this.adapter.query(
+      `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
+       FROM labels 
+       WHERE id = ? AND user_id = ? AND is_active = 1`,
+      [id, userId]
+    );
     
-    return stmt.get(id) as Label | null;
+    return rows.length > 0 ? (rows[0] as Label) : null;
   }
 
   /**
-   * Find labels by user ID with filtering and search
+   * Find labels by site
    */
-  findByUserId(userId: number, options: LabelSearchOptions = {}): Label[] {
-    const { 
-      search, 
-      site_id, 
-      source, 
-      destination, 
-      reference_number,
-      limit = 50, 
-      offset = 0,
-      sort_by = 'created_at',
-      sort_order = 'DESC'
-    } = options;
+  async findBySiteId(siteId: number, userId: number, options: {
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<Label[]> {
+    const { limit = 50, offset = 0 } = options;
+    const safeLimit = parseInt(String(limit), 10) || 50;
+    const safeOffset = parseInt(String(offset), 10) || 0;
     
+    const rows = await this.adapter.query(
+      `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
+       FROM labels 
+       WHERE site_id = ? AND user_id = ? AND is_active = 1
+       ORDER BY reference_number ASC
+       LIMIT ? OFFSET ?`,
+      [siteId, userId, safeLimit, safeOffset]
+    );
+    
+    return rows as Label[];
+  }
+
+  /**
+   * Search labels with multiple options
+   */
+  async search(userId: number, options: LabelSearchOptions = {}): Promise<Label[]> {
     let query = `
-      SELECT l.id, l.reference_number, l.source, l.destination, l.site_id, l.user_id, l.notes, l.zpl_content, l.is_active, l.created_at, l.updated_at
-      FROM labels l
-      WHERE l.user_id = ? AND l.is_active = 1
+      SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
+      FROM labels 
+      WHERE user_id = ? AND is_active = 1
     `;
     
     const params: any[] = [userId];
     
-    // Add filters
-    if (site_id) {
-      query += ` AND l.site_id = ?`;
-      params.push(site_id);
+    if (options.site_id) {
+      query += ` AND site_id = ?`;
+      params.push(options.site_id);
     }
     
-    if (source) {
-      query += ` AND l.source LIKE ?`;
-      params.push(`%${source}%`);
+    if (options.reference_number) {
+      query += ` AND reference_number = ?`;
+      params.push(options.reference_number);
     }
     
-    if (destination) {
-      query += ` AND l.destination LIKE ?`;
-      params.push(`%${destination}%`);
+    if (options.source) {
+      query += ` AND source LIKE ?`;
+      params.push(`%${options.source}%`);
     }
     
-    if (reference_number) {
-      query += ` AND l.reference_number LIKE ?`;
-      params.push(`%${reference_number}%`);
+    if (options.destination) {
+      query += ` AND destination LIKE ?`;
+      params.push(`%${options.destination}%`);
     }
     
-    if (search) {
-      query += ` AND (l.reference_number LIKE ? OR l.source LIKE ? OR l.destination LIKE ? OR l.notes LIKE ?)`;
-      const searchPattern = `%${search}%`;
+    if (options.search) {
+      query += ` AND (reference_number LIKE ? OR source LIKE ? OR destination LIKE ? OR notes LIKE ?)`;
+      const searchPattern = `%${options.search}%`;
       params.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
     
-    // Add sorting
-    const validSortColumns = ['created_at', 'reference_number', 'source', 'destination'];
-    const sortColumn = validSortColumns.includes(sort_by) ? sort_by : 'created_at';
-    const sortDirection = sort_order === 'ASC' ? 'ASC' : 'DESC';
+    const sortBy = options.sort_by || 'created_at';
+    const sortOrder = options.sort_order || 'DESC';
+    query += ` ORDER BY ${sortBy} ${sortOrder}`;
     
-    query += ` ORDER BY l.${sortColumn} ${sortDirection} LIMIT ? OFFSET ?`;
-    params.push(limit, offset);
-    
-    const stmt = this.db.prepare(query);
-    return stmt.all(...params) as Label[];
-  }
+    if (options.limit) {
+      query += ` LIMIT ?`;
+      params.push(parseInt(String(options.limit), 10) || 50);
+    }
 
-  /**
-   * Find labels by site ID
-   */
-  findBySiteId(siteId: number, userId: number, options: LabelSearchOptions = {}): Label[] {
-    return this.findByUserId(userId, { ...options, site_id: siteId });
+    if (options.offset) {
+      query += ` OFFSET ?`;
+      params.push(parseInt(String(options.offset), 10) || 0);
+    }
+
+    const rows = await this.adapter.query(query, params);
+    return rows as Label[];
   }
 
   /**
    * Update label
    */
-  update(id: number, userId: number, labelData: UpdateLabelData): Label | null {
+  async update(id: number, userId: number, labelData: UpdateLabelData): Promise<Label | null> {
     const updates: string[] = [];
     const values: any[] = [];
 
     if (labelData.source !== undefined) {
-      if (!labelData.source.trim()) {
-        throw new Error('Source cannot be empty');
-      }
       updates.push('source = ?');
       values.push(labelData.source.trim());
     }
 
     if (labelData.destination !== undefined) {
-      if (!labelData.destination.trim()) {
-        throw new Error('Destination cannot be empty');
-      }
       updates.push('destination = ?');
       values.push(labelData.destination.trim());
     }
@@ -241,246 +238,150 @@ export class LabelModel {
     }
 
     if (updates.length === 0) {
-      return this.findById(id);
+      return this.findById(id, userId);
     }
 
-    updates.push('updated_at = CURRENT_TIMESTAMP');
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
+    
+    if (!isMySQL) {
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+    }
+    
     values.push(id, userId);
 
-    const stmt = this.db.prepare(`
-      UPDATE labels 
-      SET ${updates.join(', ')}
-      WHERE id = ? AND user_id = ? AND is_active = 1
-    `);
-
-    const result = stmt.run(...values);
+    const result = await this.adapter.execute(
+      `UPDATE labels 
+       SET ${updates.join(', ')}
+       WHERE id = ? AND user_id = ? AND is_active = 1`,
+      values
+    );
     
-    if (result.changes === 0) {
+    if (result.affectedRows === 0) {
       return null;
     }
 
-    return this.findById(id);
+    return this.findById(id, userId);
   }
 
   /**
    * Delete label (soft delete)
    */
-  delete(id: number, userId: number): boolean {
-    const stmt = this.db.prepare(`
-      UPDATE labels 
-      SET is_active = 0, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND user_id = ? AND is_active = 1
-    `);
+  async delete(id: number, userId: number): Promise<boolean> {
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
     
-    const result = stmt.run(id, userId);
-    return result.changes > 0;
+    const result = await this.adapter.execute(
+      isMySQL
+        ? `UPDATE labels SET is_active = 0 WHERE id = ? AND user_id = ? AND is_active = 1`
+        : `UPDATE labels SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND is_active = 1`,
+      [id, userId]
+    );
+    
+    return result.affectedRows > 0;
+  }
+
+  /**
+   * Count labels for user
+   */
+  async countByUserId(userId: number, siteId?: number): Promise<number> {
+    let query = `SELECT COUNT(*) as count FROM labels WHERE user_id = ? AND is_active = 1`;
+    const params: any[] = [userId];
+    
+    if (siteId) {
+      query += ` AND site_id = ?`;
+      params.push(siteId);
+    }
+    
+    const rows = await this.adapter.query(query, params);
+    return rows[0]?.count || 0;
+  }
+
+  /**
+   * Get all labels for a site with counts
+   */
+  async findBySiteIdWithCounts(siteId: number, userId: number): Promise<Label[]> {
+    const rows = await this.adapter.query(
+      `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
+       FROM labels 
+       WHERE site_id = ? AND user_id = ? AND is_active = 1
+       ORDER BY reference_number ASC`,
+      [siteId, userId]
+    );
+    
+    return rows as Label[];
+  }
+
+  /**
+   * Find labels for user with site info
+   */
+  async findByUserIdWithSiteInfo(userId: number, options: LabelSearchOptions = {}): Promise<Label[]> {
+    return this.search(userId, options);
+  }
+
+  /**
+   * Find labels for user (alias for search)
+   */
+  async findByUserId(userId: number, options: LabelSearchOptions = {}): Promise<Label[]> {
+    return this.search(userId, options);
+  }
+
+  /**
+   * Get statistics for user
+   */
+  async getStatsByUserId(userId: number): Promise<any> {
+    const rows = await this.adapter.query(
+      `SELECT COUNT(*) as total_labels, COUNT(DISTINCT site_id) as total_sites FROM labels WHERE user_id = ? AND is_active = 1`,
+      [userId]
+    );
+    
+    return rows[0] || { total_labels: 0, total_sites: 0 };
+  }
+
+  /**
+   * Find recent labels for user
+   */
+  async findRecentByUserId(userId: number, limit: number = 10): Promise<Label[]> {
+    const safeLimit = parseInt(String(limit), 10) || 10;
+    const rows = await this.adapter.query(
+      `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
+       FROM labels 
+       WHERE user_id = ? AND is_active = 1
+       ORDER BY created_at DESC
+       LIMIT ?`,
+      [userId, safeLimit]
+    );
+    
+    return rows as Label[];
+  }
+
+  /**
+   * Check if label exists for user
+   */
+  async existsForUser(id: number, userId: number): Promise<boolean> {
+    const rows = await this.adapter.query(
+      `SELECT id FROM labels WHERE id = ? AND user_id = ? AND is_active = 1`,
+      [id, userId]
+    );
+    
+    return rows.length > 0;
   }
 
   /**
    * Bulk delete labels
    */
-  bulkDelete(ids: number[], userId: number): number {
+  async bulkDelete(ids: number[], userId: number): Promise<number> {
     if (ids.length === 0) return 0;
     
     const placeholders = ids.map(() => '?').join(',');
-    const stmt = this.db.prepare(`
-      UPDATE labels 
-      SET is_active = 0, updated_at = CURRENT_TIMESTAMP
-      WHERE id IN (${placeholders}) AND user_id = ? AND is_active = 1
-    `);
+    const params = [...ids, userId];
     
-    const result = stmt.run(...ids, userId);
-    return result.changes;
-  }
-
-  /**
-   * Count labels for user with optional filters
-   */
-  countByUserId(userId: number, options: Omit<LabelSearchOptions, 'limit' | 'offset' | 'sort_by' | 'sort_order'> = {}): number {
-    const { search, site_id, source, destination, reference_number } = options;
+    const result = await this.adapter.execute(
+      `UPDATE labels SET is_active = 0 WHERE id IN (${placeholders}) AND user_id = ? AND is_active = 1`,
+      params
+    );
     
-    let query = `
-      SELECT COUNT(*) as count 
-      FROM labels l
-      WHERE l.user_id = ? AND l.is_active = 1
-    `;
-    
-    const params: any[] = [userId];
-    
-    // Add same filters as findByUserId
-    if (site_id) {
-      query += ` AND l.site_id = ?`;
-      params.push(site_id);
-    }
-    
-    if (source) {
-      query += ` AND l.source LIKE ?`;
-      params.push(`%${source}%`);
-    }
-    
-    if (destination) {
-      query += ` AND l.destination LIKE ?`;
-      params.push(`%${destination}%`);
-    }
-    
-    if (reference_number) {
-      query += ` AND l.reference_number LIKE ?`;
-      params.push(`%${reference_number}%`);
-    }
-    
-    if (search) {
-      query += ` AND (l.reference_number LIKE ? OR l.source LIKE ? OR l.destination LIKE ? OR l.notes LIKE ?)`;
-      const searchPattern = `%${search}%`;
-      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
-    }
-    
-    const stmt = this.db.prepare(query);
-    const result = stmt.get(...params) as { count: number };
-    return result.count;
-  }
-
-  /**
-   * Check if label exists and belongs to user
-   */
-  existsForUser(id: number, userId: number): boolean {
-    const stmt = this.db.prepare(`
-      SELECT 1 FROM labels 
-      WHERE id = ? AND user_id = ? AND is_active = 1
-    `);
-    
-    return stmt.get(id, userId) !== undefined;
-  }
-
-  /**
-   * Get labels with site information
-   */
-  findByUserIdWithSiteInfo(userId: number, options: LabelSearchOptions = {}): (Label & { site_name: string; site_location?: string })[] {
-    const { 
-      search, 
-      site_id, 
-      source, 
-      destination, 
-      reference_number,
-      limit = 50, 
-      offset = 0,
-      sort_by = 'created_at',
-      sort_order = 'DESC'
-    } = options;
-    
-    let query = `
-      SELECT 
-        l.id, l.reference_number, l.source, l.destination, l.site_id, l.user_id, l.notes, l.zpl_content, l.is_active, l.created_at, l.updated_at,
-        s.name as site_name, s.location as site_location
-      FROM labels l
-      JOIN sites s ON l.site_id = s.id
-      WHERE l.user_id = ? AND l.is_active = 1 AND s.is_active = 1
-    `;
-    
-    const params: any[] = [userId];
-    
-    // Add same filters as findByUserId
-    if (site_id) {
-      query += ` AND l.site_id = ?`;
-      params.push(site_id);
-    }
-    
-    if (source) {
-      query += ` AND l.source LIKE ?`;
-      params.push(`%${source}%`);
-    }
-    
-    if (destination) {
-      query += ` AND l.destination LIKE ?`;
-      params.push(`%${destination}%`);
-    }
-    
-    if (reference_number) {
-      query += ` AND l.reference_number LIKE ?`;
-      params.push(`%${reference_number}%`);
-    }
-    
-    if (search) {
-      query += ` AND (l.reference_number LIKE ? OR l.source LIKE ? OR l.destination LIKE ? OR l.notes LIKE ? OR s.name LIKE ?)`;
-      const searchPattern = `%${search}%`;
-      params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
-    }
-    
-    // Add sorting
-    const validSortColumns = ['created_at', 'reference_number', 'source', 'destination'];
-    const sortColumn = validSortColumns.includes(sort_by) ? sort_by : 'created_at';
-    const sortDirection = sort_order === 'ASC' ? 'ASC' : 'DESC';
-    
-    query += ` ORDER BY l.${sortColumn} ${sortDirection} LIMIT ? OFFSET ?`;
-    params.push(limit, offset);
-    
-    const stmt = this.db.prepare(query);
-    return stmt.all(...params) as (Label & { site_name: string; site_location?: string })[];
-  }
-
-  /**
-   * Get recent labels for dashboard
-   */
-  findRecentByUserId(userId: number, limit: number = 10): (Label & { site_name: string })[] {
-    const stmt = this.db.prepare(`
-      SELECT 
-        l.id, l.reference_number, l.source, l.destination, l.site_id, l.user_id, l.notes, l.zpl_content, l.is_active, l.created_at, l.updated_at,
-        s.name as site_name
-      FROM labels l
-      JOIN sites s ON l.site_id = s.id
-      WHERE l.user_id = ? AND l.is_active = 1 AND s.is_active = 1
-      ORDER BY l.created_at DESC
-      LIMIT ?
-    `);
-    
-    return stmt.all(userId, limit) as (Label & { site_name: string })[];
-  }
-
-  /**
-   * Get label statistics for user
-   */
-  getStatsByUserId(userId: number): {
-    total_labels: number;
-    labels_this_month: number;
-    labels_today: number;
-  } {
-    const stmt = this.db.prepare(`
-      SELECT 
-        COUNT(*) as total_labels,
-        COUNT(CASE WHEN DATE(created_at) >= DATE('now', 'start of month') THEN 1 END) as labels_this_month,
-        COUNT(CASE WHEN DATE(created_at) = DATE('now') THEN 1 END) as labels_today
-      FROM labels
-      WHERE user_id = ? AND is_active = 1
-    `);
-    
-    return stmt.get(userId) as {
-      total_labels: number;
-      labels_this_month: number;
-      labels_today: number;
-    };
-  }
-
-  /**
-   * Check if reference number exists for site (for validation)
-   */
-  referenceNumberExists(siteId: number, referenceNumber: string, excludeId?: number): boolean {
-    let stmt;
-    let params: any[];
-
-    if (excludeId) {
-      stmt = this.db.prepare(`
-        SELECT 1 FROM labels 
-        WHERE site_id = ? AND reference_number = ? AND id != ? AND is_active = 1
-      `);
-      params = [siteId, referenceNumber, excludeId];
-    } else {
-      stmt = this.db.prepare(`
-        SELECT 1 FROM labels 
-        WHERE site_id = ? AND reference_number = ? AND is_active = 1
-      `);
-      params = [siteId, referenceNumber];
-    }
-
-    return stmt.get(...params) !== undefined;
+    return result.affectedRows;
   }
 }
 

@@ -1,5 +1,5 @@
-import Database from 'better-sqlite3';
 import connection from '../database/connection.js';
+import { DatabaseAdapter } from '../database/adapters/base.js';
 import { User, UserRole } from '../types/index.js';
 import { hashPassword, comparePassword } from '../utils/password.js';
 
@@ -17,8 +17,8 @@ export interface UpdateUserData {
 }
 
 export class UserModel {
-  private get db(): Database.Database {
-    return connection.getConnection();
+  private get adapter(): DatabaseAdapter {
+    return connection.getAdapter();
   }
 
   /**
@@ -30,51 +30,58 @@ export class UserModel {
     // Hash the password
     const password_hash = await hashPassword(password);
     
-    const stmt = this.db.prepare(`
-      INSERT INTO users (email, full_name, password_hash, role)
-      VALUES (?, ?, ?, ?)
-    `);
+    const result = await this.adapter.execute(
+      `INSERT INTO users (email, full_name, password_hash, role)
+       VALUES (?, ?, ?, ?)`,
+      [email, full_name, password_hash, role]
+    );
     
-    const result = stmt.run(email, full_name, password_hash, role);
-    
-    if (!result.lastInsertRowid) {
+    if (!result.insertId) {
       throw new Error('Failed to create user');
     }
     
-    return this.findById(Number(result.lastInsertRowid))!;
+    return (await this.findById(Number(result.insertId)))!;
   }
 
   /**
    * Find user by ID
    */
-  findById(id: number): User | null {
-    const stmt = this.db.prepare(`
-      SELECT id, email, full_name, password_hash, role, created_at, updated_at
-      FROM users 
-      WHERE id = ?
-    `);
+  async findById(id: number): Promise<User | null> {
+    const rows = await this.adapter.query(
+      `SELECT id, email, full_name, password_hash, role, created_at, updated_at
+       FROM users 
+       WHERE id = ?`,
+      [id]
+    );
     
-    return stmt.get(id) as User | null;
+    return rows.length > 0 ? (rows[0] as User) : null;
   }
 
   /**
    * Find user by email
    */
-  findByEmail(email: string): User | null {
-    const stmt = this.db.prepare(`
-      SELECT id, email, full_name, password_hash, role, created_at, updated_at
-      FROM users 
-      WHERE email = ? COLLATE NOCASE
-    `);
+  async findByEmail(email: string): Promise<User | null> {
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
     
-    return stmt.get(email) as User | null;
+    // MySQL is case-insensitive by default for VARCHAR, SQLite needs COLLATE NOCASE
+    const rows = await this.adapter.query(
+      isMySQL
+        ? `SELECT id, email, full_name, password_hash, role, created_at, updated_at
+           FROM users WHERE email = ?`
+        : `SELECT id, email, full_name, password_hash, role, created_at, updated_at
+           FROM users WHERE email = ? COLLATE NOCASE`,
+      [email]
+    );
+    
+    return rows.length > 0 ? (rows[0] as User) : null;
   }
 
   /**
    * Verify user credentials
    */
   async verifyCredentials(email: string, password: string): Promise<User | null> {
-    const user = this.findByEmail(email);
+    const user = await this.findByEmail(email);
     if (!user) {
       return null;
     }
@@ -113,18 +120,24 @@ export class UserModel {
       return this.findById(id);
     }
 
-    updates.push('updated_at = CURRENT_TIMESTAMP');
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
+    
+    // MySQL handles updated_at automatically with ON UPDATE CURRENT_TIMESTAMP
+    if (!isMySQL) {
+      updates.push('updated_at = CURRENT_TIMESTAMP');
+    }
+    
     values.push(id);
 
-    const stmt = this.db.prepare(`
-      UPDATE users 
-      SET ${updates.join(', ')}
-      WHERE id = ?
-    `);
-
-    const result = stmt.run(...values);
+    const result = await this.adapter.execute(
+      `UPDATE users 
+       SET ${updates.join(', ')}
+       WHERE id = ?`,
+      values
+    );
     
-    if (result.changes === 0) {
+    if (result.affectedRows === 0) {
       return null;
     }
 
@@ -137,64 +150,77 @@ export class UserModel {
   async updatePassword(id: number, newPassword: string): Promise<boolean> {
     const password_hash = await hashPassword(newPassword);
     
-    const stmt = this.db.prepare(`
-      UPDATE users 
-      SET password_hash = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
+    
+    const result = await this.adapter.execute(
+      isMySQL
+        ? `UPDATE users SET password_hash = ? WHERE id = ?`
+        : `UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [password_hash, id]
+    );
 
-    const result = stmt.run(password_hash, id);
-    return result.changes > 0;
+    return result.affectedRows > 0;
   }
 
   /**
    * Delete user
    */
-  delete(id: number): boolean {
-    const stmt = this.db.prepare('DELETE FROM users WHERE id = ?');
-    const result = stmt.run(id);
-    return result.changes > 0;
+  async delete(id: number): Promise<boolean> {
+    const result = await this.adapter.execute('DELETE FROM users WHERE id = ?', [id]);
+    return result.affectedRows > 0;
   }
 
   /**
    * Get all users (admin only)
    */
-  findAll(limit: number = 50, offset: number = 0): User[] {
-    const stmt = this.db.prepare(`
-      SELECT id, email, full_name, password_hash, role, created_at, updated_at
-      FROM users 
-      ORDER BY created_at DESC
-      LIMIT ? OFFSET ?
-    `);
+  async findAll(limit: number = 50, offset: number = 0): Promise<User[]> {
+    const safeLimit = parseInt(String(limit), 10) || 50;
+    const safeOffset = parseInt(String(offset), 10) || 0;
+    const rows = await this.adapter.query(
+      `SELECT id, email, full_name, password_hash, role, created_at, updated_at
+       FROM users 
+       ORDER BY created_at DESC
+       LIMIT ? OFFSET ?`,
+      [safeLimit, safeOffset]
+    );
     
-    return stmt.all(limit, offset) as User[];
+    return rows as User[];
   }
 
   /**
    * Count total users
    */
-  count(): number {
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM users');
-    const result = stmt.get() as { count: number };
-    return result.count;
+  async count(): Promise<number> {
+    const rows = await this.adapter.query('SELECT COUNT(*) as count FROM users');
+    return rows[0].count;
   }
 
   /**
    * Check if email exists
    */
-  emailExists(email: string, excludeId?: number): boolean {
-    let stmt;
-    let params: any[];
-
+  async emailExists(email: string, excludeId?: number): Promise<boolean> {
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
+    
+    let rows;
     if (excludeId) {
-      stmt = this.db.prepare('SELECT 1 FROM users WHERE email = ? COLLATE NOCASE AND id != ?');
-      params = [email, excludeId];
+      rows = await this.adapter.query(
+        isMySQL
+          ? 'SELECT 1 FROM users WHERE email = ? AND id != ?'
+          : 'SELECT 1 FROM users WHERE email = ? COLLATE NOCASE AND id != ?',
+        [email, excludeId]
+      );
     } else {
-      stmt = this.db.prepare('SELECT 1 FROM users WHERE email = ? COLLATE NOCASE');
-      params = [email];
+      rows = await this.adapter.query(
+        isMySQL
+          ? 'SELECT 1 FROM users WHERE email = ?'
+          : 'SELECT 1 FROM users WHERE email = ? COLLATE NOCASE',
+        [email]
+      );
     }
 
-    return stmt.get(...params) !== undefined;
+    return rows.length > 0;
   }
 }
 

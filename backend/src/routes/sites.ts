@@ -51,20 +51,20 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
     let total;
 
     if (include_counts === 'true') {
-      sites = siteModel.findByUserIdWithLabelCounts(req.user.userId, {
+      sites = await siteModel.findByUserIdWithLabelCounts(req.user.userId, {
         ...(search ? { search } : {}),
         limit,
         offset,
       });
     } else {
-      sites = siteModel.findByUserId(req.user.userId, {
+      sites = await siteModel.findByUserId(req.user.userId, {
         ...(search ? { search } : {}),
         limit,
         offset,
       });
     }
 
-    total = siteModel.countByUserId(req.user.userId, search ?? undefined);
+    total = await siteModel.countByUserId(req.user.userId, search ?? undefined);
 
     res.json({
       success: true,
@@ -113,7 +113,7 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
     const { id } = siteIdSchema.parse(req.params);
 
     // Get site with label count
-    const site = siteModel.findByIdWithLabelCount(id, req.user.userId);
+    const site = await siteModel.findByIdWithLabelCount(id, req.user.userId);
 
     if (!site) {
       return res.status(404).json({
@@ -166,7 +166,7 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
     };
 
     // Create site
-    const site = siteModel.create({
+    const site = await siteModel.create({
       ...siteData,
       user_id: req.user.userId,
     });
@@ -217,7 +217,7 @@ router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
     };
 
     // Check if site exists and belongs to user
-    if (!siteModel.existsForUser(id, req.user.userId)) {
+    if (!await siteModel.existsForUser(id, req.user.userId)) {
       return res.status(404).json({
         success: false,
         error: 'Site not found',
@@ -225,7 +225,7 @@ router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
     }
 
     // Update site
-    const site = siteModel.update(id, req.user.userId, siteData);
+    const site = await siteModel.update(id, req.user.userId, siteData);
 
     if (!site) {
       return res.status(404).json({
@@ -274,7 +274,7 @@ router.delete('/:id', authenticateToken, async (req: Request, res: Response) => 
     const { id } = siteIdSchema.parse(req.params);
 
     // Check if site exists and belongs to user
-    if (!siteModel.existsForUser(id, req.user.userId)) {
+    if (!await siteModel.existsForUser(id, req.user.userId)) {
       return res.status(404).json({
         success: false,
         error: 'Site not found',
@@ -282,7 +282,7 @@ router.delete('/:id', authenticateToken, async (req: Request, res: Response) => 
     }
 
     // Attempt to delete site
-    const deleted = siteModel.delete(id, req.user.userId);
+    const deleted = await siteModel.delete(id, req.user.userId);
 
     if (!deleted) {
       return res.status(404).json({

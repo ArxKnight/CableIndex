@@ -7,7 +7,6 @@ import {
   Tag, 
   Zap, 
   Settings, 
-  Users,
   ChevronDown,
   User,
   LogOut
@@ -68,12 +67,6 @@ const navigationItems: NavigationItem[] = [
     href: '/admin',
     icon: Settings,
     adminOnly: true,
-  },
-  {
-    name: 'Users',
-    href: '/users',
-    icon: Users,
-    permission: 'users',
   },
 ];
 

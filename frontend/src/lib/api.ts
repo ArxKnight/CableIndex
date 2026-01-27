@@ -1,7 +1,14 @@
 import { toast } from 'sonner';
 import { ApiResponse, AuthTokens } from '../types';
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001/api';
+// In production (Docker), frontend is served from same origin, so use relative path
+// In development, use explicit localhost URL or VITE_API_URL override
+const isProd = (import.meta as any).env?.MODE === 'production';
+const envApiUrl = (import.meta as any).env?.VITE_API_URL;
+const API_BASE_URL = isProd ? '/api' : (envApiUrl || 'http://localhost:3001/api');
+
+// Log resolved API base URL for troubleshooting
+console.info(`[API] Base URL: ${API_BASE_URL} (mode: ${(import.meta as any).env?.MODE || 'unknown'})`);
 
 // Token management
 let authTokens: AuthTokens | null = null;
@@ -49,6 +56,11 @@ class ApiClient {
   ): Promise<ApiResponse<T>> {
     const url = `${this.baseURL}${endpoint}`;
     const tokens = getAuthTokens();
+
+    // Debug logging for API requests in development
+    if ((import.meta as any).env?.MODE === 'development') {
+      console.log(`[API] ${options.method || 'GET'} ${url}`);
+    }
 
     const config: RequestInit = {
       headers: {
@@ -118,11 +130,16 @@ class ApiClient {
 
       return data;
     } catch (error) {
+      // Log detailed error info for debugging
+      console.error(`[API Error] ${options.method || 'GET'} ${url}:`, error);
+      
       // Handle network connectivity issues
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        const networkError = 'Network error. Please check your connection and try again.';
-        toast.error(networkError);
-        throw new Error(networkError);
+      if (error instanceof TypeError) {
+        if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
+          const networkError = 'Network error. Please check your connection and try again.';
+          toast.error(networkError);
+          throw new Error(networkError);
+        }
       }
       
       if (error instanceof Error) {
@@ -137,17 +154,33 @@ class ApiClient {
 
   // Auth endpoints
   async login(email: string, password: string) {
-    return this.request<{ user: any } & AuthTokens>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
+    console.log(`[Auth] Attempting login for: ${email}`);
+    try {
+      const response = await this.request<{ user: any } & AuthTokens>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      });
+      console.log(`[Auth] Login successful for: ${email}`);
+      return response;
+    } catch (error) {
+      console.error(`[Auth] Login failed for ${email}:`, error);
+      throw error;
+    }
   }
 
   async register(email: string, full_name: string, password: string) {
-    return this.request<{ user: any } & AuthTokens>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ email, full_name, password }),
-    });
+    console.log(`[Auth] Attempting registration for: ${email}`);
+    try {
+      const response = await this.request<{ user: any } & AuthTokens>('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ email, full_name, password }),
+      });
+      console.log(`[Auth] Registration successful for: ${email}`);
+      return response;
+    } catch (error) {
+      console.error(`[Auth] Registration failed for ${email}:`, error);
+      throw error;
+    }
   }
 
   async refreshToken(refreshToken: string) {

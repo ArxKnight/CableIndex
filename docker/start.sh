@@ -1,17 +1,26 @@
 #!/bin/sh
 
-# Cable Manager Docker Startup Script
-echo "🚀 Starting Cable Manager..."
+# WireIndex Docker Startup Script
+echo "🚀 Starting WireIndex..."
+
+# Load .env file if it exists
+if [ -f /app/.env ]; then
+  set -a
+  . /app/.env
+  set +a
+  echo "📋 Loaded configuration from /app/.env"
+fi
 
 # Set default values
 export PORT=${PORT:-3000}
 export NODE_ENV=${NODE_ENV:-production}
-export DATABASE_PATH=${DATABASE_PATH:-/app/data/cable-manager.db}
+export DATABASE_PATH=${DATABASE_PATH:-/app/data/wireindex.db}
 export UPLOADS_PATH=${UPLOADS_PATH:-/app/uploads}
 
 # Create directories if they don't exist
-mkdir -p "$(dirname "$DATABASE_PATH")"
-mkdir -p "$UPLOADS_PATH"
+mkdir -p "$(dirname "$DATABASE_PATH")" 2>/dev/null || true
+mkdir -p "$UPLOADS_PATH" 2>/dev/null || true
+mkdir -p /app/data 2>/dev/null || true
 
 # Set JWT secret if not provided
 if [ -z "$JWT_SECRET" ]; then
@@ -23,7 +32,19 @@ fi
 echo "📋 Configuration:"
 echo "   Port: $PORT"
 echo "   Environment: $NODE_ENV"
-echo "   Database: $DATABASE_PATH"
+
+# Log database configuration
+if [ "$DB_TYPE" = "mysql" ] || [ -n "$MYSQL_HOST" ]; then
+  echo "   Database Type: MySQL"
+  echo "   MySQL Host: ${MYSQL_HOST:-localhost}"
+  echo "   MySQL Port: ${MYSQL_PORT:-3306}"
+  echo "   MySQL Database: ${MYSQL_DATABASE:-wireindex}"
+  echo "   MySQL User: ${MYSQL_USER:-root}"
+else
+  echo "   Database Type: SQLite"
+  echo "   Database: $DATABASE_PATH"
+fi
+
 echo "   Uploads: $UPLOADS_PATH"
 
 # Start the backend server

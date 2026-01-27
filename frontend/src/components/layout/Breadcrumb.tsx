@@ -20,7 +20,6 @@ const routeLabels: Record<string, string> = {
   '/port-labels': 'Port Labels',
   '/pdu-labels': 'PDU Labels',
   '/admin': 'Admin',
-  '/users': 'Users',
   '/profile': 'Profile',
 };
 

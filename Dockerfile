@@ -34,6 +34,9 @@ RUN cd backend && npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 
+# Install su-exec for proper user switching
+RUN apk add --no-cache su-exec
+
 # Create app user
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 wireindex
@@ -44,16 +47,25 @@ COPY --from=backend-builder /app/backend/dist ./backend/dist
 COPY --from=backend-builder /app/backend/package.json ./backend/
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-# Copy startup script
+# Copy startup script and create entrypoint
 COPY docker/start.sh ./
-RUN chmod +x start.sh
+COPY docker/entrypoint.sh ./
+RUN chmod +x start.sh entrypoint.sh
 
-# Create data directory for database and uploads
-RUN mkdir -p /app/data && chown -R wireindex:nodejs /app/data
-RUN mkdir -p /app/uploads && chown -R wireindex:nodejs /app/uploads
+# Create data directory for database and uploads with proper permissions
+# Must be done as root before switching users
+RUN mkdir -p /app/data && \
+    chown -R wireindex:nodejs /app/data && \
+    chmod -R 777 /app/data
+RUN mkdir -p /app/uploads && \
+    chown -R wireindex:nodejs /app/uploads && \
+    chmod -R 777 /app/uploads
+RUN touch /app/.env && \
+    chown wireindex:nodejs /app/.env && \
+    chmod 666 /app/.env
 
-# Switch to non-root user
-USER wireindex
+# Note: We don't switch to wireindex user here anymore
+# The entrypoint will handle permissions and then run as wireindex
 
 # Expose port (configurable via environment)
 EXPOSE 3000
@@ -62,5 +74,6 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:' + (process.env.PORT || 3000) + '/api/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
 
-# Start the application
+# Use entrypoint to fix permissions, then start app
+ENTRYPOINT ["./entrypoint.sh"]
 CMD ["./start.sh"]

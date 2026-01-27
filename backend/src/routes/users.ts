@@ -32,7 +32,7 @@ router.get('/', authenticateToken, requireUserManagement, async (req, res) => {
     const offset = (page - 1) * limit;
 
     const users = roleService.getAllUsersWithRoles(limit, offset);
-    const totalUsers = userModel.count();
+    const totalUsers = await userModel.count();
     const totalPages = Math.ceil(totalUsers / limit);
 
     // Remove password_hash from response
@@ -69,7 +69,7 @@ router.get('/', authenticateToken, requireUserManagement, async (req, res) => {
  */
 router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const totalUsers = userModel.count();
+    const totalUsers = await userModel.count();
     const usersByRole = roleService.countUsersByRole();
 
     res.json({
@@ -119,7 +119,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     };
 
     // Check if user exists
-    const existingUser = userModel.findById(userId);
+    const existingUser = await userModel.findById(userId);
     if (!existingUser) {
       return res.status(404).json({
         success: false,
@@ -129,7 +129,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
 
     // Check if email is already taken (if updating email)
     const emailToCheck = updateData.email;
-    if (emailToCheck && userModel.emailExists(emailToCheck, userId)) {
+    if (emailToCheck && await userModel.emailExists(emailToCheck, userId)) {
       return res.status(409).json({
         success: false,
         error: 'Email already exists',
@@ -189,7 +189,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     // Check if user exists
-    const existingUser = userModel.findById(userId);
+    const existingUser = await userModel.findById(userId);
     if (!existingUser) {
       return res.status(404).json({
         success: false,
@@ -198,7 +198,7 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     // Delete user
-    const deleted = userModel.delete(userId);
+    const deleted = await userModel.delete(userId);
     if (!deleted) {
       return res.status(500).json({
         success: false,

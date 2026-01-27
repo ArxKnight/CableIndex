@@ -4,10 +4,10 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import path from 'path';
-import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { initializeDatabase, setupDatabaseShutdown } from './database/init.js';
 import connection from './database/connection.js';
+import { isSetupComplete } from './utils/setup.js';
 
 // Get __dirname equivalent for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -20,9 +20,13 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable CSP to allow Vite's inline scripts
+  crossOriginEmbedderPolicy: false, // Disable COEP
+  crossOriginResourcePolicy: false, // Disable CORP
+}));
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: true, // Allow all origins in production (serving static frontend)
   credentials: true,
 }));
 app.use(morgan('combined'));
@@ -34,7 +38,7 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    service: 'cable-manager-backend'
+    service: 'wireindex-backend'
   });
 });
 
@@ -42,36 +46,34 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api', (req, res) => {
   res.json({
-    message: 'Cable Manager API',
+    message: 'WireIndex API',
     version: '1.0.0'
   });
 });
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error(err.stack);
+  console.error('❌ Unhandled error in request:', req.method, req.path);
+  console.error('Error:', err);
+  console.error('Stack trace:', err.stack);
   res.status(500).json({
     error: 'Something went wrong!',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error',
+    path: req.path
   });
-});
-
-// 404 handler for API routes only
-app.use('/api/*', (req, res) => {
-  res.status(404).json({ error: 'API route not found' });
 });
 
 // Initialize database and start server
 async function startServer() {
   try {
-    // Check if setup is complete
-    const setupFile = path.join(process.cwd(), 'data', '.setup-complete');
-    const isSetupComplete = fs.existsSync(setupFile);
+    // Check if setup is complete (env flag, marker file, or database user check)
+    const setupComplete = await isSetupComplete();
     
-    if (!isSetupComplete) {
+    if (!setupComplete) {
       console.log('⚠️  Setup not complete. Setup wizard will be available at /setup');
       // Don't initialize database yet - let setup wizard handle it
     } else {
+      console.log('✅ Setup complete. Initializing database...');
       // Initialize database with saved configuration
       await connection.connect();
       
@@ -85,21 +87,52 @@ async function startServer() {
     // Setup graceful shutdown
     setupDatabaseShutdown();
 
-    // Import and setup routes after database is initialized
+    // Import and setup routes
+    console.log('🔄 Loading application routes...');
     const { authRoutes, userRoutes, adminRoutes, siteRoutes, labelRoutes } = await import('./routes/index.js');
     const setupRoutes = (await import('./routes/setup.js')).default;
     
     // Setup routes (available before authentication)
+    console.log('🔄 Registering /api/setup routes...');
     app.use('/api/setup', setupRoutes);
-    
-    // API routes (only if setup is complete)
-    if (isSetupComplete) {
-      app.use('/api/auth', authRoutes);
-      app.use('/api/users', userRoutes);
-      app.use('/api/admin', adminRoutes);
-      app.use('/api/sites', siteRoutes);
-      app.use('/api/labels', labelRoutes);
-    }
+    console.log('✅ Setup routes registered');
+
+    // Shared middleware to ensure setup is complete and database is ready
+    app.use('/api', async (req, res, next) => {
+      const setupComplete = await isSetupComplete();
+      if (!setupComplete) {
+        return res.status(503).json({ success: false, error: 'Setup required', setupRequired: true });
+      }
+
+      if (!connection.isConnected()) {
+        try {
+          console.log('🔄 Lazy initializing database after setup completion...');
+          await connection.connect();
+          await initializeDatabase({
+            runMigrations: true,
+            seedData: process.env.NODE_ENV === 'development'
+          });
+          console.log('✅ Database lazily initialized');
+        } catch (err) {
+          console.error('Failed to lazy initialize database:', err);
+          return res.status(500).json({ success: false, error: 'Database initialization failed' });
+        }
+      }
+
+      next();
+    });
+
+    // Always register API routes; middleware above blocks if setup incomplete
+    app.use('/api/auth', authRoutes);
+    app.use('/api/users', userRoutes);
+    app.use('/api/admin', adminRoutes);
+    app.use('/api/sites', siteRoutes);
+    app.use('/api/labels', labelRoutes);
+
+    // 404 handler for API routes (must be after route registration)
+    app.use('/api/*', (req, res) => {
+      res.status(404).json({ error: 'API route not found' });
+    });
 
     // Serve static files from frontend build in production
     if (process.env.NODE_ENV === 'production') {
@@ -120,7 +153,7 @@ async function startServer() {
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📡 API available at http://localhost:${PORT}/api`);
-      if (isSetupComplete) {
+      if (setupComplete) {
         console.log(`💾 Database initialized successfully`);
       } else {
         console.log(`⚙️  Setup required - visit http://localhost:${PORT} to configure`);
@@ -128,6 +161,11 @@ async function startServer() {
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
+    if (error instanceof Error) {
+      console.error('Error name:', error.name);
+      console.error('Error message:', error.message);
+      console.error('Stack trace:', error.stack);
+    }
     process.exit(1);
   }
 }

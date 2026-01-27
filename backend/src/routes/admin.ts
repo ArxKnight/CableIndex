@@ -43,7 +43,7 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
     const { email, role } = validation.data;
 
     // Check if user already exists
-    if (getUserModel().emailExists(email)) {
+    if (await getUserModel().emailExists(email)) {
       return res.status(409).json({
         success: false,
         error: 'User with this email already exists',
@@ -205,7 +205,7 @@ router.post('/accept-invite', async (req, res) => {
     }
 
     // Check if user already exists
-    if (getUserModel().emailExists(invitation.email)) {
+    if (await getUserModel().emailExists(invitation.email)) {
       return res.status(409).json({
         success: false,
         error: 'User with this email already exists',
@@ -286,54 +286,57 @@ router.get('/validate-invite/:token', async (req, res) => {
 router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { search, role } = req.query;
+    const dbConfig = connection.getConfig();
+    const dbType = dbConfig?.type || 'unknown';
+    
+    console.log(`📊 Fetching users [DB: ${dbType.toUpperCase()}] for admin: ${req.user?.email}`);
 
-    let query = `
-      SELECT 
-        u.id,
-        u.email,
-        u.full_name,
-        u.role,
-        u.created_at,
-        u.updated_at,
-        COUNT(DISTINCT l.id) as label_count,
-        COUNT(DISTINCT s.id) as site_count,
-        MAX(l.created_at) as last_activity
-      FROM users u
-      LEFT JOIN labels l ON u.id = l.user_id
-      LEFT JOIN sites s ON u.id = s.user_id
-    `;
+    // Use UserModel instead of direct database access for better compatibility
+    const userModel = getUserModel();
+    
+    // Get all users first
+    const allUsers = await userModel.findAll(1000, 0);
+    
+    if (!allUsers || !Array.isArray(allUsers)) {
+      console.warn(`⚠️  No users found or invalid response from model`);
+      return res.json({
+        success: true,
+        data: { users: [] },
+      });
+    }
 
-    const params: any[] = [];
-    const conditions: string[] = [];
+    // Apply filters
+    let filteredUsers = allUsers;
 
     if (search) {
-      conditions.push('(u.full_name LIKE ? OR u.email LIKE ?)');
-      params.push(`%${search}%`, `%${search}%`);
+      const searchLower = (search as string).toLowerCase();
+      filteredUsers = filteredUsers.filter(u => 
+        u.full_name?.toLowerCase().includes(searchLower) ||
+        u.email?.toLowerCase().includes(searchLower)
+      );
     }
 
     if (role && role !== 'all') {
-      conditions.push('u.role = ?');
-      params.push(role);
+      filteredUsers = filteredUsers.filter(u => u.role === role);
     }
 
-    if (conditions.length > 0) {
-      query += ' WHERE ' + conditions.join(' AND ');
-    }
+    // Sort by created_at descending
+    filteredUsers.sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
 
-    query += `
-      GROUP BY u.id, u.email, u.full_name, u.role, u.created_at, u.updated_at
-      ORDER BY u.created_at DESC
-    `;
-
-    const stmt = getDb().prepare(query);
-    const users = stmt.all(...params);
+    console.log(`✓ Found ${filteredUsers.length} users`);
 
     res.json({
       success: true,
-      data: { users },
+      data: { users: filteredUsers },
     });
   } catch (error) {
-    console.error('Error fetching users:', error);
+    console.error(`❌ Error fetching users:`, error);
+    if (error instanceof Error) {
+      console.error(`Error message: ${error.message}`);
+      console.error(`Error stack: ${error.stack}`);
+    }
     res.status(500).json({
       success: false,
       error: 'Failed to fetch users',
