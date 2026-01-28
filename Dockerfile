@@ -46,6 +46,7 @@ COPY --from=deps /app/backend/node_modules ./backend/node_modules
 COPY --from=backend-builder /app/backend/dist ./backend/dist
 COPY --from=backend-builder /app/backend/package.json ./backend/
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
+COPY --from=frontend-builder /app/frontend/public ./frontend/public
 
 # Copy startup script and create entrypoint
 COPY docker/start.sh ./

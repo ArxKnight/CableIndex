@@ -74,6 +74,7 @@ const Navigation: React.FC = () => {
   const location = useLocation();
   const { user, logout } = useAuth();
   const { canAccess, isAdmin } = usePermissions();
+  const logoIconUrl = `${import.meta.env.BASE_URL}cableindex-icon.png`;
 
   const handleLogout = async () => {
     try {
@@ -102,7 +103,7 @@ const Navigation: React.FC = () => {
             <div className="flex-shrink-0 flex items-center">
               <Link to="/dashboard" className="flex items-center space-x-2">
                 <img 
-                  src="/cableindex-icon.png" 
+                  src={logoIconUrl} 
                   alt="CableIndex" 
                   className="h-8 w-8"
                 />

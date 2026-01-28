@@ -25,6 +25,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onSwitchToRegister }) 
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const logoUrl = `${import.meta.env.BASE_URL}cableindex-logo.png`;
 
   const {
     register,
@@ -52,7 +53,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onSwitchToRegister }) 
       <div className="text-center mb-6">
         <div className="flex justify-center mb-4">
           <img
-            src="/cableindex-logo.png"
+            src={logoUrl}
             alt="CableIndex"
             className="h-16 w-auto"
           />

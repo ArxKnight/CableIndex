@@ -137,7 +137,9 @@ async function startServer() {
     // Serve static files from frontend build in production
     if (process.env.NODE_ENV === 'production') {
       const frontendPath = path.join(__dirname, '../../frontend/dist');
+      const frontendPublicPath = path.join(__dirname, '../../frontend/public');
       app.use(express.static(frontendPath));
+      app.use(express.static(frontendPublicPath));
       
       // Handle client-side routing - serve index.html for all non-API routes
       app.get('*', (req, res) => {
