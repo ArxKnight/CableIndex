@@ -1,5 +1,7 @@
 # CableIndex
 
+![CableIndex Logo](frontend/public/cableindex-logo.png)
+
 A professional cable labeling system for Brady printers with automatic reference numbering, comprehensive user management, role-based permissions, and multi-database support. Features a modern React frontend with Express backend, supporting both SQLite and MySQL databases with Docker deployment options.
 
 ## ✨ Features
