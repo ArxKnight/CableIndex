@@ -5,6 +5,15 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Card, CardContent, CardHeader } from '../ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '../ui/dialog';
 import { 
   Search, 
   Filter, 
@@ -15,7 +24,8 @@ import {
   ChevronRight,
   CheckSquare,
   Square,
-  X
+  X,
+  Plus
 } from 'lucide-react';
 import apiClient from '../../lib/api';
 
@@ -30,15 +40,19 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
 }) => {
   const [labels, setLabels] = useState<LabelWithSiteInfo[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
+  const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedLabels, setSelectedLabels] = useState<Set<number>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
+  const [showRangeDialog, setShowRangeDialog] = useState(false);
+  const [rangeStart, setRangeStart] = useState('');
+  const [rangeEnd, setRangeEnd] = useState('');
   
   // Search and filter state
   const [searchParams, setSearchParams] = useState<LabelSearchParams>({
     search: '',
-    site_id: undefined,
+    site_id: 0,
     source: '',
     destination: '',
     reference_number: '',
@@ -46,7 +60,6 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     offset: 0,
     sort_by: 'created_at',
     sort_order: 'DESC',
-    include_site_info: true,
   });
   
   // Pagination state
@@ -62,6 +75,10 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
         const response = await apiClient.getSites();
         if (response.success && response.data) {
           setSites(response.data.sites);
+          // Set initial selected site to first site if not already set
+          if (!selectedSiteId && response.data.sites.length > 0) {
+            setSelectedSiteId(response.data.sites[0].id);
+          }
         }
       } catch (err) {
         console.error('Failed to load sites:', err);
@@ -71,8 +88,30 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     loadSites();
   }, []);
 
+  // Update search params when selected site changes
+  useEffect(() => {
+    if (selectedSiteId) {
+      setSearchParams(prev => ({
+        ...prev,
+        site_id: selectedSiteId,
+        offset: 0,
+      }));
+    }
+  }, [selectedSiteId]);
+
   // Load labels
   const loadLabels = useCallback(async (params: LabelSearchParams) => {
+    // Don't try to load labels if no site is selected
+    if (!params.site_id) {
+      setLabels([]);
+      setPagination({
+        total: 0,
+        has_more: false,
+      });
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -146,7 +185,56 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
   const selectAllLabels = () => {
     setSelectedLabels(new Set(labels.map(l => l.id)));
   };
+  const toggleSelectAll = () => {
+    if (selectedLabels.size === labels.length) {
+      clearSelection();
+    } else {
+      const allIds = new Set(labels.map(label => label.id));
+      setSelectedLabels(allIds);
+    }
+  };
 
+  const selectByRange = (startRef: string | undefined, endRef: string | undefined) => {
+    // Guard against undefined values
+    if (!startRef || !endRef) {
+      setError('Please enter both start and end reference numbers');
+      return;
+    }
+
+    // Extract numeric part from references (e.g., "0001" from "SITE-0001")
+    const getRefNumber = (ref: string) => {
+      const match = ref.match(/(\d+)$/);
+      return match ? parseInt(match[1]) : 0;
+    };
+
+    const start = getRefNumber(startRef);
+    const end = getRefNumber(endRef);
+
+    if (start === 0 || end === 0 || start > end) {
+      setError('Invalid reference range');
+      return;
+    }
+
+    // Find all labels within the range
+    const labelsInRange = labels.filter((label) => {
+      const ref = label.reference_number;
+      if (!ref) return false; // skip labels without a reference number
+
+      const labelNum = getRefNumber(ref);
+      return labelNum >= start && labelNum <= end;
+    });
+
+    if (labelsInRange.length === 0) {
+      setError('No labels found in the specified range');
+      return;
+    }
+
+    const rangeIds = new Set(labelsInRange.map(l => l.id));
+    setSelectedLabels(rangeIds);
+    setShowRangeDialog(false);
+    setRangeStart('');
+    setRangeEnd('');
+  };
   const clearSelection = () => {
     setSelectedLabels(new Set());
   };
@@ -159,8 +247,13 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
       return;
     }
 
+    if (!selectedSiteId) {
+      setError('No site selected');
+      return;
+    }
+
     try {
-      const response = await apiClient.bulkDeleteLabels(Array.from(selectedLabels));
+      const response = await apiClient.bulkDeleteLabels(selectedSiteId, Array.from(selectedLabels));
       if (response.success) {
         setSelectedLabels(new Set());
         loadLabels(searchParams); // Reload labels
@@ -202,8 +295,13 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
       return;
     }
 
+    if (!selectedSiteId) {
+      setError('No site selected');
+      return;
+    }
+
     try {
-      const response = await apiClient.deleteLabel(labelId);
+      const response = await apiClient.deleteLabel(selectedSiteId, labelId);
       if (response.success) {
         loadLabels(searchParams); // Reload labels
       }
@@ -237,15 +335,15 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     setSearchParams(prev => ({
       ...prev,
       search: '',
-      site_id: undefined,
       source: '',
       destination: '',
       reference_number: '',
+      site_id: selectedSiteId || 0,
       offset: 0,
     }));
   };
 
-  const hasActiveFilters = searchParams.search || searchParams.site_id || 
+  const hasActiveFilters = searchParams.search || 
     searchParams.source || searchParams.destination || searchParams.reference_number;
 
   return (
@@ -266,10 +364,18 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
         </div>
         
         <div className="flex gap-2">
-          {onCreateLabel && (
-            <Button onClick={onCreateLabel}>
-              Create Label
-            </Button>
+          {sites.length > 1 && (
+            <select
+              value={selectedSiteId || ''}
+              onChange={(e) => setSelectedSiteId(e.target.value ? Number(e.target.value) : null)}
+              className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {sites.map((site) => (
+                <option key={site.id} value={site.id}>
+                  {site.name}
+                </option>
+              ))}
+            </select>
           )}
         </div>
       </div>
@@ -282,9 +388,10 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search labels..."
+                  placeholder={selectedSiteId ? "Search labels..." : "Select a site first to search labels"}
                   value={searchParams.search || ''}
                   onChange={(e) => handleSearchChange(e.target.value)}
+                  disabled={!selectedSiteId}
                   className="pl-10"
                 />
               </div>
@@ -295,6 +402,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={() => setShowFilters(!showFilters)}
+                disabled={!selectedSiteId}
               >
                 <Filter className="h-4 w-4 mr-1" />
                 Filters
@@ -317,24 +425,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
           </div>
 
           {showFilters && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t">
-              <div className="space-y-2">
-                <Label htmlFor="filter-site">Site</Label>
-                <select
-                  id="filter-site"
-                  value={searchParams.site_id || ''}
-                  onChange={(e) => handleFilterChange('site_id', e.target.value ? Number(e.target.value) : undefined)}
-                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="">All sites</option>
-                  {sites.map((site) => (
-                    <option key={site.id} value={site.id}>
-                      {site.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4 border-t">
               <div className="space-y-2">
                 <Label htmlFor="filter-reference">Reference</Label>
                 <Input
@@ -369,41 +460,119 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
         </CardHeader>
       </Card>
 
-      {/* Bulk Actions */}
-      {selectedLabels.size > 0 && (
+      {/* Bulk Download Section - Always visible when site selected */}
+      {selectedSiteId && pagination.total > 0 && (
         <Card>
-          <CardContent className="py-3">
+          <CardContent className="py-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <span className="text-sm font-medium">
-                  {selectedLabels.size} label{selectedLabels.size !== 1 ? 's' : ''} selected
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={clearSelection}
-                >
-                  Clear Selection
-                </Button>
+              <div>
+                <h3 className="text-sm font-semibold mb-1">Bulk Operations</h3>
+                <p className="text-xs text-muted-foreground">
+                  {selectedLabels.size > 0 
+                    ? `${selectedLabels.size} of ${pagination.total} labels selected` 
+                    : `Select labels below to download or delete`}
+                </p>
               </div>
               
               <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleBulkDownload}
-                >
-                  <Download className="h-4 w-4 mr-1" />
-                  Download ZPL
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleBulkDelete}
-                >
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  Delete
-                </Button>
+                {selectedLabels.size > 0 ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={clearSelection}
+                    >
+                      <X className="h-4 w-4 mr-1" />
+                      Clear Selection
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleBulkDownload}
+                    >
+                      <Download className="h-4 w-4 mr-1" />
+                      Download Selected ({selectedLabels.size})
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={handleBulkDelete}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Delete Selected
+                    </Button>
+                  </>
+                ) : (
+                  <div className="flex gap-2">
+                    <Dialog open={showRangeDialog} onOpenChange={setShowRangeDialog}>
+                      <DialogTrigger>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowRangeDialog(true)}
+                        >
+                          <Download className="h-4 w-4 mr-1" />
+                          Select by Range
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Select Labels by Reference Range</DialogTitle>
+                          <DialogDescription>
+                            Enter the starting and ending reference numbers (e.g., 0001 to 0010)
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="range-start">Start Reference</Label>
+                            <Input
+                              id="range-start"
+                              placeholder="e.g., 0001"
+                              value={rangeStart}
+                              onChange={(e) => setRangeStart(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="range-end">End Reference</Label>
+                            <Input
+                              id="range-end"
+                              placeholder="e.g., 0010"
+                              value={rangeEnd}
+                              onChange={(e) => setRangeEnd(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setShowRangeDialog(false);
+                              setRangeStart('');
+                              setRangeEnd('');
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={() => selectByRange(rangeStart, rangeEnd)}
+                          >
+                            Select Range
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={toggleSelectAll}
+                    >
+                      <CheckSquare className="h-4 w-4 mr-1" />
+                      Select All
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
@@ -419,15 +588,23 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
               <span className="ml-2">Loading labels...</span>
             </div>
           ) : labels.length === 0 ? (
-            <div className="text-center p-8">
-              <p className="text-muted-foreground mb-4">
-                {hasActiveFilters ? 'No labels match your search criteria.' : 'No labels found.'}
-              </p>
-              {onCreateLabel && !hasActiveFilters && (
-                <Button onClick={onCreateLabel}>
-                  Create Your First Label
-                </Button>
-              )}
+            <div className="text-center p-12">
+              <div className="space-y-4">
+                <p className="text-muted-foreground text-lg">
+                  {hasActiveFilters ? 'No labels match your search criteria.' : 'No labels exist yet.'}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {hasActiveFilters 
+                    ? 'Try adjusting your filters to find what you\'re looking for.'
+                    : 'Select a site above and start creating your first label.'}
+                </p>
+                {onCreateLabel && !hasActiveFilters && (
+                  <Button onClick={onCreateLabel} className="mt-4">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Your First Label
+                  </Button>
+                )}
+              </div>
             </div>
           ) : (
             <>

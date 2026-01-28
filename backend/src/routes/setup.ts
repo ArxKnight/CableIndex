@@ -186,7 +186,7 @@ router.post('/complete', async (req, res) => {
         email: setupData.admin.email,
         password: setupData.admin.password,
         full_name: setupData.admin.fullName,
-        role: 'admin'
+        role: 'GLOBAL_ADMIN'
       });
       console.log(`✓ Admin user created: ${adminUser.id} (${adminUser.email})`);
     } else {
@@ -194,7 +194,7 @@ router.post('/complete', async (req, res) => {
       console.log(`⚠️  User already exists, updating credentials for: ${adminUser.email}`);
       adminUser = await userModel.update(adminUser.id, {
         full_name: setupData.admin.fullName,
-        role: 'admin'
+        role: 'GLOBAL_ADMIN'
       }) || adminUser;
       
       // Update password if user exists

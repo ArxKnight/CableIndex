@@ -54,7 +54,7 @@ export const usePermissions = (): PermissionHook => {
 
     // Define permissions based on role
     switch (user.role) {
-      case 'admin':
+      case 'GLOBAL_ADMIN':
         return {
           labels: { create: true, read: true, update: true, delete: true },
           sites: { create: true, read: true, update: true, delete: true },
@@ -65,7 +65,7 @@ export const usePermissions = (): PermissionHook => {
           admin: { create: true, read: true, update: true, delete: true },
         };
 
-      case 'moderator':
+      case 'ADMIN':
         return {
           labels: { create: true, read: true, update: true, delete: true },
           sites: { create: true, read: true, update: true, delete: true },
@@ -76,11 +76,11 @@ export const usePermissions = (): PermissionHook => {
           admin: { create: false, read: true, update: false, delete: false },
         };
 
-      case 'user':
+      case 'USER':
       default:
         return {
           labels: { create: true, read: true, update: true, delete: true },
-          sites: { create: true, read: true, update: true, delete: true },
+          sites: { create: false, read: true, update: false, delete: false },
           port_labels: { create: true, read: true, update: false, delete: false },
           pdu_labels: { create: true, read: true, update: false, delete: false },
           profile: { create: false, read: true, update: true, delete: false },
@@ -94,9 +94,9 @@ export const usePermissions = (): PermissionHook => {
     if (!user) return false;
 
     const roleHierarchy: Record<UserRole, number> = {
-      admin: 3,
-      moderator: 2,
-      user: 1,
+      GLOBAL_ADMIN: 3,
+      ADMIN: 2,
+      USER: 1,
     };
 
     return roleHierarchy[user.role] >= roleHierarchy[role];
@@ -137,9 +137,9 @@ export const usePermissions = (): PermissionHook => {
     canRead,
     canUpdate,
     canDelete,
-    isAdmin: hasRole('admin'),
-    isModerator: hasRole('moderator'),
-    isUser: user?.role === 'user',
+    isAdmin: hasRole('ADMIN') || user?.role === 'GLOBAL_ADMIN',
+    isModerator: hasRole('ADMIN') || user?.role === 'GLOBAL_ADMIN',
+    isUser: user?.role === 'USER',
     permissions,
   };
 };

@@ -2,6 +2,8 @@ import connection from '../connection.js';
 import { DatabaseAdapter } from '../adapters/base.js';
 import { Migration001_InitialSchema } from './001_initial_schema.js';
 import { Migration002_AddRoleToUsers } from './002_add_role_to_users.js';
+import { Migration003_RbacSiteScoping } from './003_rbac_site_scoping.js';
+import * as migration004 from './004_add_fullname_to_invitations.js';
 
 export interface Migration {
   id: string;
@@ -10,10 +12,19 @@ export interface Migration {
   down: (adapter: DatabaseAdapter) => Promise<void>;
 }
 
+const Migration004_AddFullnameToInvitations: Migration = {
+  id: '004',
+  name: 'add_fullname_to_invitations',
+  up: migration004.up,
+  down: migration004.down,
+};
+
 // List of all migrations in order
 const migrations: Migration[] = [
   Migration001_InitialSchema,
   Migration002_AddRoleToUsers,
+  Migration003_RbacSiteScoping,
+  Migration004_AddFullnameToInvitations,
 ];
 
 export async function runMigrations(): Promise<void> {

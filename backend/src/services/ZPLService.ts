@@ -27,24 +27,25 @@ export interface ZPLValidationResult {
 export class ZPLService {
   /**
    * Generate ZPL code for a cable label
-   * Format: [SITE]-[REF] [SOURCE] > [DEST]
+   * Format: Reference on first line, Source > Destination on second line
    */
   generateCableLabel(data: CableLabelData): string {
-    const { site, referenceNumber, source, destination } = data;
+    const { referenceNumber, source, destination } = data;
     
     // Validate input data
     this.validateCableLabelData(data);
     
-    // Create the label text
-    const labelText = `${site}-${referenceNumber} ${source} > ${destination}`;
-    
-    // Generate ZPL code
+    // Generate ZPL code with reference on top line, source > destination below
     const zpl = `^XA
 ^MUm^LH8,19^FS
 ^MUm^FO0,2
 ^A0N,7,5
 ^FB280,1,1,C
-^FD${labelText}^FS
+^FD#${referenceNumber}^FS
+^MUm^FO0,12
+^A0N,7,5
+^FB280,1,1,C
+^FD${source} > ${destination}^FS
 ^XZ`;
     
     return zpl;
@@ -108,13 +109,14 @@ export class ZPLService {
    * Generate ZPL code from existing label data
    */
   generateFromLabel(label: Label, site: Site): string {
-    const referenceNumber = label.reference_number.split('-')[1] || label.reference_number;
+    const refNum = label.reference_number || label.ref_string || '';
+    const referenceNumber = refNum.includes('-') ? refNum.split('-')[1] || refNum : refNum;
     
     return this.generateCableLabel({
       site: site.name,
-      referenceNumber,
-      source: label.source,
-      destination: label.destination
+      referenceNumber: referenceNumber || 'UNKNOWN',
+      source: label.source || 'Unknown',
+      destination: label.destination || 'Unknown'
     });
   }
 

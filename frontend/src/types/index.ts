@@ -11,23 +11,27 @@ export interface User {
 export interface Site {
   id: number;
   name: string;
-  location: string;
+  code: string;
+  location?: string;
   description?: string;
-  user_id: number;
+  created_by: number;
   created_at: string;
   updated_at: string;
 }
 
 export interface Label {
   id: number;
-  reference_number: string;
-  source: string;
-  destination: string;
   site_id: number;
-  user_id: number;
+  created_by: number;
+  ref_number: number;
+  ref_string: string;
+  type: string;
+  payload_json?: string | null;
+  reference_number?: string;
+  source?: string;
+  destination?: string;
   notes?: string;
   zpl_content?: string;
-  is_active: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -54,13 +58,13 @@ export interface UpdateLabelData {
 
 export interface LabelSearchParams {
   search?: string;
-  site_id?: number;
+  site_id: number;
   source?: string;
   destination?: string;
   reference_number?: string;
   limit?: number;
   offset?: number;
-  sort_by?: 'created_at' | 'reference_number' | 'source' | 'destination';
+  sort_by?: 'created_at' | 'ref_string';
   sort_order?: 'ASC' | 'DESC';
   include_site_info?: boolean;
 }
@@ -71,7 +75,8 @@ export interface LabelStats {
   labels_today: number;
 }
 
-export type UserRole = 'admin' | 'moderator' | 'user';
+export type UserRole = 'GLOBAL_ADMIN' | 'ADMIN' | 'USER';
+export type SiteRole = 'ADMIN' | 'USER';
 
 export interface AuthTokens {
   accessToken: string;

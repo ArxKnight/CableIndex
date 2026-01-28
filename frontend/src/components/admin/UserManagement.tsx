@@ -30,11 +30,19 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Search,
   Trash2,
   Shield,
   ShieldCheck,
   User as UserIcon,
+  Users,
   MoreHorizontal
 } from 'lucide-react';
 import {
@@ -57,6 +65,9 @@ interface UserWithStats extends User {
 const UserManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
+  const [siteDialogOpen, setSiteDialogOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<UserWithStats | null>(null);
+  const [siteSelections, setSiteSelections] = useState<Record<number, 'ADMIN' | 'USER'>>({});
   const queryClient = useQueryClient();
 
   // Fetch users with statistics
@@ -70,6 +81,14 @@ const UserManagement: React.FC = () => {
       const response = await apiClient.get<{ users: UserWithStats[] }>(
         `/admin/users?${params.toString()}`
       );
+      return response.data;
+    },
+  });
+
+  const { data: sitesData } = useQuery({
+    queryKey: ['admin', 'sites'],
+    queryFn: async () => {
+      const response = await apiClient.getSites({ limit: 1000 });
       return response.data;
     },
   });
@@ -102,6 +121,20 @@ const UserManagement: React.FC = () => {
     },
   });
 
+  const updateUserSitesMutation = useMutation({
+    mutationFn: async (data: { userId: number; sites: Array<{ site_id: number; site_role: 'ADMIN' | 'USER' }> }) => {
+      return apiClient.updateUserSites(data.userId, data.sites);
+    },
+    onSuccess: () => {
+      toast.success('User site access updated');
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      setSiteDialogOpen(false);
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to update site access');
+    },
+  });
+
   const handleRoleChange = (userId: number, newRole: UserRole) => {
     updateUserRoleMutation.mutate({ userId, role: newRole });
   };
@@ -110,11 +143,39 @@ const UserManagement: React.FC = () => {
     deleteUserMutation.mutate(userId);
   };
 
+  const handleManageSites = async (user: UserWithStats) => {
+    setSelectedUser(user);
+    setSiteDialogOpen(true);
+    try {
+      const response = await apiClient.getUserSites(user.id);
+      if (response.success && response.data?.sites) {
+        const selections: Record<number, 'ADMIN' | 'USER'> = {};
+        response.data.sites.forEach((site: any) => {
+          selections[site.site_id] = site.site_role;
+        });
+        setSiteSelections(selections);
+      } else {
+        setSiteSelections({});
+      }
+    } catch (error) {
+      setSiteSelections({});
+    }
+  };
+
+  const handleSaveSites = () => {
+    if (!selectedUser) return;
+    const sites = Object.entries(siteSelections).map(([siteId, siteRole]) => ({
+      site_id: Number(siteId),
+      site_role: siteRole,
+    }));
+    updateUserSitesMutation.mutate({ userId: selectedUser.id, sites });
+  };
+
   const getRoleIcon = (role: UserRole) => {
     switch (role) {
-      case 'admin':
+      case 'GLOBAL_ADMIN':
         return <ShieldCheck className="w-4 h-4" />;
-      case 'moderator':
+      case 'ADMIN':
         return <Shield className="w-4 h-4" />;
       default:
         return <UserIcon className="w-4 h-4" />;
@@ -123,9 +184,9 @@ const UserManagement: React.FC = () => {
 
   const getRoleBadgeVariant = (role: UserRole) => {
     switch (role) {
-      case 'admin':
+      case 'GLOBAL_ADMIN':
         return 'destructive';
-      case 'moderator':
+      case 'ADMIN':
         return 'secondary';
       default:
         return 'outline';
@@ -159,9 +220,9 @@ const UserManagement: React.FC = () => {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Roles</SelectItem>
-            <SelectItem value="admin">Admin</SelectItem>
-            <SelectItem value="moderator">Moderator</SelectItem>
-            <SelectItem value="user">User</SelectItem>
+            <SelectItem value="GLOBAL_ADMIN">Global Admin</SelectItem>
+            <SelectItem value="ADMIN">Admin</SelectItem>
+            <SelectItem value="USER">User</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -240,25 +301,29 @@ const UserManagement: React.FC = () => {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
-                          onClick={() => handleRoleChange(user.id, 'admin')}
-                          disabled={user.role === 'admin'}
+                          onClick={() => handleRoleChange(user.id, 'GLOBAL_ADMIN')}
+                          disabled={user.role === 'GLOBAL_ADMIN'}
                         >
                           <ShieldCheck className="w-4 h-4 mr-2" />
+                          Make Global Admin
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleRoleChange(user.id, 'ADMIN')}
+                          disabled={user.role === 'ADMIN'}
+                        >
+                          <Shield className="w-4 h-4 mr-2" />
                           Make Admin
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          onClick={() => handleRoleChange(user.id, 'moderator')}
-                          disabled={user.role === 'moderator'}
-                        >
-                          <Shield className="w-4 h-4 mr-2" />
-                          Make Moderator
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleRoleChange(user.id, 'user')}
-                          disabled={user.role === 'user'}
+                          onClick={() => handleRoleChange(user.id, 'USER')}
+                          disabled={user.role === 'USER'}
                         >
                           <UserIcon className="w-4 h-4 mr-2" />
                           Make User
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleManageSites(user)}>
+                          <Users className="w-4 h-4 mr-2" />
+                          Manage Sites
                         </DropdownMenuItem>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
@@ -298,6 +363,77 @@ const UserManagement: React.FC = () => {
           </TableBody>
         </Table>
       </div>
+
+      <Dialog open={siteDialogOpen} onOpenChange={setSiteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Manage Site Access</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {selectedUser ? `Editing access for ${selectedUser.full_name}` : 'Select a user'}
+            </p>
+            <div className="space-y-2 max-h-64 overflow-y-auto border rounded-md p-3">
+              {sitesData?.sites?.length ? (
+                sitesData.sites.map((site: any) => (
+                  <div key={site.id} className="flex items-center justify-between gap-2">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(siteSelections[site.id])}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setSiteSelections((prev) => {
+                            if (!checked) {
+                              const updated = { ...prev };
+                              delete updated[site.id];
+                              return updated;
+                            }
+                            return { ...prev, [site.id]: 'USER' };
+                          });
+                        }}
+                      />
+                      <span>{site.name} ({site.code})</span>
+                    </label>
+                    {siteSelections[site.id] && (
+                      <Select
+                        value={siteSelections[site.id]}
+                        onValueChange={(value) =>
+                          setSiteSelections((prev) => ({
+                            ...prev,
+                            [site.id]: value as 'ADMIN' | 'USER',
+                          }))
+                        }
+                      >
+                        <SelectTrigger className="w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="USER">User</SelectItem>
+                          <SelectItem value="ADMIN">Admin</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No sites available</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setSiteDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSaveSites} disabled={!selectedUser || updateUserSitesMutation.isPending}>
+              {updateUserSitesMutation.isPending ? 'Saving...' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -26,7 +26,7 @@ const mockUser = {
   id: 1,
   email: 'test@example.com',
   full_name: 'John Doe',
-  role: 'user' as const,
+  role: 'USER' as const,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
 };

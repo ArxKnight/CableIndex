@@ -5,6 +5,7 @@ export interface User {
   full_name: string;
   password_hash: string;
   role: UserRole;
+  is_active?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -12,28 +13,42 @@ export interface User {
 export interface Site {
   id: number;
   name: string;
-  location: string;
+  code: string;
+  created_by: number;
+  location?: string;
   description?: string;
-  user_id: number;
+  is_active?: boolean;
   created_at: string;
   updated_at: string;
 }
 
 export interface Label {
   id: number;
-  reference_number: string;
-  source: string;
-  destination: string;
   site_id: number;
-  user_id: number;
-  notes?: string;
-  zpl_content?: string;
-  is_active: boolean;
+  created_by: number;
+  ref_number: number;
+  ref_string: string;
+  type: string;
+  payload_json: string | null;
   created_at: string;
   updated_at: string;
+  // Legacy API compatibility fields
+  reference_number?: string;
+  source?: string;
+  destination?: string;
+  notes?: string;
+  zpl_content?: string;
 }
 
-export type UserRole = 'admin' | 'moderator' | 'user';
+export interface SiteMembership {
+  id: number;
+  site_id: number;
+  user_id: number;
+  site_role: SiteRole;
+}
+
+export type UserRole = 'GLOBAL_ADMIN' | 'ADMIN' | 'USER';
+export type SiteRole = 'ADMIN' | 'USER';
 
 export interface AuthTokens {
   access_token: string;

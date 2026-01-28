@@ -4,6 +4,7 @@ import LabelModel from '../models/Label.js';
 import SiteModel from '../models/Site.js';
 import ZPLService from '../services/ZPLService.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { resolveSiteAccess } from '../middleware/permissions.js';
 import { ApiResponse } from '../types/index.js';
 
 const router = Router();
@@ -29,13 +30,13 @@ const updateLabelSchema = z.object({
 
 const getLabelsQuerySchema = z.object({
   search: z.string().optional(),
-  site_id: z.coerce.number().min(1).optional(),
+  site_id: z.coerce.number().min(1),
   source: z.string().optional(),
   destination: z.string().optional(),
   reference_number: z.string().optional(),
   limit: z.coerce.number().min(1).max(100).default(50),
   offset: z.coerce.number().min(0).default(0),
-  sort_by: z.enum(['created_at', 'reference_number', 'source', 'destination']).default('created_at'),
+  sort_by: z.enum(['created_at', 'ref_string']).default('created_at'),
   sort_order: z.enum(['ASC', 'DESC']).default('DESC'),
   include_site_info: z.enum(['true', 'false']).default('false'),
 });
@@ -45,10 +46,12 @@ const labelIdSchema = z.object({
 });
 
 const bulkDeleteSchema = z.object({
+  site_id: z.number().min(1),
   ids: z.array(z.number().min(1)).min(1, 'At least one label ID is required').max(100, 'Cannot delete more than 100 labels at once'),
 });
 
 const bulkZplSchema = z.object({
+  site_id: z.number().min(1),
   ids: z.array(z.number().min(1)).min(1, 'At least one label ID is required').max(100, 'Cannot export more than 100 labels at once'),
 });
 
@@ -72,15 +75,8 @@ const pduLabelSchema = z.object({
  * GET /api/labels
  * Get all labels for the authenticated user with optional filtering and search
  */
-router.get('/', authenticateToken, async (req: Request, res: Response) => {
+router.get('/', authenticateToken, resolveSiteAccess(req => Number(req.query.site_id)), async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      } as ApiResponse);
-    }
-
     // Validate query parameters
     const { 
       search, 
@@ -97,24 +93,17 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
 
     const searchOptions = {
       ...(search ? { search } : {}),
-      ...(site_id ? { site_id } : {}),
+      ...(reference_number ? { reference_number } : {}),
       ...(source ? { source } : {}),
       ...(destination ? { destination } : {}),
-      ...(reference_number ? { reference_number } : {}),
       limit,
       offset,
       sort_by,
       sort_order,
     };
 
-    let labels;
-    if (include_site_info === 'true') {
-      labels = await labelModel.findByUserIdWithSiteInfo(req.user.userId, searchOptions);
-    } else {
-      labels = await labelModel.findByUserId(req.user.userId, searchOptions);
-    }
-
-    const total = await labelModel.countByUserId(req.user.userId);
+    const labels = await labelModel.findBySiteId(site_id, searchOptions);
+    const total = await labelModel.countBySiteId(site_id);
 
     res.json({
       success: true,
@@ -150,16 +139,9 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
  * GET /api/labels/stats
  * Get label statistics for the authenticated user
  */
-router.get('/stats', authenticateToken, async (req: Request, res: Response) => {
+router.get('/stats', authenticateToken, resolveSiteAccess(req => Number(req.query.site_id)), async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      } as ApiResponse);
-    }
-
-    const stats = await labelModel.getStatsByUserId(req.user.userId);
+    const stats = await labelModel.getStatsBySiteId(req.site!.id);
 
     res.json({
       success: true,
@@ -179,25 +161,27 @@ router.get('/stats', authenticateToken, async (req: Request, res: Response) => {
  * GET /api/labels/recent
  * Get recent labels for dashboard
  */
-router.get('/recent', authenticateToken, async (req: Request, res: Response) => {
+router.get('/recent', authenticateToken, resolveSiteAccess(req => Number(req.query.site_id)), async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({
+    const limitSchema = z.object({
+      limit: z.coerce.number().min(1).max(50).default(10).optional(),
+    }).passthrough();
+
+    const queryValidation = limitSchema.safeParse(req.query);
+    if (!queryValidation.success) {
+      return res.status(400).json({
         success: false,
-        error: 'Authentication required',
+        error: 'Invalid query parameters',
+        details: queryValidation.error.errors,
       } as ApiResponse);
     }
 
-    const limitSchema = z.object({
-      limit: z.coerce.number().min(1).max(50).default(10),
-    });
-
-    const { limit } = limitSchema.parse(req.query);
-    const recentLabels = await labelModel.findRecentByUserId(req.user.userId, limit);
+    const { limit = 10 } = queryValidation.data;
+    const recentLabels = await labelModel.findRecentBySiteId(req.site!.id, limit);
 
     res.json({
       success: true,
-      data: { labels: recentLabels },
+      data: { labels: recentLabels || [] },
     } as ApiResponse);
 
   } catch (error) {
@@ -221,20 +205,13 @@ router.get('/recent', authenticateToken, async (req: Request, res: Response) => 
  * GET /api/labels/:id
  * Get a specific label by ID
  */
-router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
+router.get('/:id', authenticateToken, resolveSiteAccess(req => Number(req.query.site_id)), async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      } as ApiResponse);
-    }
-
     // Validate label ID
     const { id } = labelIdSchema.parse(req.params);
 
     // Get label
-    const label = await labelModel.findById(id, req.user.userId);
+    const label = await labelModel.findById(id, req.site!.id);
 
     if (!label) {
       return res.status(404).json({
@@ -269,15 +246,8 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
  * POST /api/labels
  * Create a new label
  */
-router.post('/', authenticateToken, async (req: Request, res: Response) => {
+router.post('/', authenticateToken, resolveSiteAccess(req => Number(req.body.site_id)), async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      } as ApiResponse);
-    }
-
     // Validate request body
     const labelDataParsed = createLabelSchema.parse(req.body);
     const labelData = {
@@ -288,18 +258,10 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
       ...(labelDataParsed.zpl_content ? { zpl_content: labelDataParsed.zpl_content } : {}),
     };
 
-    // Verify that the site exists and belongs to the user
-    if (!await siteModel.existsForUser(labelData.site_id, req.user.userId)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid site ID or site does not belong to user',
-      } as ApiResponse);
-    }
-
     // Create label
     const label = await labelModel.create({
       ...labelData,
-      user_id: req.user.userId,
+      created_by: req.user!.userId,
     });
 
     res.status(201).json({
@@ -346,15 +308,8 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
  * PUT /api/labels/:id
  * Update an existing label
  */
-router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
+router.put('/:id', authenticateToken, resolveSiteAccess(req => Number(req.body.site_id)), async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      } as ApiResponse);
-    }
-
     // Validate label ID and request body
     const { id } = labelIdSchema.parse(req.params);
     const labelDataParsed = updateLabelSchema.parse(req.body);
@@ -365,16 +320,8 @@ router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
       ...(labelDataParsed.zpl_content !== undefined ? { zpl_content: labelDataParsed.zpl_content } : {}),
     };
 
-    // Check if label exists and belongs to user
-    if (!await labelModel.existsForUser(id, req.user.userId)) {
-      return res.status(404).json({
-        success: false,
-        error: 'Label not found',
-      } as ApiResponse);
-    }
-
     // Update label
-    const label = await labelModel.update(id, req.user.userId, labelData);
+    const label = await labelModel.update(id, req.site!.id, labelData);
 
     if (!label) {
       return res.status(404).json({
@@ -420,28 +367,13 @@ router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
  * DELETE /api/labels/:id
  * Delete a label (soft delete)
  */
-router.delete('/:id', authenticateToken, async (req: Request, res: Response) => {
+router.delete('/:id', authenticateToken, resolveSiteAccess(req => Number(req.query.site_id)), async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      } as ApiResponse);
-    }
-
     // Validate label ID
     const { id } = labelIdSchema.parse(req.params);
 
-    // Check if label exists and belongs to user
-    if (!await labelModel.existsForUser(id, req.user.userId)) {
-      return res.status(404).json({
-        success: false,
-        error: 'Label not found',
-      } as ApiResponse);
-    }
-
     // Delete label
-    const deleted = await labelModel.delete(id, req.user.userId);
+    const deleted = await labelModel.delete(id, req.site!.id);
 
     if (!deleted) {
       return res.status(404).json({
@@ -476,20 +408,13 @@ router.delete('/:id', authenticateToken, async (req: Request, res: Response) => 
  * POST /api/labels/bulk-delete
  * Delete multiple labels (bulk operation)
  */
-router.post('/bulk-delete', authenticateToken, async (req: Request, res: Response) => {
+router.post('/bulk-delete', authenticateToken, resolveSiteAccess(req => Number(req.body.site_id)), async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      } as ApiResponse);
-    }
-
     // Validate request body
     const { ids } = bulkDeleteSchema.parse(req.body);
 
     // Perform bulk delete
-    const deletedCount = await labelModel.bulkDelete(ids, req.user.userId);
+    const deletedCount = await labelModel.bulkDelete(ids, req.site!.id);
 
     res.json({
       success: true,
@@ -518,20 +443,13 @@ router.post('/bulk-delete', authenticateToken, async (req: Request, res: Respons
  * GET /api/labels/:id/zpl
  * Generate and download ZPL for a specific label
  */
-router.get('/:id/zpl', authenticateToken, async (req: Request, res: Response) => {
+router.get('/:id/zpl', authenticateToken, resolveSiteAccess(req => Number(req.query.site_id)), async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      } as ApiResponse);
-    }
-
     // Validate label ID
     const { id } = labelIdSchema.parse(req.params);
 
     // Get label and verify ownership
-    const label = await labelModel.findById(id, req.user.userId);
+    const label = await labelModel.findById(id, req.site!.id);
     if (!label) {
       return res.status(404).json({
         success: false,
@@ -578,15 +496,8 @@ router.get('/:id/zpl', authenticateToken, async (req: Request, res: Response) =>
  * POST /api/labels/bulk-zpl
  * Generate and download ZPL for multiple labels
  */
-router.post('/bulk-zpl', authenticateToken, async (req: Request, res: Response) => {
+router.post('/bulk-zpl', authenticateToken, resolveSiteAccess(req => Number(req.body.site_id)), async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      } as ApiResponse);
-    }
-
     // Validate request body
     const { ids } = bulkZplSchema.parse(req.body);
 
@@ -595,7 +506,7 @@ router.post('/bulk-zpl', authenticateToken, async (req: Request, res: Response) 
     const sites = new Map();
 
     for (const id of ids) {
-      const label = await labelModel.findById(id, req.user.userId);
+      const label = await labelModel.findById(id, req.site!.id);
       if (!label) {
         continue; // Skip labels that don't exist or don't belong to user
       }
@@ -604,7 +515,7 @@ router.post('/bulk-zpl', authenticateToken, async (req: Request, res: Response) 
       
       // Get site if not already cached
       if (!sites.has(label.site_id)) {
-        const site = siteModel.findById(label.site_id);
+        const site = await siteModel.findById(label.site_id);
         if (site) {
           sites.set(label.site_id, site);
         }

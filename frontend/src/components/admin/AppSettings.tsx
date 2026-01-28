@@ -10,18 +10,10 @@ import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Settings,
   Save,
   RefreshCw,
   Shield,
-  Users,
   Database,
   AlertCircle
 } from 'lucide-react';
@@ -147,52 +139,6 @@ const AppSettings: React.FC = () => {
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {/* User Registration Settings */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              User Registration
-            </CardTitle>
-            <CardDescription>
-              Configure how new users can join the system
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="public_registration">Public Registration</Label>
-                <p className="text-sm text-muted-foreground">
-                  Allow users to register without an invitation
-                </p>
-              </div>
-              <Switch
-                id="public_registration"
-                checked={watch('public_registration_enabled')}
-                onCheckedChange={(checked) => setValue('public_registration_enabled', checked)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="default_role">Default Role for New Users</Label>
-              <Select
-                value={watch('default_user_role')}
-                onValueChange={(value) => setValue('default_user_role', value as 'user' | 'moderator')}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select default role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="moderator">Moderator</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground">
-                Role automatically assigned to new users
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* System Limits */}
         <Card>
           <CardHeader>

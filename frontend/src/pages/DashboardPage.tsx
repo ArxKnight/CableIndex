@@ -23,31 +23,61 @@ interface DashboardStats {
 
 const DashboardPage: React.FC = () => {
   const { user } = useAuth();
+  const [selectedSiteId, setSelectedSiteId] = React.useState<number | null>(null);
 
-  // Fetch dashboard statistics
-  const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ['dashboard-stats'],
+  // Fetch dashboard statistics  // Fetch sites
+  const { data: sitesData, isLoading: sitesLoading } = useQuery({
+    queryKey: ['sites'],
     queryFn: async () => {
+      const response = await apiClient.getSites();
+      return response.data;
+    },
+  });
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ['dashboard-stats', selectedSiteId],
+    enabled: selectedSiteId !== null,
+    retry: false,
+    queryFn: async () => {
+      if (!selectedSiteId) return null;
+
       const [labelStatsResponse, sitesResponse] = await Promise.all([
-        apiClient.getLabelStats(),
-        apiClient.getSites({ limit: 1, include_counts: true })
+        apiClient.getLabelStats(selectedSiteId),
+        apiClient.getSites()
       ]);
 
       if (labelStatsResponse.success && sitesResponse.success) {
         const labelStats = labelStatsResponse.data?.stats || {};
-        const sitesData = sitesResponse.data?.pagination || {};
+        const sitesData = sitesResponse.data?.sites || [];
         
         return {
           total_labels: labelStats.total_labels || 0,
           labels_this_month: labelStats.labels_this_month || 0,
           labels_today: labelStats.labels_today || 0,
-          total_sites: sitesData.total || 0,
+          total_sites: sitesData.length || 0,
         } as DashboardStats;
       }
       
-      throw new Error('Failed to fetch dashboard statistics');
+      return null;
     },
   });
+
+  // Load initial site
+  React.useEffect(() => {
+    const loadInitialSite = async () => {
+      try {
+        const response = await apiClient.getSites();
+        if (response.success && response.data?.sites && response.data.sites.length > 0) {
+          setSelectedSiteId(response.data.sites[0].id);
+        }
+      } catch (error) {
+        console.error('Failed to load sites:', error);
+      }
+    };
+    
+    if (!selectedSiteId) {
+      loadInitialSite();
+    }
+  }, []);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -55,6 +85,36 @@ const DashboardPage: React.FC = () => {
     if (hour < 18) return 'Good afternoon';
     return 'Good evening';
   };
+
+  // Handle case where user has no sites yet
+  if (!sitesLoading && (!sitesData?.sites || sitesData.sites.length === 0)) {
+    return (
+      <div className="space-y-6 p-6">
+        <div className="space-y-2">
+          <Breadcrumb />
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">
+              {getGreeting()}, {user?.full_name?.split(' ')[0] || 'User'}!
+            </h1>
+            <p className="text-gray-600">Welcome to CableIndex</p>
+          </div>
+        </div>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center max-w-2xl mx-auto">
+          <h2 className="text-2xl font-semibold text-blue-900 mb-3">Get Started</h2>
+          <p className="text-blue-700 mb-6 text-lg">
+            You don't have any sites yet. Create your first site to start managing cable labels.
+          </p>
+          <a
+            href="/sites"
+            className="inline-block px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium"
+          >
+            Create Your First Site
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-6">

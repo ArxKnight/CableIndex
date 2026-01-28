@@ -3,7 +3,7 @@ import { z } from 'zod';
 import crypto from 'crypto';
 import UserModel from '../models/User.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { requireAdmin } from '../middleware/permissions.js';
+import { requireAdmin, requireGlobalRole, resolveSiteAccess } from '../middleware/permissions.js';
 import connection from '../database/connection.js';
 
 const router = express.Router();
@@ -13,13 +13,25 @@ const getAdapter = () => connection.getAdapter();
 // Validation schemas
 const inviteUserSchema = z.object({
   email: z.string().email(),
-  role: z.enum(['admin', 'moderator', 'user']).default('user'),
+  full_name: z.string().min(1, 'Name is required').max(100, 'Name must be less than 100 characters'),
+  sites: z.array(z.object({
+    site_id: z.number().min(1),
+    site_role: z.enum(['ADMIN', 'USER']).default('USER'),
+  })).min(1),
+  role: z.enum(['GLOBAL_ADMIN', 'ADMIN', 'USER']).optional(),
 });
 
 const acceptInviteSchema = z.object({
   token: z.string().min(1),
-  full_name: z.string().min(1).max(100),
+  full_name: z.string().min(1).max(100).optional(), // Optional since it can come from invitation
   password: z.string().min(8),
+});
+
+const updateUserSitesSchema = z.object({
+  sites: z.array(z.object({
+    site_id: z.number().min(1),
+    site_role: z.enum(['ADMIN', 'USER']).default('USER'),
+  })).optional().default([]),
 });
 
 /**
@@ -37,7 +49,15 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
       });
     }
 
-    const { email, role } = validation.data;
+    const { email, full_name, sites } = validation.data;
+
+    const requesterRole = req.user!.role as string;
+    if (validation.data.role === 'GLOBAL_ADMIN' && requesterRole !== 'GLOBAL_ADMIN') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only Global Admin can invite Global Admin users',
+      });
+    }
 
     // Check if user already exists
     if (await getUserModel().emailExists(email)) {
@@ -50,7 +70,7 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
     // Check if there's already a pending invitation
     const nowIso = new Date().toISOString();
     const existingInviteRows = await getAdapter().query(
-      `SELECT id FROM user_invitations 
+      `SELECT id FROM invitations
        WHERE email = ? AND used_at IS NULL AND expires_at > ?`,
       [email, nowIso]
     );
@@ -63,34 +83,70 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
       });
     }
 
+    // Validate site access for non-global admins
+    const siteIds = sites.map(site => site.site_id);
+    if (requesterRole !== 'GLOBAL_ADMIN') {
+      const placeholders = siteIds.map(() => '?').join(', ');
+      const rows = await getAdapter().query(
+        `SELECT DISTINCT site_id FROM site_memberships
+         WHERE user_id = ? AND site_id IN (${placeholders})`,
+        [req.user!.userId, ...siteIds]
+      );
+
+      if (rows.length !== siteIds.length) {
+        return res.status(403).json({
+          success: false,
+          error: 'You can only invite users to sites you have access to',
+        });
+      }
+    }
+
     // Generate invitation token
     const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
-    // Create invitation record
-    const result = await getAdapter().execute(
-      `INSERT INTO user_invitations (email, token, invited_by, role, expires_at)
-       VALUES (?, ?, ?, ?, ?)`,
-      [email, token, req.user!.userId, role, expiresAt.toISOString()]
-    );
+    await getAdapter().beginTransaction();
+    let invitationId: number | undefined;
 
-    if (!result.insertId) {
-      return res.status(500).json({
-        success: false,
-        error: 'Failed to create invitation',
-      });
+    try {
+      // Create invitation record
+      const result = await getAdapter().execute(
+        `INSERT INTO invitations (email, full_name, token_hash, invited_by, expires_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        [email, full_name, tokenHash, req.user!.userId, expiresAt.toISOString()]
+      );
+
+      invitationId = Number(result.insertId);
+      if (!invitationId) {
+        throw new Error('Failed to create invitation');
+      }
+
+      // Assign sites
+      for (const site of sites) {
+        await getAdapter().execute(
+          `INSERT INTO invitation_sites (invitation_id, site_id, site_role)
+           VALUES (?, ?, ?)`,
+          [invitationId, site.site_id, site.site_role]
+        );
+      }
+
+      await getAdapter().commit();
+    } catch (error) {
+      await getAdapter().rollback();
+      throw error;
     }
 
     // In a real application, you would send an email here
-    // For now, we'll just return the invitation details
+    // For now, return the invitation details and token once
     res.status(201).json({
       success: true,
       data: {
-        id: result.insertId,
+        id: invitationId,
         email,
-        role,
         token, // In production, don't return the token
         expiresAt: expiresAt.toISOString(),
+        sites,
       },
       message: 'User invitation created successfully',
     });
@@ -108,23 +164,75 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
  */
 router.get('/invitations', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const invitations = await getAdapter().query(`
-      SELECT 
-        ui.id,
-        ui.email,
-        ui.role,
-        ui.expires_at,
-        ui.created_at,
-        u.full_name as invited_by_name
-      FROM user_invitations ui
-      JOIN users u ON ui.invited_by = u.id
-      WHERE ui.used_at IS NULL
-      ORDER BY ui.created_at DESC
-    `);
+    const requesterRole = req.user!.role as string;
+    let siteFilter = '';
+    let params: any[] = [];
+
+    if (requesterRole !== 'GLOBAL_ADMIN') {
+      const siteRows = await getAdapter().query(
+        `SELECT site_id FROM site_memberships WHERE user_id = ?`,
+        [req.user!.userId]
+      );
+      const siteIds = siteRows.map((row: any) => row.site_id);
+      if (siteIds.length === 0) {
+        return res.json({
+          success: true,
+          data: [],
+        });
+      }
+
+      const placeholders = siteIds.map(() => '?').join(', ');
+      siteFilter = `AND isites.site_id IN (${placeholders})`;
+      params = siteIds;
+    }
+
+    const invitationRows = await getAdapter().query(
+      `SELECT 
+        i.id,
+        i.email,
+        i.full_name,
+        i.expires_at,
+        i.created_at,
+        u.full_name as invited_by_name,
+        isites.site_id,
+        isites.site_role,
+        s.name as site_name,
+        s.code as site_code
+      FROM invitations i
+      JOIN users u ON i.invited_by = u.id
+      JOIN invitation_sites isites ON isites.invitation_id = i.id
+      JOIN sites s ON s.id = isites.site_id
+      WHERE i.used_at IS NULL
+      ${siteFilter}
+      ORDER BY i.created_at DESC`,
+      params
+    );
+
+    const grouped = new Map<number, any>();
+    for (const row of invitationRows as any[]) {
+      if (!grouped.has(row.id)) {
+        grouped.set(row.id, {
+          id: row.id,
+          email: row.email,
+          full_name: row.full_name,
+          expires_at: row.expires_at,
+          created_at: row.created_at,
+          invited_by_name: row.invited_by_name,
+          sites: [],
+        });
+      }
+
+      grouped.get(row.id).sites.push({
+        site_id: row.site_id,
+        site_role: row.site_role,
+        site_name: row.site_name,
+        site_code: row.site_code,
+      });
+    }
 
     res.json({
       success: true,
-      data: invitations,
+      data: Array.from(grouped.values()),
     });
   } catch (error) {
     console.error('Error fetching invitations:', error);
@@ -148,8 +256,27 @@ router.delete('/invitations/:id', authenticateToken, requireAdmin, async (req, r
       });
     }
 
+    const requesterRole = req.user!.role as string;
+    if (requesterRole !== 'GLOBAL_ADMIN') {
+      const accessRows = await getAdapter().query(
+        `SELECT 1
+         FROM invitation_sites isites
+         JOIN site_memberships sm ON sm.site_id = isites.site_id
+         WHERE isites.invitation_id = ? AND sm.user_id = ?
+         LIMIT 1`,
+        [invitationId, req.user!.userId]
+      );
+
+      if (accessRows.length === 0) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied',
+        });
+      }
+    }
+
     const result = await getAdapter().execute(
-      'DELETE FROM user_invitations WHERE id = ? AND used_at IS NULL',
+      'DELETE FROM invitations WHERE id = ? AND used_at IS NULL',
       [invitationId]
     );
 
@@ -189,13 +316,14 @@ router.post('/accept-invite', async (req, res) => {
     }
 
     const { token, full_name, password } = validation.data;
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
     // Find valid invitation
     const nowIso = new Date().toISOString();
     const invitationRows = await getAdapter().query(
-      `SELECT * FROM user_invitations 
-       WHERE token = ? AND used_at IS NULL AND expires_at > ?`,
-      [token, nowIso]
+      `SELECT * FROM invitations 
+       WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?`,
+      [tokenHash, nowIso]
     );
     const invitation = invitationRows[0] as any;
 
@@ -203,6 +331,16 @@ router.post('/accept-invite', async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'Invalid or expired invitation token',
+      });
+    }
+
+    // Use full_name from request or from invitation
+    const userFullName = full_name || invitation.full_name;
+    
+    if (!userFullName) {
+      return res.status(400).json({
+        success: false,
+        error: 'Full name is required',
       });
     }
 
@@ -214,21 +352,54 @@ router.post('/accept-invite', async (req, res) => {
       });
     }
 
-    // Create user account
-    const user = await getUserModel().create({
-      email: invitation.email,
-      full_name,
-      password,
-      role: invitation.role,
-    });
+    const invitationSites = await getAdapter().query(
+      `SELECT site_id, site_role FROM invitation_sites WHERE invitation_id = ?`,
+      [invitation.id]
+    ) as Array<{ site_id: number; site_role: string }>;
 
-    // Mark invitation as used
-    await getAdapter().execute(
-      `UPDATE user_invitations 
-       SET used_at = ? 
-       WHERE id = ?`,
-      [new Date().toISOString(), invitation.id]
-    );
+    if (invitationSites.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invitation has no sites assigned',
+      });
+    }
+
+    const hasAdminSite = invitationSites.some(site => site.site_role === 'ADMIN');
+    const globalRole = hasAdminSite ? 'ADMIN' : 'USER';
+
+    await getAdapter().beginTransaction();
+    let user;
+    try {
+      // Create user account
+      user = await getUserModel().create({
+        email: invitation.email,
+        full_name: userFullName,
+        password,
+        role: globalRole as any,
+      });
+
+      // Create site memberships
+      for (const site of invitationSites) {
+        await getAdapter().execute(
+          `INSERT INTO site_memberships (site_id, user_id, site_role)
+           VALUES (?, ?, ?)`,
+          [site.site_id, user.id, site.site_role]
+        );
+      }
+
+      // Mark invitation as used
+      await getAdapter().execute(
+        `UPDATE invitations 
+         SET used_at = ? 
+         WHERE id = ?`,
+        [new Date().toISOString(), invitation.id]
+      );
+
+      await getAdapter().commit();
+    } catch (error) {
+      await getAdapter().rollback();
+      throw error;
+    }
 
     // Remove password_hash from response
     const { password_hash, ...userResponse } = user;
@@ -253,12 +424,13 @@ router.post('/accept-invite', async (req, res) => {
 router.get('/validate-invite/:token', async (req, res) => {
   try {
     const { token } = req.params;
+    const tokenHash = crypto.createHash('sha256').update(String(token)).digest('hex');
 
     const nowIso = new Date().toISOString();
     const invitationRows = await getAdapter().query(
-      `SELECT email, role, expires_at FROM user_invitations 
-       WHERE token = ? AND used_at IS NULL AND expires_at > ?`,
-      [String(token), nowIso]
+      `SELECT id, email, expires_at FROM invitations 
+       WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?`,
+      [tokenHash, nowIso]
     );
     const invitation = invitationRows[0] as any;
 
@@ -269,12 +441,20 @@ router.get('/validate-invite/:token', async (req, res) => {
       });
     }
 
+    const siteRows = await getAdapter().query(
+      `SELECT s.id as site_id, s.name as site_name, s.code as site_code, isites.site_role
+       FROM invitation_sites isites
+       JOIN sites s ON s.id = isites.site_id
+       WHERE isites.invitation_id = ?`,
+      [invitation.id]
+    );
+
     res.json({
       success: true,
       data: {
         email: invitation.email,
-        role: invitation.role,
         expiresAt: invitation.expires_at,
+        sites: siteRows,
       },
     });
   } catch (error) {
@@ -296,27 +476,55 @@ router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
     const dbType = dbConfig?.type || 'unknown';
     
     console.log(`📊 Fetching users [DB: ${dbType.toUpperCase()}] for admin: ${req.user?.email}`);
+    const requesterRole = req.user!.role as string;
 
-    // Use UserModel instead of direct database access for better compatibility
-    const userModel = getUserModel();
-    
-    // Get all users first
-    const allUsers = await userModel.findAll(1000, 0);
-    
-    if (!allUsers || !Array.isArray(allUsers)) {
-      console.warn(`⚠️  No users found or invalid response from model`);
-      return res.json({
-        success: true,
-        data: { users: [] },
-      });
+    let users: any[] = [];
+
+    if (requesterRole === 'GLOBAL_ADMIN') {
+      users = await getAdapter().query(
+        `SELECT 
+          u.id, u.email, u.full_name, u.role, u.is_active, u.created_at, u.updated_at,
+          COUNT(DISTINCT sm.site_id) as site_count,
+          COUNT(DISTINCT l.id) as label_count
+        FROM users u
+        LEFT JOIN site_memberships sm ON sm.user_id = u.id
+        LEFT JOIN labels l ON l.site_id = sm.site_id AND l.created_by = u.id
+        GROUP BY u.id
+        ORDER BY u.created_at DESC`
+      );
+    } else {
+      const siteRows = await getAdapter().query(
+        `SELECT site_id FROM site_memberships WHERE user_id = ?`,
+        [req.user!.userId]
+      );
+      const siteIds = siteRows.map((row: any) => row.site_id);
+      if (siteIds.length === 0) {
+        return res.json({
+          success: true,
+          data: { users: [] },
+        });
+      }
+
+      const placeholders = siteIds.map(() => '?').join(', ');
+      users = await getAdapter().query(
+        `SELECT 
+          u.id, u.email, u.full_name, u.role, u.is_active, u.created_at, u.updated_at,
+          COUNT(DISTINCT sm.site_id) as site_count,
+          COUNT(DISTINCT l.id) as label_count
+        FROM users u
+        JOIN site_memberships sm ON sm.user_id = u.id AND sm.site_id IN (${placeholders})
+        LEFT JOIN labels l ON l.site_id = sm.site_id AND l.created_by = u.id
+        GROUP BY u.id
+        ORDER BY u.created_at DESC`,
+        siteIds
+      );
     }
 
-    // Apply filters
-    let filteredUsers = allUsers;
-
+    // Apply filters in-memory
+    let filteredUsers = users;
     if (search) {
       const searchLower = (search as string).toLowerCase();
-      filteredUsers = filteredUsers.filter(u => 
+      filteredUsers = filteredUsers.filter(u =>
         u.full_name?.toLowerCase().includes(searchLower) ||
         u.email?.toLowerCase().includes(searchLower)
       );
@@ -325,13 +533,6 @@ router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
     if (role && role !== 'all') {
       filteredUsers = filteredUsers.filter(u => u.role === role);
     }
-
-    // Sort by created_at descending
-    filteredUsers.sort((a, b) => 
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
-
-    console.log(`✓ Found ${filteredUsers.length} users`);
 
     res.json({
       success: true,
@@ -365,7 +566,7 @@ router.put('/users/:id/role', authenticateToken, requireAdmin, async (req, res) 
       });
     }
 
-    if (!role || !['admin', 'moderator', 'user'].includes(role)) {
+    if (!role || !['GLOBAL_ADMIN', 'ADMIN', 'USER'].includes(role)) {
       return res.status(400).json({
         success: false,
         error: 'Invalid role',
@@ -381,8 +582,34 @@ router.put('/users/:id/role', authenticateToken, requireAdmin, async (req, res) 
       });
     }
 
+    const requesterRole = req.user!.role as string;
+    if (role === 'GLOBAL_ADMIN' && requesterRole !== 'GLOBAL_ADMIN') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only Global Admin can assign Global Admin role',
+      });
+    }
+
+    if (requesterRole !== 'GLOBAL_ADMIN') {
+      const accessRows = await getAdapter().query(
+        `SELECT 1
+         FROM site_memberships sm1
+         JOIN site_memberships sm2 ON sm1.site_id = sm2.site_id
+         WHERE sm1.user_id = ? AND sm2.user_id = ?
+         LIMIT 1`,
+        [req.user!.userId, userId]
+      );
+
+      if (accessRows.length === 0) {
+        return res.status(403).json({
+          success: false,
+          error: 'You can only manage users within your sites',
+        });
+      }
+    }
+
     // Update user role
-    const validRole = role as 'admin' | 'moderator' | 'user';
+    const validRole = role as 'GLOBAL_ADMIN' | 'ADMIN' | 'USER';
     const result = await getAdapter().execute(
       'UPDATE users SET role = ?, updated_at = ? WHERE id = ?',
       [validRole, new Date().toISOString(), userId]
@@ -409,6 +636,143 @@ router.put('/users/:id/role', authenticateToken, requireAdmin, async (req, res) 
 });
 
 /**
+ * GET /api/admin/users/:id/sites - List user site memberships
+ */
+router.get('/users/:id/sites', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(String(req.params.id));
+    if (isNaN(userId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid user ID',
+      });
+    }
+
+    const requesterRole = req.user!.role as string;
+    let params: any[] = [userId];
+    let siteFilter = '';
+
+    if (requesterRole !== 'GLOBAL_ADMIN') {
+      const siteRows = await getAdapter().query(
+        `SELECT site_id FROM site_memberships WHERE user_id = ?`,
+        [req.user!.userId]
+      );
+      const siteIds = siteRows.map((row: any) => row.site_id);
+      if (siteIds.length === 0) {
+        return res.json({
+          success: true,
+          data: { sites: [] },
+        });
+      }
+
+      const placeholders = siteIds.map(() => '?').join(', ');
+      siteFilter = `AND sm.site_id IN (${placeholders})`;
+      params = [userId, ...siteIds];
+    }
+
+    const memberships = await getAdapter().query(
+      `SELECT sm.site_id, sm.site_role, s.name as site_name, s.code as site_code
+       FROM site_memberships sm
+       JOIN sites s ON s.id = sm.site_id
+       WHERE sm.user_id = ?
+       ${siteFilter}
+       ORDER BY s.name ASC`,
+      params
+    );
+
+    res.json({
+      success: true,
+      data: { sites: memberships },
+    });
+  } catch (error) {
+    console.error('Error fetching user sites:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch user sites',
+    });
+  }
+});
+
+/**
+ * PUT /api/admin/users/:id/sites - Replace user site memberships
+ */
+router.put('/users/:id/sites', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(String(req.params.id));
+    if (isNaN(userId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid user ID',
+      });
+    }
+
+    const validation = updateUserSitesSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid input data',
+        details: validation.error.errors,
+      });
+    }
+
+    const { sites } = validation.data;
+    const siteIds = sites.map(site => site.site_id);
+
+    const requesterRole = req.user!.role as string;
+    if (requesterRole !== 'GLOBAL_ADMIN') {
+      const siteRows = await getAdapter().query(
+        `SELECT site_id FROM site_memberships WHERE user_id = ?`,
+        [req.user!.userId]
+      );
+      const allowedSiteIds = siteRows.map((row: any) => row.site_id);
+
+      const disallowed = siteIds.filter(id => !allowedSiteIds.includes(id));
+      if (disallowed.length > 0) {
+        return res.status(403).json({
+          success: false,
+          error: 'You can only assign users to sites you have access to',
+        });
+      }
+    }
+
+    await getAdapter().beginTransaction();
+    try {
+      if (siteIds.length > 0) {
+        const placeholders = siteIds.map(() => '?').join(', ');
+        await getAdapter().execute(
+          `DELETE FROM site_memberships WHERE user_id = ? AND site_id IN (${placeholders})`,
+          [userId, ...siteIds]
+        );
+      }
+
+      for (const site of sites) {
+        await getAdapter().execute(
+          `INSERT INTO site_memberships (site_id, user_id, site_role)
+           VALUES (?, ?, ?)`,
+          [site.site_id, userId, site.site_role]
+        );
+      }
+
+      await getAdapter().commit();
+    } catch (error) {
+      await getAdapter().rollback();
+      throw error;
+    }
+
+    res.json({
+      success: true,
+      message: 'User site memberships updated successfully',
+    });
+  } catch (error) {
+    console.error('Error updating user sites:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update user sites',
+    });
+  }
+});
+
+/**
  * DELETE /api/admin/users/:id - Delete user (admin only)
  */
 router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) => {
@@ -429,6 +793,25 @@ router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) =>
         success: false,
         error: 'User not found',
       });
+    }
+
+    const requesterRole = req.user!.role as string;
+    if (requesterRole !== 'GLOBAL_ADMIN') {
+      const accessRows = await getAdapter().query(
+        `SELECT 1
+         FROM site_memberships sm1
+         JOIN site_memberships sm2 ON sm1.site_id = sm2.site_id
+         WHERE sm1.user_id = ? AND sm2.user_id = ?
+         LIMIT 1`,
+        [req.user!.userId, userId]
+      );
+
+      if (accessRows.length === 0) {
+        return res.status(403).json({
+          success: false,
+          error: 'You can only manage users within your sites',
+        });
+      }
     }
 
     // Prevent self-deletion
@@ -610,7 +993,7 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
 /**
  * GET /api/admin/stats - Get admin statistics (admin only)
  */
-router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/stats', authenticateToken, requireAdmin, resolveSiteAccess(req => Number(req.query.site_id)), async (req, res) => {
   try {
     const now = new Date();
     const thirtyDaysAgo = new Date(now);
@@ -620,31 +1003,38 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
     const thirtyDaysAgoIso = thirtyDaysAgo.toISOString();
     const todayStartIso = todayStart.toISOString();
 
-    // User statistics
+    const siteId = req.site!.id;
+
+    // User statistics (site-scoped)
     const userStatsRows = await getAdapter().query(
       `SELECT 
-        COUNT(*) as total,
-        COUNT(CASE WHEN created_at >= ? THEN 1 END) as new_this_month,
-        COUNT(CASE WHEN id IN (
-          SELECT DISTINCT user_id FROM labels WHERE created_at >= ?
-        ) THEN 1 END) as active_this_month
-      FROM users`,
-      [thirtyDaysAgoIso, thirtyDaysAgoIso]
+        COUNT(DISTINCT u.id) as total,
+        COUNT(DISTINCT CASE WHEN u.created_at >= ? THEN u.id END) as new_this_month,
+        COUNT(DISTINCT CASE WHEN u.id IN (
+          SELECT DISTINCT created_by FROM labels WHERE site_id = ? AND created_at >= ?
+        ) THEN u.id END) as active_this_month
+      FROM users u
+      JOIN site_memberships sm ON sm.user_id = u.id
+      WHERE sm.site_id = ?`,
+      [thirtyDaysAgoIso, siteId, thirtyDaysAgoIso, siteId]
     );
     const userStats = userStatsRows[0] as any;
 
     const roleStats = await getAdapter().query(
       `SELECT 
-        role,
-        COUNT(*) as count
-      FROM users
-      GROUP BY role`
+        u.role,
+        COUNT(DISTINCT u.id) as count
+      FROM users u
+      JOIN site_memberships sm ON sm.user_id = u.id
+      WHERE sm.site_id = ?
+      GROUP BY u.role`,
+      [siteId]
     ) as any[];
 
     const usersByRole = {
-      admin: 0,
-      moderator: 0,
-      user: 0,
+      GLOBAL_ADMIN: 0,
+      ADMIN: 0,
+      USER: 0,
     };
 
     roleStats.forEach(stat => {
@@ -657,8 +1047,9 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
         COUNT(*) as total,
         COUNT(CASE WHEN created_at >= ? THEN 1 END) as created_this_month,
         COUNT(CASE WHEN created_at >= ? THEN 1 END) as created_today
-      FROM labels`,
-      [thirtyDaysAgoIso, todayStartIso]
+      FROM labels
+      WHERE site_id = ?`,
+      [thirtyDaysAgoIso, todayStartIso, siteId]
     );
     const labelStats = labelStatsRows[0] as any;
 
@@ -667,10 +1058,12 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
         u.full_name,
         COUNT(l.id) as count
       FROM users u
-      JOIN labels l ON u.id = l.user_id
+      JOIN labels l ON u.id = l.created_by
+      WHERE l.site_id = ?
       GROUP BY u.id, u.full_name
       ORDER BY count DESC
-      LIMIT 1`
+      LIMIT 1`,
+      [siteId]
     );
     const mostActiveUser = mostActiveUserRows[0] as any;
 
@@ -679,40 +1072,40 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
       `SELECT 
         COUNT(*) as total,
         COUNT(CASE WHEN created_at >= ? THEN 1 END) as created_this_month,
-        CAST(AVG(label_count) AS REAL) as average_labels_per_site
-      FROM (
-        SELECT 
-          s.id,
-          s.created_at,
-          COUNT(l.id) as label_count
-        FROM sites s
-        LEFT JOIN labels l ON s.id = l.site_id
-        GROUP BY s.id, s.created_at
-      ) site_counts`,
-      [thirtyDaysAgoIso]
+        CAST(COUNT(l.id) AS REAL) as average_labels_per_site
+      FROM sites s
+      LEFT JOIN labels l ON s.id = l.site_id
+      WHERE s.id = ?
+      GROUP BY s.id`,
+      [thirtyDaysAgoIso, siteId]
     );
     const siteStats = siteStatsRows[0] as any;
 
     // Recent activity
     const recentRegistrations = await getAdapter().query(
-      `SELECT id, full_name, email, role, created_at
-       FROM users
-       ORDER BY created_at DESC
-       LIMIT 5`
+      `SELECT u.id, u.full_name, u.email, u.role, u.created_at
+       FROM users u
+       JOIN site_memberships sm ON sm.user_id = u.id
+       WHERE sm.site_id = ?
+       ORDER BY u.created_at DESC
+       LIMIT 5`,
+      [siteId]
     );
 
     const recentLabels = await getAdapter().query(
       `SELECT 
         l.id,
-        l.reference_number,
+        l.ref_string as reference_number,
         l.created_at,
         u.full_name as user_name,
         s.name as site_name
       FROM labels l
-      JOIN users u ON l.user_id = u.id
+      JOIN users u ON l.created_by = u.id
       JOIN sites s ON l.site_id = s.id
+      WHERE l.site_id = ?
       ORDER BY l.created_at DESC
-      LIMIT 5`
+      LIMIT 5`,
+      [siteId]
     );
 
     const stats = {

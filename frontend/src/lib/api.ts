@@ -230,14 +230,14 @@ class ApiClient {
     return this.request<{ site: any }>(`/sites/${id}`);
   }
 
-  async createSite(data: { name: string; location?: string; description?: string }) {
+  async createSite(data: { name: string; code?: string; location?: string; description?: string }) {
     return this.request<{ site: any }>('/sites', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
-  async updateSite(id: number, data: { name?: string; location?: string; description?: string }) {
+  async updateSite(id: number, data: { name?: string; code?: string; location?: string; description?: string }) {
     return this.request<{ site: any }>(`/sites/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -249,17 +249,16 @@ class ApiClient {
   }
 
   // Label endpoints
-  async getLabels(params?: {
+  async getLabels(params: {
+    site_id: number;
     search?: string;
-    site_id?: number;
     source?: string;
     destination?: string;
     reference_number?: string;
     limit?: number;
     offset?: number;
-    sort_by?: 'created_at' | 'reference_number' | 'source' | 'destination';
+    sort_by?: 'created_at' | 'ref_string';
     sort_order?: 'ASC' | 'DESC';
-    include_site_info?: boolean;
   }) {
     const searchParams = new URLSearchParams();
     if (params?.search) searchParams.append('search', params.search);
@@ -271,14 +270,13 @@ class ApiClient {
     if (params?.offset) searchParams.append('offset', params.offset.toString());
     if (params?.sort_by) searchParams.append('sort_by', params.sort_by);
     if (params?.sort_order) searchParams.append('sort_order', params.sort_order);
-    if (params?.include_site_info) searchParams.append('include_site_info', params.include_site_info.toString());
     
     const query = searchParams.toString();
     return this.request<{ labels: any[]; pagination: any }>(`/labels${query ? `?${query}` : ''}`);
   }
 
-  async getLabel(id: number) {
-    return this.request<{ label: any }>(`/labels/${id}`);
+  async getLabel(id: number, siteId: number) {
+    return this.request<{ label: any }>(`/labels/${id}?site_id=${siteId}`);
   }
 
   async createLabel(data: { source: string; destination: string; site_id: number; notes?: string; zpl_content?: string }) {
@@ -288,30 +286,31 @@ class ApiClient {
     });
   }
 
-  async updateLabel(id: number, data: { source?: string; destination?: string; notes?: string; zpl_content?: string }) {
+  async updateLabel(id: number, data: { site_id: number; source?: string; destination?: string; notes?: string; zpl_content?: string }) {
     return this.request<{ label: any }>(`/labels/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   }
 
-  async deleteLabel(id: number) {
-    return this.request(`/labels/${id}`, { method: 'DELETE' });
+  async deleteLabel(id: number, siteId: number) {
+    return this.request(`/labels/${id}?site_id=${siteId}`, { method: 'DELETE' });
   }
 
-  async bulkDeleteLabels(ids: number[]) {
+  async bulkDeleteLabels(siteId: number, ids: number[]) {
     return this.request<{ deleted_count: number }>('/labels/bulk-delete', {
       method: 'POST',
-      body: JSON.stringify({ ids }),
+      body: JSON.stringify({ site_id: siteId, ids }),
     });
   }
 
-  async getLabelStats() {
-    return this.request<{ stats: any }>('/labels/stats');
+  async getLabelStats(siteId: number) {
+    return this.request<{ stats: any }>(`/labels/stats?site_id=${siteId}`);
   }
 
-  async getRecentLabels(limit?: number) {
+  async getRecentLabels(siteId: number, limit?: number) {
     const searchParams = new URLSearchParams();
+    searchParams.append('site_id', siteId.toString());
     if (limit) searchParams.append('limit', limit.toString());
     
     const query = searchParams.toString();
@@ -339,10 +338,21 @@ class ApiClient {
     return this.request(`/admin/users/${userId}`, { method: 'DELETE' });
   }
 
-  async inviteUser(email: string, role: string) {
+  async inviteUser(email: string, sites: Array<{ site_id: number; site_role: 'ADMIN' | 'USER' }>, full_name: string) {
     return this.request('/admin/invite', {
       method: 'POST',
-      body: JSON.stringify({ email, role }),
+      body: JSON.stringify({ email, full_name, sites }),
+    });
+  }
+
+  async getUserSites(userId: number) {
+    return this.request<{ sites: any[] }>(`/admin/users/${userId}/sites`);
+  }
+
+  async updateUserSites(userId: number, sites: Array<{ site_id: number; site_role: 'ADMIN' | 'USER' }>) {
+    return this.request(`/admin/users/${userId}/sites`, {
+      method: 'PUT',
+      body: JSON.stringify({ sites }),
     });
   }
 
@@ -354,8 +364,19 @@ class ApiClient {
     return this.request(`/admin/invitations/${invitationId}`, { method: 'DELETE' });
   }
 
-  async getAdminStats() {
-    return this.request<any>('/admin/stats');
+  async getAdminStats(siteId: number) {
+    return this.request<any>(`/admin/stats?site_id=${siteId}`);
+  }
+
+  async validateInvite(token: string) {
+    return this.request<any>(`/admin/validate-invite/${token}`);
+  }
+
+  async acceptInvite(data: { token: string; full_name: string; password: string }) {
+    return this.request<any>('/admin/accept-invite', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   async getAppSettings() {

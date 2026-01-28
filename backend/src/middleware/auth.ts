@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken, JWTPayload } from '../utils/jwt.js';
-import { User } from '../types/index.js';
+import { Site, SiteRole } from '../types/index.js';
 
 // Extend Express Request type to include user
 declare global {
@@ -8,6 +8,8 @@ declare global {
     interface Request {
       user?: JWTPayload;
       userId?: number;
+      site?: Site;
+      siteRole?: SiteRole;
     }
   }
 }
@@ -41,6 +43,8 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
     return;
   }
 };
+
+export const requireAuth = authenticateToken;
 
 /**
  * Optional authentication middleware - doesn't fail if no token

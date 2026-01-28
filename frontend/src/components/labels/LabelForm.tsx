@@ -89,8 +89,8 @@ const LabelForm: React.FC<LabelFormProps> = ({
     if (watchedValues.site_id && watchedValues.source && watchedValues.destination) {
       const selectedSite = sites.find(s => s.id === watchedValues.site_id);
       if (selectedSite) {
-        // For preview, we'll show a placeholder reference number
-        setPreviewRef(`${selectedSite.name}-XXX`);
+        // For preview, we'll show a placeholder reference number with 4 digits
+        setPreviewRef(`${selectedSite.code}-XXXX`);
       }
     } else {
       setPreviewRef('');
@@ -117,13 +117,19 @@ const LabelForm: React.FC<LabelFormProps> = ({
       return '';
     }
     
+    // Extract just the reference number (e.g., XXXX from SITE-XXXX)
+    const referenceNumber = previewRef.split('-')[1] || 'XXXX';
+    
     return `^XA
 ^MUm^LH8,19^FS
 ^MUm^FO0,2
 ^A0N,7,5
 ^FB280,1,1,C
-^FD${previewRef} ${watchedValues.source} > ${watchedValues.destination}
-^FS
+^FD#${referenceNumber}^FS
+^FO0,14
+^A0N,7,5
+^FB280,1,1,C
+^FD${watchedValues.source} > ${watchedValues.destination}^FS
 ^XZ`;
   };
 
@@ -166,7 +172,7 @@ const LabelForm: React.FC<LabelFormProps> = ({
             id="site_id"
             {...register('site_id', { valueAsNumber: true })}
             disabled={isLoading}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>option]:py-2"
           >
             <option value={0}>Select a site...</option>
             {sites.map((site) => (

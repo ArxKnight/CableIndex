@@ -59,22 +59,15 @@ async function seedDatabase(): Promise<void> {
       
       // Insert default admin user (password will be hashed by the User model)
       const insertUser = await adapter.execute(
-        `INSERT INTO users (email, password_hash, full_name, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?)`,
-        ['admin@example.com', 'temp_hash', 'System Administrator', nowIso, nowIso]
+        `INSERT INTO users (email, password_hash, full_name, role, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        ['admin@example.com', 'temp_hash', 'System Administrator', 'GLOBAL_ADMIN', nowIso, nowIso]
       );
       
       // Note: This is a placeholder - actual password hashing should be done by the User model
       const userId = insertUser.insertId;
       
-      // Assign admin role
-      if (userId) {
-        await adapter.execute(
-          `INSERT INTO user_roles (user_id, role, created_at)
-           VALUES (?, 'admin', ?)`,
-          [userId, nowIso]
-        );
-      }
+      // GLOBAL_ADMIN role assigned in users table
       
       console.log('✅ Default admin user created');
     }

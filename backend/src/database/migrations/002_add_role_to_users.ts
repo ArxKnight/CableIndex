@@ -3,62 +3,66 @@ import connection from '../connection.js';
 
 export const Migration002_AddRoleToUsers: Migration = {
   id: '002',
-  name: 'Add role field to users table',
+  name: 'Add role field to users table (global roles)',
   
   up: async (adapter) => {
     const config = connection.getConfig();
     const isMySQL = config?.type === 'mysql';
 
-    // Add role column to users table
-    await adapter.execute(isMySQL 
-      ? `ALTER TABLE users ADD COLUMN role VARCHAR(50) NOT NULL DEFAULT 'user'`
-      : `ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'moderator', 'user'))`
-    );
+    // Add role column to users table (if not already present)
+    try {
+      await adapter.execute(isMySQL
+        ? `ALTER TABLE users ADD COLUMN role VARCHAR(50) NOT NULL DEFAULT 'USER'`
+        : `ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'USER' CHECK (role IN ('GLOBAL_ADMIN', 'ADMIN', 'USER'))`
+      );
+    } catch (error) {
+      // Column may already exist
+    }
 
     // For MySQL, add the CHECK constraint separately (if supported in your MySQL version)
     if (isMySQL) {
       try {
-        await adapter.execute(`ALTER TABLE users ADD CONSTRAINT chk_user_role CHECK (role IN ('admin', 'moderator', 'user'))`);
+        await adapter.execute(`ALTER TABLE users ADD CONSTRAINT chk_user_role CHECK (role IN ('GLOBAL_ADMIN', 'ADMIN', 'USER'))`);
       } catch (error) {
-        // Older MySQL versions don't support CHECK constraints, that's okay
-        console.log('⚠️  CHECK constraint not supported, skipping');
+        // Older MySQL versions don't support CHECK constraints
       }
     }
 
-    // Migrate existing role data from user_roles table to users table
-    await adapter.execute(`
-      UPDATE users 
-      SET role = (
-        SELECT role 
-        FROM user_roles 
-        WHERE user_roles.user_id = users.id 
-        LIMIT 1
-      )
-      WHERE EXISTS (
-        SELECT 1 
-        FROM user_roles 
-        WHERE user_roles.user_id = users.id
-      )
-    `);
+    // Migrate existing role data from user_roles table to users table (if it exists)
+    try {
+      await adapter.execute(`
+        UPDATE users 
+        SET role = (
+          SELECT role 
+          FROM user_roles 
+          WHERE user_roles.user_id = users.id 
+          LIMIT 1
+        )
+        WHERE EXISTS (
+          SELECT 1 
+          FROM user_roles 
+          WHERE user_roles.user_id = users.id
+        )
+      `);
+    } catch (error) {
+      // user_roles table may not exist
+    }
 
-    // Create index on role for faster lookups
-    await adapter.execute('CREATE INDEX idx_users_role ON users(role)');
+    // Normalize legacy roles to new global roles
+    await adapter.execute(
+      `UPDATE users
+       SET role = CASE
+         WHEN role IN ('admin', 'ADMIN') THEN 'GLOBAL_ADMIN'
+         WHEN role IN ('moderator', 'MODERATOR') THEN 'ADMIN'
+         WHEN role IN ('user', 'USER') THEN 'USER'
+         ELSE role
+       END`
+    );
 
     console.log('✅ Added role field to users table');
   },
 
-  down: async (adapter) => {
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-
-    // MySQL can drop columns directly
-    if (isMySQL) {
-      await adapter.execute('ALTER TABLE users DROP COLUMN role');
-    } else {
-      // SQLite requires table recreation (complex, skip for now)
-      console.log('⚠️  SQLite rollback not fully implemented for this migration');
-    }
-
-    console.log('✅ Removed role field from users table');
+  down: async () => {
+    console.log('⚠️  Role migration rollback not supported');
   }
 };

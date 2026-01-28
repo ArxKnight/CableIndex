@@ -18,9 +18,9 @@ interface AdminStatsData {
     active_this_month: number;
     new_this_month: number;
     by_role: {
-      admin: number;
-      moderator: number;
-      user: number;
+      GLOBAL_ADMIN: number;
+      ADMIN: number;
+      USER: number;
     };
   };
   labels: {
@@ -56,11 +56,28 @@ interface AdminStatsData {
 }
 
 const AdminStats: React.FC = () => {
-  const { data: statsData, isLoading, error } = useQuery({
-    queryKey: ['admin', 'stats'],
+  const { data: sitesData } = useQuery({
+    queryKey: ['admin', 'stats', 'sites'],
     queryFn: async () => {
-      const response = await apiClient.get<AdminStatsData>('/admin/stats');
+      const response = await apiClient.getSites({ limit: 1000 });
       return response.data;
+    },
+  });
+
+  const [selectedSiteId, setSelectedSiteId] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    if (!selectedSiteId && sitesData?.sites?.length) {
+      setSelectedSiteId(sitesData.sites[0].id);
+    }
+  }, [selectedSiteId, sitesData]);
+
+  const { data: statsData, isLoading, error } = useQuery({
+    queryKey: ['admin', 'stats', selectedSiteId],
+    enabled: Boolean(selectedSiteId),
+    queryFn: async () => {
+      const response = await apiClient.getAdminStats(selectedSiteId as number);
+      return response.data as AdminStatsData;
     },
   });
 
@@ -87,6 +104,14 @@ const AdminStats: React.FC = () => {
     );
   }
 
+  if (!selectedSiteId || !sitesData?.sites?.length) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-gray-600">No sites available. Create a site first to view statistics.</p>
+      </div>
+    );
+  }
+
   if (!statsData) {
     return (
       <div className="text-center py-8">
@@ -97,6 +122,21 @@ const AdminStats: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <label className="text-sm font-medium">Site</label>
+        <select
+          className="border rounded-md px-3 py-2 text-sm"
+          value={selectedSiteId ?? ''}
+          onChange={(event) => setSelectedSiteId(Number(event.target.value))}
+        >
+          {sitesData?.sites?.map((site: any) => (
+            <option key={site.id} value={site.id}>
+              {site.name} ({site.code})
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card>
@@ -164,19 +204,19 @@ const AdminStats: React.FC = () => {
           <div className="grid grid-cols-3 gap-4">
             <div className="text-center">
               <div className="text-2xl font-bold text-red-600">
-                {statsData.users.by_role.admin}
+                {statsData.users.by_role.GLOBAL_ADMIN}
+              </div>
+              <p className="text-sm text-muted-foreground">Global Admins</p>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-yellow-600">
+                {statsData.users.by_role.ADMIN}
               </div>
               <p className="text-sm text-muted-foreground">Admins</p>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-yellow-600">
-                {statsData.users.by_role.moderator}
-              </div>
-              <p className="text-sm text-muted-foreground">Moderators</p>
-            </div>
-            <div className="text-center">
               <div className="text-2xl font-bold text-blue-600">
-                {statsData.users.by_role.user}
+                {statsData.users.by_role.USER}
               </div>
               <p className="text-sm text-muted-foreground">Users</p>
             </div>

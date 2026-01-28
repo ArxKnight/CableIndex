@@ -8,6 +8,7 @@ import ProtectedRoute from './components/auth/ProtectedRoute'
 import ErrorBoundary from './components/ErrorBoundary'
 import Layout from './components/layout/Layout'
 import AuthPage from './pages/AuthPage'
+import InviteSignupPage from './pages/InviteSignupPage'
 import DashboardPage from './pages/DashboardPage'
 import SitesPage from './pages/SitesPage'
 import LabelsPage from './pages/LabelsPage'
@@ -102,7 +103,7 @@ function App() {
                 
                 {/* Auth routes */}
                 <Route path="/auth/login" element={<AuthPage />} />
-                <Route path="/auth/register" element={<AuthPage />} />
+                <Route path="/auth/register" element={<InviteSignupPage />} />
                 
                 {/* Error pages */}
                 <Route path="/error" element={<ErrorPage />} />
@@ -172,7 +173,7 @@ function App() {
                 <Route 
                   path="/admin" 
                   element={
-                    <ProtectedRoute requiredRole="admin">
+                    <ProtectedRoute requiredRole="ADMIN">
                       <Layout>
                         <AdminPage />
                       </Layout>

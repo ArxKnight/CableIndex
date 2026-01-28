@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import SiteModel from '../models/Site.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { requireGlobalRole, requireSiteRole, resolveSiteAccess } from '../middleware/permissions.js';
 import { ApiResponse } from '../types/index.js';
 
 const router = Router();
@@ -10,22 +11,24 @@ const siteModel = new SiteModel();
 // Validation schemas
 const createSiteSchema = z.object({
   name: z.string().min(1, 'Site name is required').max(100, 'Site name must be less than 100 characters'),
+  code: z.string().min(2).max(20).optional(),
   location: z.string().max(200, 'Location must be less than 200 characters').optional(),
   description: z.string().max(500, 'Description must be less than 500 characters').optional(),
 });
 
 const updateSiteSchema = z.object({
   name: z.string().min(1, 'Site name is required').max(100, 'Site name must be less than 100 characters').optional(),
+  code: z.string().min(2).max(20).optional(),
   location: z.string().max(200, 'Location must be less than 200 characters').optional(),
   description: z.string().max(500, 'Description must be less than 500 characters').optional(),
 });
 
 const getSitesQuerySchema = z.object({
   search: z.string().optional(),
-  limit: z.coerce.number().min(1).max(100).default(50),
-  offset: z.coerce.number().min(0).default(0),
-  include_counts: z.enum(['true', 'false']).default('false'),
-});
+  limit: z.coerce.number().min(1).max(1000).default(50).optional(),
+  offset: z.coerce.number().min(0).default(0).optional(),
+  include_counts: z.enum(['true', 'false']).default('false').optional(),
+}).passthrough();
 
 const siteIdSchema = z.object({
   id: z.coerce.number().min(1, 'Invalid site ID'),
@@ -44,27 +47,54 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
       } as ApiResponse);
     }
 
-    // Validate query parameters
-    const { search, limit, offset, include_counts } = getSitesQuerySchema.parse(req.query);
+    // Validate query parameters - safeParse to avoid throwing on validation error
+    const queryValidation = getSitesQuerySchema.safeParse(req.query);
+    if (!queryValidation.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid query parameters',
+        details: queryValidation.error.errors,
+      } as ApiResponse);
+    }
+
+    const { search, limit = 50, offset = 0, include_counts = 'false' } = queryValidation.data;
 
     let sites;
     let total;
 
-    if (include_counts === 'true') {
-      sites = await siteModel.findByUserIdWithLabelCounts(req.user.userId, {
-        ...(search ? { search } : {}),
-        limit,
-        offset,
-      });
-    } else {
-      sites = await siteModel.findByUserId(req.user.userId, {
-        ...(search ? { search } : {}),
-        limit,
-        offset,
-      });
-    }
+    if (req.user.role === 'GLOBAL_ADMIN') {
+      if (include_counts === 'true') {
+        sites = await siteModel.findAllWithLabelCounts({
+          ...(search ? { search } : {}),
+          limit,
+          offset,
+        });
+      } else {
+        sites = await siteModel.findAll({
+          ...(search ? { search } : {}),
+          limit,
+          offset,
+        });
+      }
 
-    total = await siteModel.countByUserId(req.user.userId, search ?? undefined);
+      total = await siteModel.countAll(search ?? undefined);
+    } else {
+      if (include_counts === 'true') {
+        sites = await siteModel.findByUserIdWithLabelCounts(req.user.userId, {
+          ...(search ? { search } : {}),
+          limit,
+          offset,
+        });
+      } else {
+        sites = await siteModel.findByUserId(req.user.userId, {
+          ...(search ? { search } : {}),
+          limit,
+          offset,
+        });
+      }
+
+      total = await siteModel.countByUserId(req.user.userId, search ?? undefined);
+    }
 
     res.json({
       success: true,
@@ -100,20 +130,13 @@ router.get('/', authenticateToken, async (req: Request, res: Response) => {
  * GET /api/sites/:id
  * Get a specific site by ID
  */
-router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
+router.get('/:id', authenticateToken, resolveSiteAccess(req => Number(req.params.id)), async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      } as ApiResponse);
-    }
-
     // Validate site ID
     const { id } = siteIdSchema.parse(req.params);
 
     // Get site with label count
-    const site = await siteModel.findByIdWithLabelCount(id, req.user.userId);
+    const site = await siteModel.findByIdWithLabelCount(id, req.user!.userId);
 
     if (!site) {
       return res.status(404).json({
@@ -148,19 +171,16 @@ router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
  * POST /api/sites
  * Create a new site
  */
-router.post('/', authenticateToken, async (req: Request, res: Response) => {
+router.post('/', authenticateToken, requireGlobalRole('GLOBAL_ADMIN', 'ADMIN'), async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      } as ApiResponse);
-    }
-
     // Validate request body
     const siteDataParsed = createSiteSchema.parse(req.body);
+    const code = siteDataParsed.code
+      ? siteDataParsed.code.toUpperCase()
+      : siteDataParsed.name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 10) || 'SITE';
     const siteData = {
       name: siteDataParsed.name,
+      code,
       ...(siteDataParsed.location ? { location: siteDataParsed.location } : {}),
       ...(siteDataParsed.description ? { description: siteDataParsed.description } : {}),
     };
@@ -168,7 +188,7 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
     // Create site
     const site = await siteModel.create({
       ...siteData,
-      user_id: req.user.userId,
+      created_by: req.user!.userId,
     });
 
     res.status(201).json({
@@ -198,34 +218,20 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
  * PUT /api/sites/:id
  * Update an existing site
  */
-router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
+router.put('/:id', authenticateToken, resolveSiteAccess(req => Number(req.params.id)), requireSiteRole('ADMIN'), async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      } as ApiResponse);
-    }
-
     // Validate site ID and request body
     const { id } = siteIdSchema.parse(req.params);
     const siteDataParsed = updateSiteSchema.parse(req.body);
     const siteData = {
       ...(siteDataParsed.name !== undefined ? { name: siteDataParsed.name } : {}),
+      ...(siteDataParsed.code !== undefined ? { code: siteDataParsed.code.toUpperCase() } : {}),
       ...(siteDataParsed.location !== undefined ? { location: siteDataParsed.location } : {}),
       ...(siteDataParsed.description !== undefined ? { description: siteDataParsed.description } : {}),
     };
 
-    // Check if site exists and belongs to user
-    if (!await siteModel.existsForUser(id, req.user.userId)) {
-      return res.status(404).json({
-        success: false,
-        error: 'Site not found',
-      } as ApiResponse);
-    }
-
     // Update site
-    const site = await siteModel.update(id, req.user.userId, siteData);
+    const site = await siteModel.update(id, req.user!.userId, siteData);
 
     if (!site) {
       return res.status(404).json({
@@ -261,28 +267,13 @@ router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
  * DELETE /api/sites/:id
  * Delete a site (soft delete)
  */
-router.delete('/:id', authenticateToken, async (req: Request, res: Response) => {
+router.delete('/:id', authenticateToken, resolveSiteAccess(req => Number(req.params.id)), requireSiteRole('ADMIN'), async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Authentication required',
-      } as ApiResponse);
-    }
-
     // Validate site ID
     const { id } = siteIdSchema.parse(req.params);
 
-    // Check if site exists and belongs to user
-    if (!await siteModel.existsForUser(id, req.user.userId)) {
-      return res.status(404).json({
-        success: false,
-        error: 'Site not found',
-      } as ApiResponse);
-    }
-
     // Attempt to delete site
-    const deleted = await siteModel.delete(id, req.user.userId);
+    const deleted = await siteModel.delete(id, req.user!.userId);
 
     if (!deleted) {
       return res.status(404).json({

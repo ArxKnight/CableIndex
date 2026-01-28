@@ -4,13 +4,15 @@ import { Site } from '../types/index.js';
 
 export interface CreateSiteData {
   name: string;
+  code: string;
+  created_by: number;
   location?: string;
   description?: string;
-  user_id: number;
 }
 
 export interface UpdateSiteData {
   name?: string;
+  code?: string;
   location?: string;
   description?: string;
 }
@@ -24,19 +26,32 @@ export class SiteModel {
    * Create a new site
    */
   async create(siteData: CreateSiteData): Promise<Site> {
-    const { name, location, description, user_id } = siteData;
-    
-    const result = await this.adapter.execute(
-      `INSERT INTO sites (name, location, description, user_id)
-       VALUES (?, ?, ?, ?)`,
-      [name, location || null, description || null, user_id]
-    );
-    
-    if (!result.insertId) {
-      throw new Error('Failed to create site');
+    const { name, code, location, description, created_by } = siteData;
+
+    await this.adapter.beginTransaction();
+    try {
+      const result = await this.adapter.execute(
+        `INSERT INTO sites (name, code, created_by, location, description)
+         VALUES (?, ?, ?, ?, ?)`
+        ,[name, code, created_by, location || null, description || null]
+      );
+
+      if (!result.insertId) {
+        throw new Error('Failed to create site');
+      }
+
+      await this.adapter.execute(
+        `INSERT INTO site_memberships (site_id, user_id, site_role)
+         VALUES (?, ?, 'ADMIN')`,
+        [result.insertId, created_by]
+      );
+
+      await this.adapter.commit();
+      return (await this.findById(Number(result.insertId)))!;
+    } catch (error) {
+      await this.adapter.rollback();
+      throw error;
     }
-    
-    return (await this.findById(Number(result.insertId)))!;
   }
 
   /**
@@ -44,7 +59,7 @@ export class SiteModel {
    */
   async findById(id: number): Promise<Site | null> {
     const rows = await this.adapter.query(
-      `SELECT id, name, location, description, user_id, is_active, created_at, updated_at
+      `SELECT id, name, code, created_by, location, description, is_active, created_at, updated_at
        FROM sites 
        WHERE id = ? AND is_active = 1`,
       [id]
@@ -70,17 +85,18 @@ export class SiteModel {
     const finalOffset = Math.max(0, safeOffset);
     
     let query = `
-      SELECT id, name, location, description, user_id, is_active, created_at, updated_at
-      FROM sites 
-      WHERE user_id = ? AND is_active = 1
+      SELECT s.id, s.name, s.code, s.created_by, s.location, s.description, s.is_active, s.created_at, s.updated_at
+      FROM sites s
+      JOIN site_memberships sm ON sm.site_id = s.id
+      WHERE sm.user_id = ? AND s.is_active = 1
     `;
-    
+
     const params: any[] = [userId];
     
     if (search) {
-      query += ` AND (name LIKE ? OR location LIKE ? OR description LIKE ?)`;
+      query += ` AND (s.name LIKE ? OR s.location LIKE ? OR s.description LIKE ? OR s.code LIKE ?)`;
       const searchPattern = `%${search}%`;
-      params.push(searchPattern, searchPattern, searchPattern);
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
     
     if (isMySQL) {
@@ -95,6 +111,91 @@ export class SiteModel {
   }
 
   /**
+   * Find all sites (global admin)
+   */
+  async findAll(options: {
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<Site[]> {
+    const { search, limit = 50, offset = 0 } = options;
+    const safeLimit = parseInt(String(limit), 10) || 50;
+    const safeOffset = parseInt(String(offset), 10) || 0;
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
+    const finalLimit = Math.max(0, safeLimit);
+    const finalOffset = Math.max(0, safeOffset);
+
+    let query = `
+      SELECT id, name, code, created_by, location, description, is_active, created_at, updated_at
+      FROM sites
+      WHERE is_active = 1
+    `;
+
+    const params: any[] = [];
+
+    if (search) {
+      query += ` AND (name LIKE ? OR location LIKE ? OR description LIKE ? OR code LIKE ?)`;
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
+    if (isMySQL) {
+      query += ` ORDER BY name ASC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
+    } else {
+      query += ` ORDER BY name ASC LIMIT ? OFFSET ?`;
+      params.push(finalLimit, finalOffset);
+    }
+
+    const rows = await this.adapter.query(query, params);
+    return rows as Site[];
+  }
+
+  /**
+   * Find all sites with label counts (global admin)
+   */
+  async findAllWithLabelCounts(options: {
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<(Site & { label_count: number })[]> {
+    const { search, limit = 50, offset = 0 } = options;
+    const safeLimit = parseInt(String(limit), 10) || 50;
+    const safeOffset = parseInt(String(offset), 10) || 0;
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
+    const finalLimit = Math.max(0, safeLimit);
+    const finalOffset = Math.max(0, safeOffset);
+
+    let query = `
+      SELECT 
+        s.id, s.name, s.code, s.created_by, s.location, s.description, s.is_active, s.created_at, s.updated_at,
+        COUNT(l.id) as label_count
+      FROM sites s
+      LEFT JOIN labels l ON s.id = l.site_id
+      WHERE s.is_active = 1
+    `;
+
+    const params: any[] = [];
+
+    if (search) {
+      query += ` AND (s.name LIKE ? OR s.location LIKE ? OR s.description LIKE ? OR s.code LIKE ?)`;
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
+    if (isMySQL) {
+      query += ` GROUP BY s.id ORDER BY s.name ASC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
+    } else {
+      query += ` GROUP BY s.id ORDER BY s.name ASC LIMIT ? OFFSET ?`;
+      params.push(finalLimit, finalOffset);
+    }
+
+    const rows = await this.adapter.query(query, params);
+    return rows as (Site & { label_count: number })[];
+  }
+
+  /**
    * Update site
    */
   async update(id: number, userId: number, siteData: UpdateSiteData): Promise<Site | null> {
@@ -104,6 +205,11 @@ export class SiteModel {
     if (siteData.name !== undefined) {
       updates.push('name = ?');
       values.push(siteData.name);
+    }
+
+    if (siteData.code !== undefined) {
+      updates.push('code = ?');
+      values.push(siteData.code);
     }
 
     if (siteData.location !== undefined) {
@@ -127,12 +233,12 @@ export class SiteModel {
       updates.push('updated_at = CURRENT_TIMESTAMP');
     }
     
-    values.push(id, userId);
+    values.push(id);
 
     const result = await this.adapter.execute(
       `UPDATE sites 
        SET ${updates.join(', ')}
-       WHERE id = ? AND user_id = ? AND is_active = 1`,
+       WHERE id = ? AND is_active = 1`,
       values
     );
     
@@ -152,7 +258,7 @@ export class SiteModel {
     const labelRows = await this.adapter.query(
       `SELECT COUNT(*) as count 
        FROM labels 
-       WHERE site_id = ? AND is_active = 1`,
+       WHERE site_id = ?`,
       [id]
     );
     
@@ -168,9 +274,9 @@ export class SiteModel {
     
     const result = await this.adapter.execute(
       isMySQL
-        ? `UPDATE sites SET is_active = 0 WHERE id = ? AND user_id = ? AND is_active = 1`
-        : `UPDATE sites SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND is_active = 1`,
-      [id, userId]
+        ? `UPDATE sites SET is_active = 0 WHERE id = ? AND is_active = 1`
+        : `UPDATE sites SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND is_active = 1`,
+      [id]
     );
     
     return result.affectedRows > 0;
@@ -181,8 +287,9 @@ export class SiteModel {
    */
   async existsForUser(id: number, userId: number): Promise<boolean> {
     const rows = await this.adapter.query(
-      `SELECT 1 FROM sites 
-       WHERE id = ? AND user_id = ? AND is_active = 1`,
+      `SELECT 1 FROM site_memberships sm
+       JOIN sites s ON s.id = sm.site_id
+       WHERE sm.site_id = ? AND sm.user_id = ? AND s.is_active = 1`,
       [id, userId]
     );
     
@@ -195,18 +302,41 @@ export class SiteModel {
   async countByUserId(userId: number, search?: string): Promise<number> {
     let query = `
       SELECT COUNT(*) as count 
-      FROM sites 
-      WHERE user_id = ? AND is_active = 1
+      FROM sites s
+      JOIN site_memberships sm ON sm.site_id = s.id
+      WHERE sm.user_id = ? AND s.is_active = 1
     `;
     
     const params: any[] = [userId];
     
     if (search) {
-      query += ` AND (name LIKE ? OR location LIKE ? OR description LIKE ?)`;
+      query += ` AND (s.name LIKE ? OR s.location LIKE ? OR s.description LIKE ? OR s.code LIKE ?)`;
       const searchPattern = `%${search}%`;
-      params.push(searchPattern, searchPattern, searchPattern);
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
     
+    const rows = await this.adapter.query(query, params);
+    return rows[0].count;
+  }
+
+  /**
+   * Count all sites (global admin)
+   */
+  async countAll(search?: string): Promise<number> {
+    let query = `
+      SELECT COUNT(*) as count
+      FROM sites
+      WHERE is_active = 1
+    `;
+
+    const params: any[] = [];
+
+    if (search) {
+      query += ` AND (name LIKE ? OR location LIKE ? OR description LIKE ? OR code LIKE ?)`;
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
     const rows = await this.adapter.query(query, params);
     return rows[0].count;
   }
@@ -217,13 +347,13 @@ export class SiteModel {
   async findByIdWithLabelCount(id: number, userId: number): Promise<(Site & { label_count: number }) | null> {
     const rows = await this.adapter.query(
       `SELECT 
-        s.id, s.name, s.location, s.description, s.user_id, s.is_active, s.created_at, s.updated_at,
+        s.id, s.name, s.code, s.created_by, s.location, s.description, s.is_active, s.created_at, s.updated_at,
         COUNT(l.id) as label_count
       FROM sites s
-      LEFT JOIN labels l ON s.id = l.site_id AND l.is_active = 1
-      WHERE s.id = ? AND s.user_id = ? AND s.is_active = 1
+      LEFT JOIN labels l ON s.id = l.site_id
+      WHERE s.id = ? AND s.is_active = 1
       GROUP BY s.id`,
-      [id, userId]
+      [id]
     );
     
     return rows.length > 0 ? (rows[0] as Site & { label_count: number }) : null;
@@ -249,19 +379,20 @@ export class SiteModel {
     
     let query = `
       SELECT 
-        s.id, s.name, s.location, s.description, s.user_id, s.is_active, s.created_at, s.updated_at,
+        s.id, s.name, s.code, s.created_by, s.location, s.description, s.is_active, s.created_at, s.updated_at,
         COUNT(l.id) as label_count
       FROM sites s
-      LEFT JOIN labels l ON s.id = l.site_id AND l.is_active = 1
-      WHERE s.user_id = ? AND s.is_active = 1
+      JOIN site_memberships sm ON sm.site_id = s.id
+      LEFT JOIN labels l ON s.id = l.site_id
+      WHERE sm.user_id = ? AND s.is_active = 1
     `;
     
     const params: any[] = [userId];
     
     if (search) {
-      query += ` AND (s.name LIKE ? OR s.location LIKE ? OR s.description LIKE ?)`;
+      query += ` AND (s.name LIKE ? OR s.location LIKE ? OR s.description LIKE ? OR s.code LIKE ?)`;
       const searchPattern = `%${search}%`;
-      params.push(searchPattern, searchPattern, searchPattern);
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
     
     if (isMySQL) {

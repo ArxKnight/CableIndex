@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Users, Settings, UserPlus, Activity } from 'lucide-react';
+import { Users, Settings, UserPlus } from 'lucide-react';
 import UserManagement from '../components/admin/UserManagement';
 import AppSettings from '../components/admin/AppSettings';
 import UserInvitations from '../components/admin/UserInvitations';
-import AdminStats from '../components/admin/AdminStats';
 import { usePermissions } from '../hooks/usePermissions';
 import { Navigate } from 'react-router-dom';
 
@@ -28,7 +27,7 @@ const AdminPage: React.FC = () => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="users" className="flex items-center gap-2">
             <Users className="w-4 h-4" />
             Users
@@ -40,10 +39,6 @@ const AdminPage: React.FC = () => {
           <TabsTrigger value="settings" className="flex items-center gap-2">
             <Settings className="w-4 h-4" />
             Settings
-          </TabsTrigger>
-          <TabsTrigger value="stats" className="flex items-center gap-2">
-            <Activity className="w-4 h-4" />
-            Statistics
           </TabsTrigger>
         </TabsList>
 
@@ -85,20 +80,6 @@ const AdminPage: React.FC = () => {
             </CardHeader>
             <CardContent>
               <AppSettings />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="stats" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>System Statistics</CardTitle>
-              <CardDescription>
-                View user activity and system usage metrics
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <AdminStats />
             </CardContent>
           </Card>
         </TabsContent>

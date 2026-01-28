@@ -25,7 +25,7 @@ export class UserModel {
    * Create a new user
    */
   async create(userData: CreateUserData): Promise<User> {
-    const { email, full_name, password, role = 'user' } = userData;
+    const { email, full_name, password, role = 'USER' } = userData;
     
     // Hash the password
     const password_hash = await hashPassword(password);

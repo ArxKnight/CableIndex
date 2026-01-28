@@ -1,12 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import LoginForm from '../components/auth/LoginForm';
-import RegisterForm from '../components/auth/RegisterForm';
 
 const AuthPage: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
-  const [isLogin, setIsLogin] = useState(true);
 
   // Redirect if already authenticated
   if (isAuthenticated) {
@@ -26,21 +24,11 @@ const AuthPage: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div className="bg-white rounded-lg shadow-md p-8">
-          {isLogin ? (
-            <LoginForm
-              onSuccess={() => {
-                // Navigation will be handled by the redirect above
-              }}
-              onSwitchToRegister={() => setIsLogin(false)}
-            />
-          ) : (
-            <RegisterForm
-              onSuccess={() => {
-                // Navigation will be handled by the redirect above
-              }}
-              onSwitchToLogin={() => setIsLogin(true)}
-            />
-          )}
+          <LoginForm
+            onSuccess={() => {
+              // Navigation will be handled by the redirect above
+            }}
+          />
         </div>
       </div>
     </div>

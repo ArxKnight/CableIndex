@@ -1,15 +1,15 @@
 import connection from '../database/connection.js';
 import { DatabaseAdapter } from '../database/adapters/base.js';
 import { Label } from '../types/index.js';
-import { ZPLService } from '../services/ZPLService.js';
 
 export interface CreateLabelData {
   source: string;
   destination: string;
   site_id: number;
-  user_id: number;
+  created_by: number;
   notes?: string;
   zpl_content?: string;
+  type?: string;
 }
 
 export interface UpdateLabelData {
@@ -17,17 +17,17 @@ export interface UpdateLabelData {
   destination?: string;
   notes?: string;
   zpl_content?: string;
+  type?: string;
 }
 
 export interface LabelSearchOptions {
   search?: string;
-  site_id?: number;
+  reference_number?: string;
   source?: string;
   destination?: string;
-  reference_number?: string;
   limit?: number;
   offset?: number;
-  sort_by?: 'created_at' | 'reference_number' | 'source' | 'destination';
+  sort_by?: 'created_at' | 'ref_string';
   sort_order?: 'ASC' | 'DESC';
 }
 
@@ -36,386 +36,285 @@ export class LabelModel {
     return connection.getAdapter();
   }
 
-  /**
-   * Generate next reference number for a site
-   */
-  private async generateReferenceNumber(siteId: number): Promise<string> {
-    // Get site name for reference prefix
-    const siteRows = await this.adapter.query('SELECT name FROM sites WHERE id = ?', [siteId]);
-    
-    if (siteRows.length === 0) {
-      throw new Error('Site not found');
-    }
-    
-    const siteName = siteRows[0].name;
-
-    // Get the next reference number for this site
+  private async getNextRef(siteId: number): Promise<{ refNumber: number; refString: string }>{
     const config = connection.getConfig();
     const isMySQL = config?.type === 'mysql';
-    
-    const refRows = await this.adapter.query(isMySQL
-      ? `SELECT COALESCE(MAX(CAST(SUBSTRING(reference_number, INSTR(reference_number, '-') + 1) AS UNSIGNED)), 0) + 1 as next_ref
-         FROM labels 
-         WHERE site_id = ? AND is_active = 1
-         AND reference_number LIKE ?`
-      : `SELECT COALESCE(MAX(CAST(SUBSTR(reference_number, INSTR(reference_number, '-') + 1) AS INTEGER)), 0) + 1 as next_ref
-         FROM labels 
-         WHERE site_id = ? AND is_active = 1
-         AND reference_number LIKE ?`,
-      [siteId, `${siteName}-%`]
+
+    const siteRows = await this.adapter.query(
+      `SELECT code, name FROM sites WHERE id = ?`,
+      [siteId]
     );
-    
-    const nextRef = refRows[0]?.next_ref || 1;
-    return `${siteName}-${nextRef}`;
+
+    if (!siteRows.length) {
+      throw new Error('Site not found');
+    }
+
+    const siteCode = siteRows[0].code || siteRows[0].name;
+
+    await this.adapter.beginTransaction();
+    try {
+      if (isMySQL) {
+        await this.adapter.execute(
+          `INSERT INTO site_counters (site_id, next_ref) VALUES (?, 1)
+           ON DUPLICATE KEY UPDATE next_ref = next_ref`,
+          [siteId]
+        );
+      } else {
+        await this.adapter.execute(
+          `INSERT OR IGNORE INTO site_counters (site_id, next_ref) VALUES (?, 1)`,
+          [siteId]
+        );
+      }
+
+      const rows = await this.adapter.query(
+        `SELECT next_ref FROM site_counters WHERE site_id = ?`,
+        [siteId]
+      );
+
+      const currentRef = rows[0]?.next_ref ? Number(rows[0].next_ref) : 1;
+      const nextRef = currentRef + 1;
+
+      await this.adapter.execute(
+        `UPDATE site_counters SET next_ref = ? WHERE site_id = ?`,
+        [nextRef, siteId]
+      );
+
+      await this.adapter.commit();
+
+      const padded = String(currentRef).padStart(4, '0');
+      return { refNumber: currentRef, refString: `${siteCode}-${padded}` };
+    } catch (error) {
+      await this.adapter.rollback();
+      throw error;
+    }
   }
 
-  /**
-   * Create a new label
-   */
+  private mapLegacyFields(label: Label): Label {
+    if (label.payload_json) {
+      try {
+        const payload = JSON.parse(label.payload_json) as any;
+        return {
+          ...label,
+          reference_number: label.ref_string,
+          source: payload.source,
+          destination: payload.destination,
+          notes: payload.notes,
+          zpl_content: payload.zpl_content,
+        };
+      } catch (error) {
+        return { ...label, reference_number: label.ref_string };
+      }
+    }
+
+    return { ...label, reference_number: label.ref_string };
+  }
+
   async create(labelData: CreateLabelData): Promise<Label> {
-    const { source, destination, site_id, user_id, notes, zpl_content } = labelData;
-    
-    // Validate required fields
+    const { source, destination, site_id, created_by, notes, zpl_content, type = 'cable' } = labelData;
+
     if (!source.trim()) {
       throw new Error('Source is required');
     }
-    
+
     if (!destination.trim()) {
       throw new Error('Destination is required');
     }
 
-    // Generate reference number
-    const reference_number = await this.generateReferenceNumber(site_id);
-    
-    // Generate ZPL content if not provided
-    let finalZplContent = zpl_content;
-    if (!finalZplContent) {
-      const siteRows = await this.adapter.query('SELECT name FROM sites WHERE id = ?', [site_id]);
-      
-      if (siteRows.length > 0) {
-        const zplService = new ZPLService();
-        const refNumber = reference_number.split('-')[1] || reference_number;
-        finalZplContent = zplService.generateCableLabel({
-          site: siteRows[0].name,
-          referenceNumber: refNumber,
-          source: source.trim(),
-          destination: destination.trim()
-        });
-      }
-    }
+    const { refNumber, refString } = await this.getNextRef(site_id);
+    const payload = {
+      source: source.trim(),
+      destination: destination.trim(),
+      notes: notes || null,
+      zpl_content: zpl_content || null,
+    };
 
     const result = await this.adapter.execute(
-      `INSERT INTO labels (reference_number, site_id, user_id, source, destination, notes, zpl_content)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [reference_number, site_id, user_id, source.trim(), destination.trim(), notes || null, finalZplContent || null]
+      `INSERT INTO labels (site_id, ref_number, ref_string, type, payload_json, created_by)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [site_id, refNumber, refString, type, JSON.stringify(payload), created_by]
     );
-    
+
     if (!result.insertId) {
       throw new Error('Failed to create label');
     }
-    
-    return (await this.findById(Number(result.insertId), user_id))!;
-  }
 
-  /**
-   * Find label by ID
-   */
-  async findById(id: number, userId: number): Promise<Label | null> {
-    const rows = await this.adapter.query(
-      `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
-       FROM labels 
-       WHERE id = ? AND user_id = ? AND is_active = 1`,
-      [id, userId]
-    );
-    
-    return rows.length > 0 ? (rows[0] as Label) : null;
-  }
-
-  /**
-   * Find labels by site
-   */
-  async findBySiteId(siteId: number, userId: number, options: {
-    limit?: number;
-    offset?: number;
-  } = {}): Promise<Label[]> {
-    const { limit = 50, offset = 0 } = options;
-    const safeLimit = parseInt(String(limit), 10) || 50;
-    const safeOffset = parseInt(String(offset), 10) || 0;
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-    const finalLimit = Math.max(0, safeLimit);
-    const finalOffset = Math.max(0, safeOffset);
-    
-    const query = isMySQL
-      ? `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
-         FROM labels 
-         WHERE site_id = ? AND user_id = ? AND is_active = 1
-         ORDER BY reference_number ASC
-         LIMIT ${finalLimit} OFFSET ${finalOffset}`
-      : `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
-         FROM labels 
-         WHERE site_id = ? AND user_id = ? AND is_active = 1
-         ORDER BY reference_number ASC
-         LIMIT ? OFFSET ?`;
-
-    const params = isMySQL
-      ? [siteId, userId]
-      : [siteId, userId, finalLimit, finalOffset];
-
-    const rows = await this.adapter.query(query, params);
-    
-    return rows as Label[];
-  }
-
-  /**
-   * Search labels with multiple options
-   */
-  async search(userId: number, options: LabelSearchOptions = {}): Promise<Label[]> {
-    let query = `
-      SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
-      FROM labels 
-      WHERE user_id = ? AND is_active = 1
-    `;
-    
-    const params: any[] = [userId];
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-    
-    if (options.site_id) {
-      query += ` AND site_id = ?`;
-      params.push(options.site_id);
+    const created = await this.findById(Number(result.insertId), site_id);
+    if (!created) {
+      throw new Error('Failed to load created label');
     }
-    
+
+    return created;
+  }
+
+  async findById(id: number, siteId: number): Promise<Label | null> {
+    const rows = await this.adapter.query(
+      `SELECT id, site_id, created_by, ref_number, ref_string, type, payload_json, created_at, updated_at
+       FROM labels
+       WHERE id = ? AND site_id = ?`,
+      [id, siteId]
+    );
+
+    return rows.length > 0 ? this.mapLegacyFields(rows[0] as Label) : null;
+  }
+
+  async findBySiteId(siteId: number, options: LabelSearchOptions = {}): Promise<Label[]> {
+    const { limit = 50, offset = 0, sort_by = 'created_at', sort_order = 'DESC' } = options;
+    const safeLimit = Math.max(0, parseInt(String(limit), 10) || 50);
+    const safeOffset = Math.max(0, parseInt(String(offset), 10) || 0);
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
+
+    let query = `
+      SELECT id, site_id, created_by, ref_number, ref_string, type, payload_json, created_at, updated_at
+      FROM labels
+      WHERE site_id = ?
+    `;
+
+    const params: any[] = [siteId];
+
     if (options.reference_number) {
-      query += ` AND reference_number = ?`;
+      query += ` AND ref_string = ?`;
       params.push(options.reference_number);
     }
-    
-    if (options.source) {
-      query += ` AND source LIKE ?`;
-      params.push(`%${options.source}%`);
-    }
-    
-    if (options.destination) {
-      query += ` AND destination LIKE ?`;
-      params.push(`%${options.destination}%`);
-    }
-    
+
     if (options.search) {
-      query += ` AND (reference_number LIKE ? OR source LIKE ? OR destination LIKE ? OR notes LIKE ?)`;
+      query += ` AND (ref_string LIKE ? OR payload_json LIKE ?)`;
       const searchPattern = `%${options.search}%`;
-      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
-    }
-    
-    const sortBy = options.sort_by || 'created_at';
-    const sortOrder = options.sort_order || 'DESC';
-    query += ` ORDER BY ${sortBy} ${sortOrder}`;
-    
-    if (options.limit) {
-      const safeLimit = Math.max(0, parseInt(String(options.limit), 10) || 50);
-      if (isMySQL) {
-        query += ` LIMIT ${safeLimit}`;
-      } else {
-        query += ` LIMIT ?`;
-        params.push(safeLimit);
-      }
+      params.push(searchPattern, searchPattern);
     }
 
-    if (options.offset) {
-      const safeOffset = Math.max(0, parseInt(String(options.offset), 10) || 0);
-      if (isMySQL) {
-        query += ` OFFSET ${safeOffset}`;
-      } else {
-        query += ` OFFSET ?`;
-        params.push(safeOffset);
-      }
+    query += ` ORDER BY ${sort_by === 'ref_string' ? 'ref_string' : 'created_at'} ${sort_order}`;
+
+    if (isMySQL) {
+      query += ` LIMIT ${safeLimit} OFFSET ${safeOffset}`;
+    } else {
+      query += ` LIMIT ? OFFSET ?`;
+      params.push(safeLimit, safeOffset);
     }
 
     const rows = await this.adapter.query(query, params);
-    return rows as Label[];
+    return (rows as Label[]).map((row) => this.mapLegacyFields(row));
   }
 
-  /**
-   * Update label
-   */
-  async update(id: number, userId: number, labelData: UpdateLabelData): Promise<Label | null> {
+  async update(id: number, siteId: number, labelData: UpdateLabelData): Promise<Label | null> {
     const updates: string[] = [];
     const values: any[] = [];
 
-    if (labelData.source !== undefined) {
-      updates.push('source = ?');
-      values.push(labelData.source.trim());
+    const payload: any = {};
+
+    if (labelData.source !== undefined) payload.source = labelData.source.trim();
+    if (labelData.destination !== undefined) payload.destination = labelData.destination.trim();
+    if (labelData.notes !== undefined) payload.notes = labelData.notes || null;
+    if (labelData.zpl_content !== undefined) payload.zpl_content = labelData.zpl_content || null;
+
+    if (Object.keys(payload).length > 0) {
+      updates.push('payload_json = ?');
+      values.push(JSON.stringify(payload));
     }
 
-    if (labelData.destination !== undefined) {
-      updates.push('destination = ?');
-      values.push(labelData.destination.trim());
-    }
-
-    if (labelData.notes !== undefined) {
-      updates.push('notes = ?');
-      values.push(labelData.notes || null);
-    }
-
-    if (labelData.zpl_content !== undefined) {
-      updates.push('zpl_content = ?');
-      values.push(labelData.zpl_content || null);
+    if (labelData.type !== undefined) {
+      updates.push('type = ?');
+      values.push(labelData.type);
     }
 
     if (updates.length === 0) {
-      return this.findById(id, userId);
+      return this.findById(id, siteId);
     }
 
     const config = connection.getConfig();
     const isMySQL = config?.type === 'mysql';
-    
     if (!isMySQL) {
       updates.push('updated_at = CURRENT_TIMESTAMP');
     }
-    
-    values.push(id, userId);
+
+    values.push(id, siteId);
 
     const result = await this.adapter.execute(
-      `UPDATE labels 
+      `UPDATE labels
        SET ${updates.join(', ')}
-       WHERE id = ? AND user_id = ? AND is_active = 1`,
+       WHERE id = ? AND site_id = ?`,
       values
     );
-    
+
     if (result.affectedRows === 0) {
       return null;
     }
 
-    return this.findById(id, userId);
+    return this.findById(id, siteId);
   }
 
-  /**
-   * Delete label (soft delete)
-   */
-  async delete(id: number, userId: number): Promise<boolean> {
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-    
+  async delete(id: number, siteId: number): Promise<boolean> {
     const result = await this.adapter.execute(
-      isMySQL
-        ? `UPDATE labels SET is_active = 0 WHERE id = ? AND user_id = ? AND is_active = 1`
-        : `UPDATE labels SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND is_active = 1`,
-      [id, userId]
+      `DELETE FROM labels WHERE id = ? AND site_id = ?`,
+      [id, siteId]
     );
-    
+
     return result.affectedRows > 0;
   }
 
-  /**
-   * Count labels for user
-   */
-  async countByUserId(userId: number, siteId?: number): Promise<number> {
-    let query = `SELECT COUNT(*) as count FROM labels WHERE user_id = ? AND is_active = 1`;
-    const params: any[] = [userId];
-    
-    if (siteId) {
-      query += ` AND site_id = ?`;
-      params.push(siteId);
-    }
-    
-    const rows = await this.adapter.query(query, params);
+  async bulkDelete(ids: number[], siteId: number): Promise<number> {
+    const placeholders = ids.map(() => '?').join(', ');
+    const result = await this.adapter.execute(
+      `DELETE FROM labels WHERE site_id = ? AND id IN (${placeholders})`,
+      [siteId, ...ids]
+    );
+
+    return result.affectedRows || 0;
+  }
+
+  async countBySiteId(siteId: number): Promise<number> {
+    const rows = await this.adapter.query(
+      `SELECT COUNT(*) as count FROM labels WHERE site_id = ?`,
+      [siteId]
+    );
     return rows[0]?.count || 0;
   }
 
-  /**
-   * Get all labels for a site with counts
-   */
-  async findBySiteIdWithCounts(siteId: number, userId: number): Promise<Label[]> {
+  async getStatsBySiteId(siteId: number): Promise<{ total_labels: number; labels_this_month: number; labels_today: number }> {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(now.getDate() - 30);
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+
     const rows = await this.adapter.query(
-      `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
-       FROM labels 
-       WHERE site_id = ? AND user_id = ? AND is_active = 1
-       ORDER BY reference_number ASC`,
-      [siteId, userId]
+      `SELECT 
+        COUNT(*) as total,
+        COUNT(CASE WHEN created_at >= ? THEN 1 END) as created_this_month,
+        COUNT(CASE WHEN created_at >= ? THEN 1 END) as created_today
+      FROM labels
+      WHERE site_id = ?`,
+      [thirtyDaysAgo.toISOString(), todayStart.toISOString(), siteId]
     );
-    
-    return rows as Label[];
+
+    const result = rows[0] as any;
+    return {
+      total_labels: result.total || 0,
+      labels_this_month: result.created_this_month || 0,
+      labels_today: result.created_today || 0,
+    };
   }
 
-  /**
-   * Find labels for user with site info
-   */
-  async findByUserIdWithSiteInfo(userId: number, options: LabelSearchOptions = {}): Promise<Label[]> {
-    return this.search(userId, options);
-  }
-
-  /**
-   * Find labels for user (alias for search)
-   */
-  async findByUserId(userId: number, options: LabelSearchOptions = {}): Promise<Label[]> {
-    return this.search(userId, options);
-  }
-
-  /**
-   * Get statistics for user
-   */
-  async getStatsByUserId(userId: number): Promise<any> {
-    const rows = await this.adapter.query(
-      `SELECT COUNT(*) as total_labels, COUNT(DISTINCT site_id) as total_sites FROM labels WHERE user_id = ? AND is_active = 1`,
-      [userId]
-    );
-    
-    return rows[0] || { total_labels: 0, total_sites: 0 };
-  }
-
-  /**
-   * Find recent labels for user
-   */
-  async findRecentByUserId(userId: number, limit: number = 10): Promise<Label[]> {
+  async findRecentBySiteId(siteId: number, limit: number = 10): Promise<Label[]> {
     const safeLimit = Math.max(0, parseInt(String(limit), 10) || 10);
     const config = connection.getConfig();
     const isMySQL = config?.type === 'mysql';
 
     const query = isMySQL
-      ? `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
-         FROM labels 
-         WHERE user_id = ? AND is_active = 1
+      ? `SELECT id, site_id, created_by, ref_number, ref_string, type, payload_json, created_at, updated_at
+         FROM labels
+         WHERE site_id = ?
          ORDER BY created_at DESC
          LIMIT ${safeLimit}`
-      : `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
-         FROM labels 
-         WHERE user_id = ? AND is_active = 1
+      : `SELECT id, site_id, created_by, ref_number, ref_string, type, payload_json, created_at, updated_at
+         FROM labels
+         WHERE site_id = ?
          ORDER BY created_at DESC
          LIMIT ?`;
 
-    const params = isMySQL ? [userId] : [userId, safeLimit];
+    const params = isMySQL ? [siteId] : [siteId, safeLimit];
     const rows = await this.adapter.query(query, params);
-    
-    return rows as Label[];
-  }
-
-  /**
-   * Check if label exists for user
-   */
-  async existsForUser(id: number, userId: number): Promise<boolean> {
-    const rows = await this.adapter.query(
-      `SELECT id FROM labels WHERE id = ? AND user_id = ? AND is_active = 1`,
-      [id, userId]
-    );
-    
-    return rows.length > 0;
-  }
-
-  /**
-   * Bulk delete labels
-   */
-  async bulkDelete(ids: number[], userId: number): Promise<number> {
-    if (ids.length === 0) return 0;
-    
-    const placeholders = ids.map(() => '?').join(',');
-    const params = [...ids, userId];
-    
-    const result = await this.adapter.execute(
-      `UPDATE labels SET is_active = 0 WHERE id IN (${placeholders}) AND user_id = ? AND is_active = 1`,
-      params
-    );
-    
-    return result.affectedRows;
+    return (rows as Label[]).map((row) => this.mapLegacyFields(row));
   }
 }
 

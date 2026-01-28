@@ -19,9 +19,8 @@ export const Migration001_InitialSchema: Migration = {
         email TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
         full_name TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'USER' CHECK (role IN ('GLOBAL_ADMIN', 'ADMIN', 'USER')),
         is_active BOOLEAN DEFAULT 1,
-        email_verified BOOLEAN DEFAULT 0,
-        last_login_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )`,
@@ -30,9 +29,8 @@ export const Migration001_InitialSchema: Migration = {
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
         full_name VARCHAR(255) NOT NULL,
+        role VARCHAR(50) NOT NULL DEFAULT 'USER',
         is_active BOOLEAN DEFAULT 1,
-        email_verified BOOLEAN DEFAULT 0,
-        last_login_at TIMESTAMP NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )`
@@ -40,136 +38,105 @@ export const Migration001_InitialSchema: Migration = {
 
     await adapter.execute('CREATE INDEX idx_users_email ON users(email)');
     await adapter.execute('CREATE INDEX idx_users_active ON users(is_active)');
-
-    // User roles table
-    await adapter.execute(getSQL(
-      `CREATE TABLE user_roles (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        role TEXT NOT NULL CHECK (role IN ('admin', 'moderator', 'user')),
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        UNIQUE(user_id, role)
-      )`,
-      `CREATE TABLE user_roles (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id INT NOT NULL,
-        role VARCHAR(50) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        UNIQUE KEY unique_user_role (user_id, role),
-        CHECK (role IN ('admin', 'moderator', 'user'))
-      )`
-    ));
-
-    await adapter.execute('CREATE INDEX idx_user_roles_user_id ON user_roles(user_id)');
-    await adapter.execute('CREATE INDEX idx_user_roles_role ON user_roles(role)');
-
-    // Tool permissions table
-    await adapter.execute(getSQL(
-      `CREATE TABLE tool_permissions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        tool_name TEXT NOT NULL,
-        can_create BOOLEAN DEFAULT 0,
-        can_read BOOLEAN DEFAULT 1,
-        can_update BOOLEAN DEFAULT 0,
-        can_delete BOOLEAN DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        UNIQUE(user_id, tool_name)
-      )`,
-      `CREATE TABLE tool_permissions (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id INT NOT NULL,
-        tool_name VARCHAR(100) NOT NULL,
-        can_create BOOLEAN DEFAULT 0,
-        can_read BOOLEAN DEFAULT 1,
-        can_update BOOLEAN DEFAULT 0,
-        can_delete BOOLEAN DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        UNIQUE KEY unique_user_tool (user_id, tool_name)
-      )`
-    ));
-
-    await adapter.execute('CREATE INDEX idx_tool_permissions_user_id ON tool_permissions(user_id)');
-    await adapter.execute('CREATE INDEX idx_tool_permissions_tool ON tool_permissions(tool_name)');
+    await adapter.execute('CREATE INDEX idx_users_role ON users(role)');
 
     // Sites table
     await adapter.execute(getSQL(
       `CREATE TABLE sites (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
+        code TEXT UNIQUE NOT NULL,
+        created_by INTEGER NOT NULL,
         location TEXT,
         description TEXT,
-        user_id INTEGER NOT NULL,
         is_active BOOLEAN DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
       )`,
       `CREATE TABLE sites (
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
+        code VARCHAR(255) UNIQUE NOT NULL,
+        created_by INT NOT NULL,
         location VARCHAR(500),
         description TEXT,
-        user_id INT NOT NULL,
         is_active BOOLEAN DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
       )`
     ));
 
-    await adapter.execute('CREATE INDEX idx_sites_user_id ON sites(user_id)');
+    await adapter.execute('CREATE INDEX idx_sites_created_by ON sites(created_by)');
     await adapter.execute('CREATE INDEX idx_sites_active ON sites(is_active)');
     await adapter.execute('CREATE INDEX idx_sites_name ON sites(name)');
+    await adapter.execute('CREATE INDEX idx_sites_code ON sites(code)');
+
+    // Site memberships table
+    await adapter.execute(getSQL(
+      `CREATE TABLE site_memberships (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        site_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        site_role TEXT NOT NULL CHECK (site_role IN ('ADMIN', 'USER')),
+        FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE(site_id, user_id)
+      )`,
+      `CREATE TABLE site_memberships (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        site_id INT NOT NULL,
+        user_id INT NOT NULL,
+        site_role VARCHAR(50) NOT NULL,
+        FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_site_user (site_id, user_id),
+        CHECK (site_role IN ('ADMIN', 'USER'))
+      )`
+    ));
+
+    await adapter.execute('CREATE INDEX idx_site_memberships_site_id ON site_memberships(site_id)');
+    await adapter.execute('CREATE INDEX idx_site_memberships_user_id ON site_memberships(user_id)');
+    await adapter.execute('CREATE INDEX idx_site_memberships_role ON site_memberships(site_role)');
 
     // Labels table
     await adapter.execute(getSQL(
       `CREATE TABLE labels (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        reference_number TEXT NOT NULL,
         site_id INTEGER NOT NULL,
-        user_id INTEGER NOT NULL,
-        source TEXT NOT NULL,
-        destination TEXT NOT NULL,
-        notes TEXT,
-        zpl_content TEXT,
-        is_active BOOLEAN DEFAULT 1,
+        ref_number INTEGER NOT NULL,
+        ref_string TEXT NOT NULL,
+        type TEXT NOT NULL,
+        payload_json TEXT,
+        created_by INTEGER NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        UNIQUE(site_id, reference_number)
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE(site_id, ref_number),
+        UNIQUE(site_id, ref_string)
       )`,
       `CREATE TABLE labels (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        reference_number VARCHAR(255) NOT NULL,
         site_id INT NOT NULL,
-        user_id INT NOT NULL,
-        source VARCHAR(500) NOT NULL,
-        destination VARCHAR(500) NOT NULL,
-        notes TEXT,
-        zpl_content TEXT,
-        is_active BOOLEAN DEFAULT 1,
+        ref_number INT NOT NULL,
+        ref_string VARCHAR(255) NOT NULL,
+        type VARCHAR(100) NOT NULL,
+        payload_json TEXT,
+        created_by INT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        UNIQUE KEY unique_site_reference (site_id, reference_number)
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_site_ref_number (site_id, ref_number),
+        UNIQUE KEY unique_site_ref_string (site_id, ref_string)
       )`
     ));
 
     await adapter.execute('CREATE INDEX idx_labels_site_id ON labels(site_id)');
-    await adapter.execute('CREATE INDEX idx_labels_user_id ON labels(user_id)');
-    await adapter.execute('CREATE INDEX idx_labels_reference ON labels(reference_number)');
-    await adapter.execute('CREATE INDEX idx_labels_source ON labels(source)');
-    await adapter.execute('CREATE INDEX idx_labels_destination ON labels(destination)');
-    await adapter.execute('CREATE INDEX idx_labels_active ON labels(is_active)');
+    await adapter.execute('CREATE INDEX idx_labels_created_by ON labels(created_by)');
+    await adapter.execute('CREATE INDEX idx_labels_ref_string ON labels(ref_string)');
 
     // Application settings table
     await adapter.execute(getSQL(
@@ -196,48 +163,82 @@ export const Migration001_InitialSchema: Migration = {
       'CREATE INDEX idx_app_settings_key ON app_settings(`key`)'
     ));
 
-    // User invitations table
+    // Invitations table
     await adapter.execute(getSQL(
-      `CREATE TABLE user_invitations (
+      `CREATE TABLE invitations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token_hash TEXT UNIQUE NOT NULL,
         email TEXT NOT NULL,
-        token TEXT UNIQUE NOT NULL,
         invited_by INTEGER NOT NULL,
-        role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'moderator', 'user')),
         expires_at DATETIME NOT NULL,
         used_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE CASCADE
       )`,
-      `CREATE TABLE user_invitations (
+      `CREATE TABLE invitations (
         id INT AUTO_INCREMENT PRIMARY KEY,
+        token_hash VARCHAR(255) UNIQUE NOT NULL,
         email VARCHAR(255) NOT NULL,
-        token VARCHAR(255) UNIQUE NOT NULL,
         invited_by INT NOT NULL,
-        role VARCHAR(50) NOT NULL DEFAULT 'user',
         expires_at TIMESTAMP NOT NULL,
         used_at TIMESTAMP NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE CASCADE,
-        CHECK (role IN ('admin', 'moderator', 'user'))
+        FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE CASCADE
       )`
     ));
 
-    await adapter.execute('CREATE INDEX idx_user_invitations_email ON user_invitations(email)');
-    await adapter.execute('CREATE INDEX idx_user_invitations_token ON user_invitations(token)');
-    await adapter.execute('CREATE INDEX idx_user_invitations_expires ON user_invitations(expires_at)');
+    await adapter.execute('CREATE INDEX idx_invitations_email ON invitations(email)');
+    await adapter.execute('CREATE INDEX idx_invitations_token ON invitations(token_hash)');
+    await adapter.execute('CREATE INDEX idx_invitations_expires ON invitations(expires_at)');
+
+    // Invitation sites table
+    await adapter.execute(getSQL(
+      `CREATE TABLE invitation_sites (
+        invitation_id INTEGER NOT NULL,
+        site_id INTEGER NOT NULL,
+        site_role TEXT NOT NULL CHECK (site_role IN ('ADMIN', 'USER')),
+        FOREIGN KEY (invitation_id) REFERENCES invitations(id) ON DELETE CASCADE,
+        FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
+      )`,
+      `CREATE TABLE invitation_sites (
+        invitation_id INT NOT NULL,
+        site_id INT NOT NULL,
+        site_role VARCHAR(50) NOT NULL,
+        FOREIGN KEY (invitation_id) REFERENCES invitations(id) ON DELETE CASCADE,
+        FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+        CHECK (site_role IN ('ADMIN', 'USER'))
+      )`
+    ));
+
+    await adapter.execute('CREATE INDEX idx_invitation_sites_invitation ON invitation_sites(invitation_id)');
+    await adapter.execute('CREATE INDEX idx_invitation_sites_site ON invitation_sites(site_id)');
+
+    // Site counters table
+    await adapter.execute(getSQL(
+      `CREATE TABLE site_counters (
+        site_id INTEGER PRIMARY KEY,
+        next_ref INTEGER NOT NULL,
+        FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
+      )`,
+      `CREATE TABLE site_counters (
+        site_id INT PRIMARY KEY,
+        next_ref INT NOT NULL,
+        FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
+      )`
+    ));
 
     console.log('✅ Initial schema created successfully');
   },
 
   down: async (adapter) => {
     // Drop tables in reverse order (respecting foreign key constraints)
-    await adapter.execute('DROP TABLE IF EXISTS user_invitations');
+    await adapter.execute('DROP TABLE IF EXISTS site_counters');
+    await adapter.execute('DROP TABLE IF EXISTS invitation_sites');
+    await adapter.execute('DROP TABLE IF EXISTS invitations');
     await adapter.execute('DROP TABLE IF EXISTS app_settings');
     await adapter.execute('DROP TABLE IF EXISTS labels');
+    await adapter.execute('DROP TABLE IF EXISTS site_memberships');
     await adapter.execute('DROP TABLE IF EXISTS sites');
-    await adapter.execute('DROP TABLE IF EXISTS tool_permissions');
-    await adapter.execute('DROP TABLE IF EXISTS user_roles');
     await adapter.execute('DROP TABLE IF EXISTS users');
 
     console.log('✅ Initial schema dropped successfully');

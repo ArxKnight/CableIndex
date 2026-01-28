@@ -14,12 +14,12 @@ const roleService = new RoleService();
 const updateUserSchema = z.object({
   email: z.string().email().optional(),
   full_name: z.string().min(1).max(100).optional(),
-  role: z.enum(['admin', 'moderator', 'user']).optional(),
+  role: z.enum(['GLOBAL_ADMIN', 'ADMIN', 'USER']).optional(),
 });
 
 const inviteUserSchema = z.object({
   email: z.string().email(),
-  role: z.enum(['admin', 'moderator', 'user']).default('user'),
+  role: z.enum(['GLOBAL_ADMIN', 'ADMIN', 'USER']).default('USER'),
 });
 
 /**

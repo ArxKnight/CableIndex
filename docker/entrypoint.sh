@@ -18,4 +18,4 @@ fi
 
 # Switch to cableindex user and execute the command
 echo "🔄 Starting as cableindex user..."
-exec su-exec cableindex "$@"
+exec gosu cableindex "$@"
