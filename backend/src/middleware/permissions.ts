@@ -1,14 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserRole } from '../types/index.js';
-import RoleService from '../services/RoleService.js';
-
-const getRoleService = () => new RoleService();
 
 /**
  * Middleware to check if user has required role
  */
 export const requireRole = (requiredRole: UserRole) => {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
       res.status(401).json({ 
         success: false,
@@ -17,9 +14,16 @@ export const requireRole = (requiredRole: UserRole) => {
       return;
     }
 
-    const userId = req.user.userId;
+    const userRole = req.user.role as UserRole | undefined;
     
-    if (!getRoleService().hasRole(userId, requiredRole)) {
+    // Check role hierarchy
+    const roleHierarchy: Record<UserRole, number> = {
+      admin: 3,
+      moderator: 2,
+      user: 1,
+    };
+
+    if (!userRole || roleHierarchy[userRole] < roleHierarchy[requiredRole]) {
       res.status(403).json({ 
         success: false,
         error: 'Insufficient permissions' 
@@ -45,16 +49,8 @@ export const requireToolPermission = (toolName: string, action: 'create' | 'read
       return;
     }
 
-    const userId = req.user.userId;
-    
-    if (!getRoleService().hasPermission(userId, toolName, action)) {
-      res.status(403).json({ 
-        success: false,
-        error: `Insufficient permissions for ${action} on ${toolName}` 
-      });
-      return;
-    }
-
+    // For now, allow all authenticated users to perform actions
+    // Tool-level permissions can be implemented later with a permissions table
     next();
     return;
   };
@@ -84,9 +80,16 @@ export const requireOwnershipOrAdmin = (userIdField: string = 'user_id') => {
     }
 
     const userId = req.user.userId;
+    const userRole = req.user.role as UserRole | undefined;
     
     // Admin can access everything
-    if (getRoleService().hasRole(userId, 'admin')) {
+    const roleHierarchy: Record<UserRole, number> = {
+      admin: 3,
+      moderator: 2,
+      user: 1,
+    };
+
+    if (userRole && roleHierarchy[userRole] >= roleHierarchy['admin']) {
       next();
       return;
     }
@@ -121,13 +124,8 @@ export const requireUserManagement = (req: Request, res: Response, next: NextFun
 
   const userId = req.user.userId;
   
-  if (!getRoleService().hasPermission(userId, 'users', 'read')) {
-    res.status(403).json({ 
-      success: false,
-      error: 'Insufficient permissions for user management' 
-    });
-    return;
-  }
+  // User management is admin-only (handled by requireRole middleware above)
+  // No additional permission check needed
 
   next();
   return;

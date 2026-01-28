@@ -2,7 +2,7 @@
 
 ## Overview
 
-The WireIndex system is a React-based web application with Express backend that provides professional cable labeling capabilities for Brady printers. The system follows a modern full-stack architecture with role-based access control, real-time data synchronization, and ZPL label generation.
+The CableIndex system is a React-based web application with Express backend that provides professional cable labeling capabilities for Brady printers. The system follows a modern full-stack architecture with role-based access control, real-time data synchronization, and ZPL label generation.
 
 ### Key Design Principles
 

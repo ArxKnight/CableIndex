@@ -1,7 +1,7 @@
 #!/bin/sh
 
-# WireIndex Docker Startup Script
-echo "🚀 Starting WireIndex..."
+# CableIndex Docker Startup Script
+echo "🚀 Starting CableIndex..."
 
 # Load .env file if it exists
 if [ -f /app/.env ]; then
@@ -14,7 +14,7 @@ fi
 # Set default values
 export PORT=${PORT:-3000}
 export NODE_ENV=${NODE_ENV:-production}
-export DATABASE_PATH=${DATABASE_PATH:-/app/data/wireindex.db}
+export DATABASE_PATH=${DATABASE_PATH:-/app/data/cableindex.db}
 export UPLOADS_PATH=${UPLOADS_PATH:-/app/uploads}
 
 # Create directories if they don't exist
@@ -38,7 +38,7 @@ if [ "$DB_TYPE" = "mysql" ] || [ -n "$MYSQL_HOST" ]; then
   echo "   Database Type: MySQL"
   echo "   MySQL Host: ${MYSQL_HOST:-localhost}"
   echo "   MySQL Port: ${MYSQL_PORT:-3306}"
-  echo "   MySQL Database: ${MYSQL_DATABASE:-wireindex}"
+  echo "   MySQL Database: ${MYSQL_DATABASE:-cableindex}"
   echo "   MySQL User: ${MYSQL_USER:-root}"
 else
   echo "   Database Type: SQLite"

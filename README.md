@@ -1,4 +1,4 @@
-# WireIndex
+# CableIndex
 
 A professional cable labeling system for Brady printers with automatic reference numbering, comprehensive user management, role-based permissions, and multi-database support. Features a modern React frontend with Express backend, supporting both SQLite and MySQL databases with Docker deployment options.
 
@@ -74,7 +74,7 @@ A professional cable labeling system for Brady printers with automatic reference
 1. **Clone the repository:**
    ```bash
    git clone <repository-url>
-   cd wireindex
+   cd cableindex
    ```
 
 2. **Install all dependencies:**
@@ -116,8 +116,8 @@ For production deployment or Unraid users:
 docker-compose up -d
 
 # Or build manually
-docker build -t wireindex:latest .
-docker run -d -p 3000:3000 -v wireindex-data:/app/data wireindex:latest
+docker build -t cableindex:latest .
+docker run -d -p 3000:3000 -v cableindex-data:/app/data cableindex:latest
 ```
 
 See [Docker Setup Guide](docker/README.md) for detailed deployment instructions, including Unraid configuration.
@@ -144,7 +144,7 @@ cd backend && npm test    # Backend tests only
 ## 📁 Project Structure
 
 ```
-wireindex/
+cableindex/
 ├── 📁 frontend/                    # React frontend application
 │   ├── 📁 src/
 │   │   ├── 📁 components/         # Reusable UI components
@@ -258,14 +258,14 @@ BCRYPT_ROUNDS=12                            # Password hashing rounds
 DB_TYPE=sqlite                              # Database type: 'sqlite' or 'mysql'
 
 # SQLite Settings (when DB_TYPE=sqlite)
-DATABASE_PATH=./data/wireindex.db       # SQLite database file path
+DATABASE_PATH=./data/cableindex.db       # SQLite database file path
 
 # MySQL Settings (when DB_TYPE=mysql)
 MYSQL_HOST=localhost                        # MySQL server host
 MYSQL_PORT=3306                             # MySQL server port
-MYSQL_USER=wireindex                    # MySQL username
+MYSQL_USER=cableindex                    # MySQL username
 MYSQL_PASSWORD=your_password                # MySQL password
-MYSQL_DATABASE=wireindex                # MySQL database name
+MYSQL_DATABASE=cableindex                # MySQL database name
 MYSQL_SSL=false                             # Enable SSL connection
 
 # File Storage
@@ -276,7 +276,7 @@ UPLOADS_PATH=./uploads                      # File upload directory
 ```bash
 # API Configuration
 VITE_API_URL=http://localhost:3001/api      # Backend API base URL
-VITE_APP_NAME=WireIndex                 # Application display name
+VITE_APP_NAME=CableIndex                 # Application display name
 ```
 
 ### Database Selection Guide
@@ -301,7 +301,7 @@ VITE_APP_NAME=WireIndex                 # Application display name
 # Docker Compose Configuration
 PORT=3000                                   # Host port mapping
 JWT_SECRET=your-production-secret           # Production JWT secret
-DATABASE_PATH=/app/data/wireindex.db    # Container database path
+DATABASE_PATH=/app/data/cableindex.db    # Container database path
 UPLOADS_PATH=/app/uploads                   # Container uploads path
 ```
 
@@ -363,15 +363,15 @@ docker-compose up -d
 **Custom Configuration:**
 ```bash
 # Build custom image
-docker build -t wireindex:latest .
+docker build -t cableindex:latest .
 
 # Run with custom settings
 docker run -d \
-  --name wireindex \
+  --name cableindex \
   -p 8080:3000 \
   -v /path/to/data:/app/data \
   -e JWT_SECRET=your-secret \
-  wireindex:latest
+  cableindex:latest
 ```
 
 ### 2. Unraid Deployment
@@ -481,7 +481,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **Docker Issues:**
 - Verify port mappings are correct
 - Check volume mounts for data persistence
-- Review container logs: `docker logs wireindex`
+- Review container logs: `docker logs cableindex`
 
 **Build Failures:**
 - Clear node_modules and reinstall: `rm -rf node_modules && npm install`

@@ -2,16 +2,13 @@ import express from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
 import UserModel from '../models/User.js';
-import RoleService from '../services/RoleService.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/permissions.js';
-import { UserRole } from '../types/index.js';
 import connection from '../database/connection.js';
 
 const router = express.Router();
 const getUserModel = () => new UserModel();
-const getRoleService = () => new RoleService();
-const getDb = () => connection.getConnection();
+const getAdapter = () => connection.getAdapter();
 
 // Validation schemas
 const inviteUserSchema = z.object({
@@ -51,10 +48,13 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     // Check if there's already a pending invitation
-    const existingInvite = getDb().prepare(`
-      SELECT id FROM user_invitations 
-      WHERE email = ? AND used_at IS NULL AND expires_at > datetime('now')
-    `).get(email);
+    const nowIso = new Date().toISOString();
+    const existingInviteRows = await getAdapter().query(
+      `SELECT id FROM user_invitations 
+       WHERE email = ? AND used_at IS NULL AND expires_at > ?`,
+      [email, nowIso]
+    );
+    const existingInvite = existingInviteRows[0];
 
     if (existingInvite) {
       return res.status(409).json({
@@ -68,14 +68,13 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
     // Create invitation record
-    const stmt = getDb().prepare(`
-      INSERT INTO user_invitations (email, token, invited_by, role, expires_at)
-      VALUES (?, ?, ?, ?, ?)
-    `);
+    const result = await getAdapter().execute(
+      `INSERT INTO user_invitations (email, token, invited_by, role, expires_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [email, token, req.user!.userId, role, expiresAt.toISOString()]
+    );
 
-    const result = stmt.run(email, token, req.user!.userId, role, expiresAt.toISOString());
-
-    if (!result.lastInsertRowid) {
+    if (!result.insertId) {
       return res.status(500).json({
         success: false,
         error: 'Failed to create invitation',
@@ -87,7 +86,7 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
     res.status(201).json({
       success: true,
       data: {
-        id: result.lastInsertRowid,
+        id: result.insertId,
         email,
         role,
         token, // In production, don't return the token
@@ -109,7 +108,7 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
  */
 router.get('/invitations', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const stmt = getDb().prepare(`
+    const invitations = await getAdapter().query(`
       SELECT 
         ui.id,
         ui.email,
@@ -122,8 +121,6 @@ router.get('/invitations', authenticateToken, requireAdmin, async (req, res) => 
       WHERE ui.used_at IS NULL
       ORDER BY ui.created_at DESC
     `);
-
-    const invitations = stmt.all();
 
     res.json({
       success: true,
@@ -151,10 +148,12 @@ router.delete('/invitations/:id', authenticateToken, requireAdmin, async (req, r
       });
     }
 
-    const stmt = getDb().prepare('DELETE FROM user_invitations WHERE id = ? AND used_at IS NULL');
-    const result = stmt.run(invitationId);
+    const result = await getAdapter().execute(
+      'DELETE FROM user_invitations WHERE id = ? AND used_at IS NULL',
+      [invitationId]
+    );
 
-    if (result.changes === 0) {
+    if (result.affectedRows === 0) {
       return res.status(404).json({
         success: false,
         error: 'Invitation not found or already used',
@@ -192,10 +191,13 @@ router.post('/accept-invite', async (req, res) => {
     const { token, full_name, password } = validation.data;
 
     // Find valid invitation
-    const invitation = getDb().prepare(`
-      SELECT * FROM user_invitations 
-      WHERE token = ? AND used_at IS NULL AND expires_at > datetime('now')
-    `).get(token) as any;
+    const nowIso = new Date().toISOString();
+    const invitationRows = await getAdapter().query(
+      `SELECT * FROM user_invitations 
+       WHERE token = ? AND used_at IS NULL AND expires_at > ?`,
+      [token, nowIso]
+    );
+    const invitation = invitationRows[0] as any;
 
     if (!invitation) {
       return res.status(400).json({
@@ -221,11 +223,12 @@ router.post('/accept-invite', async (req, res) => {
     });
 
     // Mark invitation as used
-    getDb().prepare(`
-      UPDATE user_invitations 
-      SET used_at = datetime('now') 
-      WHERE id = ?
-    `).run(invitation.id);
+    await getAdapter().execute(
+      `UPDATE user_invitations 
+       SET used_at = ? 
+       WHERE id = ?`,
+      [new Date().toISOString(), invitation.id]
+    );
 
     // Remove password_hash from response
     const { password_hash, ...userResponse } = user;
@@ -251,10 +254,13 @@ router.get('/validate-invite/:token', async (req, res) => {
   try {
     const { token } = req.params;
 
-    const invitation = getDb().prepare(`
-      SELECT email, role, expires_at FROM user_invitations 
-      WHERE token = ? AND used_at IS NULL AND expires_at > datetime('now')
-    `).get(String(token)) as any;
+    const nowIso = new Date().toISOString();
+    const invitationRows = await getAdapter().query(
+      `SELECT email, role, expires_at FROM user_invitations 
+       WHERE token = ? AND used_at IS NULL AND expires_at > ?`,
+      [String(token), nowIso]
+    );
+    const invitation = invitationRows[0] as any;
 
     if (!invitation) {
       return res.status(400).json({
@@ -367,7 +373,7 @@ router.put('/users/:id/role', authenticateToken, requireAdmin, async (req, res) 
     }
 
     // Check if user exists
-    const user = getUserModel().findById(userId);
+    const user = await getUserModel().findById(userId);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -377,10 +383,12 @@ router.put('/users/:id/role', authenticateToken, requireAdmin, async (req, res) 
 
     // Update user role
     const validRole = role as 'admin' | 'moderator' | 'user';
-    const stmt = getDb().prepare('UPDATE users SET role = ?, updated_at = datetime("now") WHERE id = ?');
-    const result = stmt.run(validRole, userId);
+    const result = await getAdapter().execute(
+      'UPDATE users SET role = ?, updated_at = ? WHERE id = ?',
+      [validRole, new Date().toISOString(), userId]
+    );
 
-    if (result.changes === 0) {
+    if (result.affectedRows === 0) {
       return res.status(404).json({
         success: false,
         error: 'User not found',
@@ -432,19 +440,17 @@ router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) =>
     }
 
     // Delete user and cascade delete their data
-    const db = getDb();
-    const deleteUser = db.prepare('DELETE FROM users WHERE id = ?');
-    const deleteLabels = db.prepare('DELETE FROM labels WHERE user_id = ?');
-    const deleteSites = db.prepare('DELETE FROM sites WHERE user_id = ?');
-
-    // Use transaction for data consistency
-    const transaction = db.transaction(() => {
-      deleteLabels.run(userId);
-      deleteSites.run(userId);
-      deleteUser.run(userId);
-    });
-
-    transaction();
+    const adapter = getAdapter();
+    try {
+      await adapter.beginTransaction();
+      await adapter.execute('DELETE FROM labels WHERE user_id = ?', [userId]);
+      await adapter.execute('DELETE FROM sites WHERE user_id = ?', [userId]);
+      await adapter.execute('DELETE FROM users WHERE id = ?', [userId]);
+      await adapter.commit();
+    } catch (err) {
+      await adapter.rollback();
+      throw err;
+    }
 
     res.json({
       success: true,
@@ -464,9 +470,10 @@ router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) =>
  */
 router.get('/settings', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const settings = getDb().prepare(`
-      SELECT * FROM app_settings ORDER BY created_at DESC LIMIT 1
-    `).get() as any;
+    const settingsRows = await getAdapter().query(
+      `SELECT * FROM app_settings ORDER BY created_at DESC LIMIT 1`
+    );
+    const settings = settingsRows[0] as any;
 
     // Return default settings if none exist
     const defaultSettings = {
@@ -529,14 +536,15 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     // Check if settings exist
-    const existingSettings = getDb().prepare(`
-      SELECT id FROM app_settings ORDER BY created_at DESC LIMIT 1
-    `).get() as any;
+    const existingSettingsRows = await getAdapter().query(
+      `SELECT id FROM app_settings ORDER BY created_at DESC LIMIT 1`
+    );
+    const existingSettings = existingSettingsRows[0] as any;
 
     if (existingSettings) {
       // Update existing settings
-      const stmt = getDb().prepare(`
-        UPDATE app_settings SET
+      await getAdapter().execute(
+        `UPDATE app_settings SET
           public_registration_enabled = ?,
           default_user_role = ?,
           max_labels_per_user = ?,
@@ -545,25 +553,25 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
           system_description = ?,
           maintenance_mode = ?,
           maintenance_message = ?,
-          updated_at = datetime('now')
-        WHERE id = ?
-      `);
-
-      stmt.run(
-        public_registration_enabled ? 1 : 0,
-        default_user_role,
-        max_labels_per_user || null,
-        max_sites_per_user || null,
-        system_name,
-        system_description || null,
-        maintenance_mode ? 1 : 0,
-        maintenance_message || null,
-        existingSettings.id
+          updated_at = ?
+        WHERE id = ?`,
+        [
+          public_registration_enabled ? 1 : 0,
+          default_user_role,
+          max_labels_per_user || null,
+          max_sites_per_user || null,
+          system_name,
+          system_description || null,
+          maintenance_mode ? 1 : 0,
+          maintenance_message || null,
+          new Date().toISOString(),
+          existingSettings.id
+        ]
       );
     } else {
       // Create new settings
-      const stmt = getDb().prepare(`
-        INSERT INTO app_settings (
+      await getAdapter().execute(
+        `INSERT INTO app_settings (
           public_registration_enabled,
           default_user_role,
           max_labels_per_user,
@@ -572,18 +580,17 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
           system_description,
           maintenance_mode,
           maintenance_message
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      stmt.run(
-        public_registration_enabled ? 1 : 0,
-        default_user_role,
-        max_labels_per_user || null,
-        max_sites_per_user || null,
-        system_name,
-        system_description || null,
-        maintenance_mode ? 1 : 0,
-        maintenance_message || null
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          public_registration_enabled ? 1 : 0,
+          default_user_role,
+          max_labels_per_user || null,
+          max_sites_per_user || null,
+          system_name,
+          system_description || null,
+          maintenance_mode ? 1 : 0,
+          maintenance_message || null
+        ]
       );
     }
 
@@ -605,24 +612,34 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
  */
 router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    // User statistics
-    const userStats = getDb().prepare(`
-      SELECT 
-        COUNT(*) as total,
-        COUNT(CASE WHEN created_at >= date('now', '-30 days') THEN 1 END) as new_this_month,
-        COUNT(CASE WHEN id IN (
-          SELECT DISTINCT user_id FROM labels WHERE created_at >= date('now', '-30 days')
-        ) THEN 1 END) as active_this_month
-      FROM users
-    `).get() as any;
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now);
+    thirtyDaysAgo.setDate(now.getDate() - 30);
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const thirtyDaysAgoIso = thirtyDaysAgo.toISOString();
+    const todayStartIso = todayStart.toISOString();
 
-    const roleStats = getDb().prepare(`
-      SELECT 
+    // User statistics
+    const userStatsRows = await getAdapter().query(
+      `SELECT 
+        COUNT(*) as total,
+        COUNT(CASE WHEN created_at >= ? THEN 1 END) as new_this_month,
+        COUNT(CASE WHEN id IN (
+          SELECT DISTINCT user_id FROM labels WHERE created_at >= ?
+        ) THEN 1 END) as active_this_month
+      FROM users`,
+      [thirtyDaysAgoIso, thirtyDaysAgoIso]
+    );
+    const userStats = userStatsRows[0] as any;
+
+    const roleStats = await getAdapter().query(
+      `SELECT 
         role,
         COUNT(*) as count
       FROM users
-      GROUP BY role
-    `).all() as any[];
+      GROUP BY role`
+    ) as any[];
 
     const usersByRole = {
       admin: 0,
@@ -635,30 +652,33 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
     });
 
     // Label statistics
-    const labelStats = getDb().prepare(`
-      SELECT 
+    const labelStatsRows = await getAdapter().query(
+      `SELECT 
         COUNT(*) as total,
-        COUNT(CASE WHEN created_at >= date('now', '-30 days') THEN 1 END) as created_this_month,
-        COUNT(CASE WHEN created_at >= date('now') THEN 1 END) as created_today
-      FROM labels
-    `).get() as any;
+        COUNT(CASE WHEN created_at >= ? THEN 1 END) as created_this_month,
+        COUNT(CASE WHEN created_at >= ? THEN 1 END) as created_today
+      FROM labels`,
+      [thirtyDaysAgoIso, todayStartIso]
+    );
+    const labelStats = labelStatsRows[0] as any;
 
-    const mostActiveUser = getDb().prepare(`
-      SELECT 
+    const mostActiveUserRows = await getAdapter().query(
+      `SELECT 
         u.full_name,
         COUNT(l.id) as count
       FROM users u
       JOIN labels l ON u.id = l.user_id
       GROUP BY u.id, u.full_name
       ORDER BY count DESC
-      LIMIT 1
-    `).get() as any;
+      LIMIT 1`
+    );
+    const mostActiveUser = mostActiveUserRows[0] as any;
 
     // Site statistics
-    const siteStats = getDb().prepare(`
-      SELECT 
+    const siteStatsRows = await getAdapter().query(
+      `SELECT 
         COUNT(*) as total,
-        COUNT(CASE WHEN created_at >= date('now', '-30 days') THEN 1 END) as created_this_month,
+        COUNT(CASE WHEN created_at >= ? THEN 1 END) as created_this_month,
         CAST(AVG(label_count) AS REAL) as average_labels_per_site
       FROM (
         SELECT 
@@ -668,19 +688,21 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
         FROM sites s
         LEFT JOIN labels l ON s.id = l.site_id
         GROUP BY s.id, s.created_at
-      )
-    `).get() as any;
+      ) site_counts`,
+      [thirtyDaysAgoIso]
+    );
+    const siteStats = siteStatsRows[0] as any;
 
     // Recent activity
-    const recentRegistrations = getDb().prepare(`
-      SELECT id, full_name, email, role, created_at
-      FROM users
-      ORDER BY created_at DESC
-      LIMIT 5
-    `).all();
+    const recentRegistrations = await getAdapter().query(
+      `SELECT id, full_name, email, role, created_at
+       FROM users
+       ORDER BY created_at DESC
+       LIMIT 5`
+    );
 
-    const recentLabels = getDb().prepare(`
-      SELECT 
+    const recentLabels = await getAdapter().query(
+      `SELECT 
         l.id,
         l.reference_number,
         l.created_at,
@@ -690,8 +712,8 @@ router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
       JOIN users u ON l.user_id = u.id
       JOIN sites s ON l.site_id = s.id
       ORDER BY l.created_at DESC
-      LIMIT 5
-    `).all();
+      LIMIT 5`
+    );
 
     const stats = {
       users: {

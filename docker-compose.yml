@@ -1,20 +1,20 @@
 version: '3.8'
 
 services:
-  wireindex:
+  cableindex:
     build: .
-    container_name: wireindex
+    container_name: cableindex
     ports:
       - "${PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
       - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-this}
-      - DATABASE_PATH=/app/data/wireindex.db
+      - DATABASE_PATH=/app/data/cableindex.db
       - UPLOADS_PATH=/app/uploads
     volumes:
-      - wireindex-data:/app/data
-      - wireindex-uploads:/app/uploads
+      - cableindex-data:/app/data
+      - cableindex-uploads:/app/uploads
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
@@ -24,5 +24,5 @@ services:
       start_period: 40s
 
 volumes:
-  wireindex-data:
-  wireindex-uploads:
+  cableindex-data:
+  cableindex-uploads:

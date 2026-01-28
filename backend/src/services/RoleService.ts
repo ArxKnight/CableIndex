@@ -1,5 +1,5 @@
-import Database from 'better-sqlite3';
 import connection from '../database/connection.js';
+import { DatabaseAdapter } from '../database/adapters/base.js';
 import { UserRole } from '../types/index.js';
 
 export interface ToolPermission {
@@ -25,25 +25,24 @@ export interface RolePermissions {
 }
 
 export class RoleService {
-  private get db(): Database.Database {
-    return connection.getConnection();
+  private get adapter(): DatabaseAdapter {
+    return connection.getAdapter();
   }
 
   /**
    * Assign role to user
    */
-  assignRole(userId: number, role: UserRole): boolean {
-    const stmt = this.db.prepare(`
-      UPDATE users 
-      SET role = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
+  async assignRole(userId: number, role: UserRole): Promise<boolean> {
+    const result = await this.adapter.execute(
+      `UPDATE users 
+       SET role = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [role, userId]
+    );
     
-    const result = stmt.run(role, userId);
-    
-    if (result.changes > 0) {
+    if (result.affectedRows > 0) {
       // Update tool permissions based on new role
-      this.assignDefaultPermissions(userId, role);
+      await this.assignDefaultPermissions(userId, role);
       return true;
     }
     
@@ -53,17 +52,17 @@ export class RoleService {
   /**
    * Get user role
    */
-  getUserRole(userId: number): UserRole | null {
-    const stmt = this.db.prepare('SELECT role FROM users WHERE id = ?');
-    const result = stmt.get(userId) as { role: UserRole } | undefined;
+  async getUserRole(userId: number): Promise<UserRole | null> {
+    const rows = await this.adapter.query('SELECT role FROM users WHERE id = ?', [userId]);
+    const result = rows[0] as { role: UserRole } | undefined;
     return result?.role || null;
   }
 
   /**
    * Check if user has required role (considering hierarchy)
    */
-  hasRole(userId: number, requiredRole: UserRole): boolean {
-    const userRole = this.getUserRole(userId);
+  async hasRole(userId: number, requiredRole: UserRole): Promise<boolean> {
+    const userRole = await this.getUserRole(userId);
     if (!userRole) return false;
 
     const roleHierarchy: Record<UserRole, number> = {
@@ -78,33 +77,35 @@ export class RoleService {
   /**
    * Get user's tool permissions
    */
-  getUserPermissions(userId: number): ToolPermission[] {
-    const stmt = this.db.prepare(`
-      SELECT * FROM tool_permissions 
-      WHERE user_id = ?
-      ORDER BY tool_name
-    `);
+  async getUserPermissions(userId: number): Promise<ToolPermission[]> {
+    const rows = await this.adapter.query(
+      `SELECT * FROM tool_permissions 
+       WHERE user_id = ?
+       ORDER BY tool_name`,
+      [userId]
+    );
     
-    return stmt.all(userId) as ToolPermission[];
+    return rows as ToolPermission[];
   }
 
   /**
    * Get user's permissions for a specific tool
    */
-  getToolPermission(userId: number, toolName: string): ToolPermission | null {
-    const stmt = this.db.prepare(`
-      SELECT * FROM tool_permissions 
-      WHERE user_id = ? AND tool_name = ?
-    `);
+  async getToolPermission(userId: number, toolName: string): Promise<ToolPermission | null> {
+    const rows = await this.adapter.query(
+      `SELECT * FROM tool_permissions 
+       WHERE user_id = ? AND tool_name = ?`,
+      [userId, toolName]
+    );
     
-    return stmt.get(userId, toolName) as ToolPermission | null;
+    return (rows[0] as ToolPermission | undefined) || null;
   }
 
   /**
    * Check if user has specific permission for a tool
    */
-  hasPermission(userId: number, toolName: string, action: 'create' | 'read' | 'update' | 'delete'): boolean {
-    const permission = this.getToolPermission(userId, toolName);
+  async hasPermission(userId: number, toolName: string, action: 'create' | 'read' | 'update' | 'delete'): Promise<boolean> {
+    const permission = await this.getToolPermission(userId, toolName);
     if (!permission) return false;
 
     switch (action) {
@@ -119,11 +120,11 @@ export class RoleService {
   /**
    * Update tool permission for user
    */
-  updateToolPermission(
+  async updateToolPermission(
     userId: number, 
     toolName: string, 
     permissions: Partial<{ can_create: boolean; can_read: boolean; can_update: boolean; can_delete: boolean }>
-  ): boolean {
+  ): Promise<boolean> {
     const updates: string[] = [];
     const values: any[] = [];
 
@@ -149,33 +150,32 @@ export class RoleService {
     updates.push('updated_at = CURRENT_TIMESTAMP');
     values.push(userId, toolName);
 
-    const stmt = this.db.prepare(`
-      UPDATE tool_permissions 
-      SET ${updates.join(', ')}
-      WHERE user_id = ? AND tool_name = ?
-    `);
-
-    const result = stmt.run(...values);
-    return result.changes > 0;
+    const result = await this.adapter.execute(
+      `UPDATE tool_permissions 
+       SET ${updates.join(', ')}
+       WHERE user_id = ? AND tool_name = ?`,
+      values
+    );
+    return result.affectedRows > 0;
   }
 
   /**
    * Assign default permissions based on role
    */
-  assignDefaultPermissions(userId: number, role: UserRole): void {
+  async assignDefaultPermissions(userId: number, role: UserRole): Promise<void> {
     const defaultPermissions = this.getDefaultPermissionsForRole(role);
     
     // Clear existing permissions
-    this.db.prepare('DELETE FROM tool_permissions WHERE user_id = ?').run(userId);
+    await this.adapter.execute('DELETE FROM tool_permissions WHERE user_id = ?', [userId]);
     
     // Insert new permissions
-    const stmt = this.db.prepare(`
+    const insertSql = `
       INSERT INTO tool_permissions (user_id, tool_name, can_create, can_read, can_update, can_delete)
       VALUES (?, ?, ?, ?, ?, ?)
-    `);
+    `;
 
     for (const [toolName, perms] of Object.entries(defaultPermissions)) {
-      stmt.run(userId, toolName, perms.create, perms.read, perms.update, perms.delete);
+      await this.adapter.execute(insertSql, [userId, toolName, perms.create, perms.read, perms.update, perms.delete]);
     }
   }
 
@@ -233,7 +233,7 @@ export class RoleService {
   /**
    * Get all users with their roles (admin only)
    */
-  getAllUsersWithRoles(limit: number = 50, offset: number = 0): Array<{
+  async getAllUsersWithRoles(limit: number = 50, offset: number = 0): Promise<Array<{
     id: number;
     email: string;
     full_name: string;
@@ -241,15 +241,28 @@ export class RoleService {
     is_active: boolean;
     created_at: string;
     updated_at: string;
-  }> {
-    const stmt = this.db.prepare(`
-      SELECT id, email, full_name, role, is_active, created_at, updated_at
-      FROM users 
-      ORDER BY created_at DESC
-      LIMIT ? OFFSET ?
-    `);
+  }>> {
+    const safeLimit = parseInt(String(limit), 10) || 50;
+    const safeOffset = parseInt(String(offset), 10) || 0;
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
+    const finalLimit = Math.max(0, safeLimit);
+    const finalOffset = Math.max(0, safeOffset);
+
+    const query = isMySQL
+      ? `SELECT id, email, full_name, role, is_active, created_at, updated_at
+         FROM users 
+         ORDER BY created_at DESC
+         LIMIT ${finalLimit} OFFSET ${finalOffset}`
+      : `SELECT id, email, full_name, role, is_active, created_at, updated_at
+         FROM users 
+         ORDER BY created_at DESC
+         LIMIT ? OFFSET ?`;
+
+    const params = isMySQL ? [] : [finalLimit, finalOffset];
+    const rows = await this.adapter.query(query, params);
     
-    return stmt.all(limit, offset) as Array<{
+    return rows as Array<{
       id: number;
       email: string;
       full_name: string;
@@ -263,14 +276,12 @@ export class RoleService {
   /**
    * Count users by role
    */
-  countUsersByRole(): Record<UserRole, number> {
-    const stmt = this.db.prepare(`
-      SELECT role, COUNT(*) as count 
-      FROM users 
-      GROUP BY role
-    `);
-    
-    const results = stmt.all() as Array<{ role: UserRole; count: number }>;
+  async countUsersByRole(): Promise<Record<UserRole, number>> {
+    const results = await this.adapter.query(
+      `SELECT role, COUNT(*) as count 
+       FROM users 
+       GROUP BY role`
+    ) as Array<{ role: UserRole; count: number }>;
     
     const counts: Record<UserRole, number> = {
       admin: 0,

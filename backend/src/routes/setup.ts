@@ -7,7 +7,6 @@ import connection from '../database/connection.js';
 import { DatabaseConfig } from '../database/adapters/base.js';
 import { initializeDatabase } from '../database/init.js';
 import UserModel from '../models/User.js';
-import { hashPassword } from '../utils/password.js';
 import { isSetupComplete, setupMarkerPath } from '../utils/setup.js';
 
 const router = express.Router();
@@ -76,7 +75,7 @@ router.post('/test-connection', async (req, res) => {
 
     if (database.type === 'sqlite') {
       testConfig.sqlite = {
-        filename: database.sqlite?.filename || '/app/data/wireindex.db'
+        filename: database.sqlite?.filename || '/app/data/cableindex.db'
       };
     } else if (database.type === 'mysql') {
       testConfig.mysql = {
@@ -149,7 +148,7 @@ router.post('/complete', async (req, res) => {
 
     if (setupData.database.type === 'sqlite') {
       dbConfig.sqlite = {
-        filename: setupData.database.sqlite?.filename || '/app/data/wireindex.db'
+        filename: setupData.database.sqlite?.filename || '/app/data/cableindex.db'
       };
     } else if (setupData.database.type === 'mysql') {
       dbConfig.mysql = {
@@ -173,29 +172,38 @@ router.post('/complete', async (req, res) => {
 
     // Create admin user
     const userModel = new UserModel();
-    const hashedPassword = await hashPassword(setupData.admin.password);
+    
+    console.log(`📝 Creating admin user: ${setupData.admin.email}`);
     
     // Check if user already exists
     let adminUser = await userModel.findByEmail(setupData.admin.email);
     
     if (!adminUser) {
       // Create new admin user if doesn't exist
+      // NOTE: Pass plain password to create() - it will hash internally
+      console.log(`✓ User does not exist, creating new admin user`);
       adminUser = await userModel.create({
         email: setupData.admin.email,
-        password: hashedPassword,
+        password: setupData.admin.password,
         full_name: setupData.admin.fullName,
         role: 'admin'
       });
+      console.log(`✓ Admin user created: ${adminUser.id} (${adminUser.email})`);
     } else {
       // Update existing user with new credentials
+      console.log(`⚠️  User already exists, updating credentials for: ${adminUser.email}`);
       adminUser = await userModel.update(adminUser.id, {
         full_name: setupData.admin.fullName,
         role: 'admin'
       }) || adminUser;
       
       // Update password if user exists
+      // NOTE: updatePassword expects plain password, it hashes internally
       await userModel.updatePassword(adminUser.id, setupData.admin.password);
+      console.log(`✓ Admin user updated: ${adminUser.id} (${adminUser.email})`);
     }
+
+    console.log(`✓ Admin user setup complete: ${adminUser.email} (ID: ${adminUser.id})`);
 
     // Save configuration to environment file
     // Write to /app/.env instead of /app/backend/.env for proper permissions
@@ -223,7 +231,7 @@ router.post('/complete', async (req, res) => {
     } else if (dbType === 'sqlite') {
       dbEnvVars.push(
         `DB_TYPE=sqlite`,
-        `DATABASE_PATH=${setupData.database.sqlite?.filename || path.join('/app', 'data', 'wireindex.db')}`
+        `DATABASE_PATH=${setupData.database.sqlite?.filename || path.join('/app', 'data', 'cableindex.db')}`
       );
     } else {
       // This should never happen due to zod validation, but TypeScript requires it

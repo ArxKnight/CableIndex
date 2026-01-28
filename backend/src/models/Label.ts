@@ -141,15 +141,28 @@ export class LabelModel {
     const { limit = 50, offset = 0 } = options;
     const safeLimit = parseInt(String(limit), 10) || 50;
     const safeOffset = parseInt(String(offset), 10) || 0;
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
+    const finalLimit = Math.max(0, safeLimit);
+    const finalOffset = Math.max(0, safeOffset);
     
-    const rows = await this.adapter.query(
-      `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
-       FROM labels 
-       WHERE site_id = ? AND user_id = ? AND is_active = 1
-       ORDER BY reference_number ASC
-       LIMIT ? OFFSET ?`,
-      [siteId, userId, safeLimit, safeOffset]
-    );
+    const query = isMySQL
+      ? `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
+         FROM labels 
+         WHERE site_id = ? AND user_id = ? AND is_active = 1
+         ORDER BY reference_number ASC
+         LIMIT ${finalLimit} OFFSET ${finalOffset}`
+      : `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
+         FROM labels 
+         WHERE site_id = ? AND user_id = ? AND is_active = 1
+         ORDER BY reference_number ASC
+         LIMIT ? OFFSET ?`;
+
+    const params = isMySQL
+      ? [siteId, userId]
+      : [siteId, userId, finalLimit, finalOffset];
+
+    const rows = await this.adapter.query(query, params);
     
     return rows as Label[];
   }
@@ -165,6 +178,8 @@ export class LabelModel {
     `;
     
     const params: any[] = [userId];
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
     
     if (options.site_id) {
       query += ` AND site_id = ?`;
@@ -197,13 +212,23 @@ export class LabelModel {
     query += ` ORDER BY ${sortBy} ${sortOrder}`;
     
     if (options.limit) {
-      query += ` LIMIT ?`;
-      params.push(parseInt(String(options.limit), 10) || 50);
+      const safeLimit = Math.max(0, parseInt(String(options.limit), 10) || 50);
+      if (isMySQL) {
+        query += ` LIMIT ${safeLimit}`;
+      } else {
+        query += ` LIMIT ?`;
+        params.push(safeLimit);
+      }
     }
 
     if (options.offset) {
-      query += ` OFFSET ?`;
-      params.push(parseInt(String(options.offset), 10) || 0);
+      const safeOffset = Math.max(0, parseInt(String(options.offset), 10) || 0);
+      if (isMySQL) {
+        query += ` OFFSET ${safeOffset}`;
+      } else {
+        query += ` OFFSET ?`;
+        params.push(safeOffset);
+      }
     }
 
     const rows = await this.adapter.query(query, params);
@@ -342,15 +367,24 @@ export class LabelModel {
    * Find recent labels for user
    */
   async findRecentByUserId(userId: number, limit: number = 10): Promise<Label[]> {
-    const safeLimit = parseInt(String(limit), 10) || 10;
-    const rows = await this.adapter.query(
-      `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
-       FROM labels 
-       WHERE user_id = ? AND is_active = 1
-       ORDER BY created_at DESC
-       LIMIT ?`,
-      [userId, safeLimit]
-    );
+    const safeLimit = Math.max(0, parseInt(String(limit), 10) || 10);
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
+
+    const query = isMySQL
+      ? `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
+         FROM labels 
+         WHERE user_id = ? AND is_active = 1
+         ORDER BY created_at DESC
+         LIMIT ${safeLimit}`
+      : `SELECT id, reference_number, site_id, user_id, source, destination, notes, zpl_content, is_active, created_at, updated_at
+         FROM labels 
+         WHERE user_id = ? AND is_active = 1
+         ORDER BY created_at DESC
+         LIMIT ?`;
+
+    const params = isMySQL ? [userId] : [userId, safeLimit];
+    const rows = await this.adapter.query(query, params);
     
     return rows as Label[];
   }

@@ -44,6 +44,8 @@ router.post('/login', async (req: Request, res: Response) => {
     console.log(`🔍 Verifying credentials against ${dbType.toUpperCase()} for: ${email}`);
     const user = await userModel.verifyCredentials(validated.email, validated.password);
     
+    console.log(`🔍 verifyCredentials returned: ${user ? `user ${user.id}` : 'null'}`);
+    
     if (!user) {
       console.warn(`✗ Invalid credentials for: ${email}`);
       return res.status(401).json({

@@ -44,57 +44,63 @@ export async function initializeDatabase(options: InitOptions = {}): Promise<voi
 }
 
 async function seedDatabase(): Promise<void> {
-  const db = connection.getConnection();
+  const adapter = connection.getAdapter();
   
   try {
-    // Begin transaction
-    const transaction = db.transaction(() => {
-      // Create default admin user if none exists
-      const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
-      
-      if (userCount.count === 0) {
-        console.log('Creating default admin user...');
-        
-        // Insert default admin user (password will be hashed by the User model)
-        const insertUser = db.prepare(`
-          INSERT INTO users (email, password_hash, full_name, created_at, updated_at)
-          VALUES (?, ?, ?, datetime('now'), datetime('now'))
-        `);
-        
-        // Note: This is a placeholder - actual password hashing should be done by the User model
-        const userId = insertUser.run('admin@example.com', 'temp_hash', 'System Administrator').lastInsertRowid;
-        
-        // Assign admin role
-        const insertRole = db.prepare(`
-          INSERT INTO user_roles (user_id, role, created_at)
-          VALUES (?, 'admin', datetime('now'))
-        `);
-        insertRole.run(userId);
-        
-        console.log('✅ Default admin user created');
-      }
-      
-      // Create default application settings
-      const settingsCount = db.prepare('SELECT COUNT(*) as count FROM app_settings').get() as { count: number };
-      
-      if (settingsCount.count === 0) {
-        console.log('Creating default application settings...');
-        
-        const insertSetting = db.prepare(`
-          INSERT INTO app_settings (key, value, created_at, updated_at)
-          VALUES (?, ?, datetime('now'), datetime('now'))
-        `);
-        
-        insertSetting.run('public_registration_enabled', 'false');
-        insertSetting.run('app_name', 'Cable Manager MVP');
-        insertSetting.run('app_version', '1.0.0');
-        
-        console.log('✅ Default application settings created');
-      }
-    });
+    await adapter.beginTransaction();
+    const nowIso = new Date().toISOString();
+
+    // Create default admin user if none exists
+    const userCountRows = await adapter.query('SELECT COUNT(*) as count FROM users');
+    const userCount = userCountRows[0] as { count: number };
     
-    transaction();
+    if (userCount.count === 0) {
+      console.log('Creating default admin user...');
+      
+      // Insert default admin user (password will be hashed by the User model)
+      const insertUser = await adapter.execute(
+        `INSERT INTO users (email, password_hash, full_name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        ['admin@example.com', 'temp_hash', 'System Administrator', nowIso, nowIso]
+      );
+      
+      // Note: This is a placeholder - actual password hashing should be done by the User model
+      const userId = insertUser.insertId;
+      
+      // Assign admin role
+      if (userId) {
+        await adapter.execute(
+          `INSERT INTO user_roles (user_id, role, created_at)
+           VALUES (?, 'admin', ?)`,
+          [userId, nowIso]
+        );
+      }
+      
+      console.log('✅ Default admin user created');
+    }
+    
+    // Create default application settings
+    const settingsCountRows = await adapter.query('SELECT COUNT(*) as count FROM app_settings');
+    const settingsCount = settingsCountRows[0] as { count: number };
+    
+    if (settingsCount.count === 0) {
+      console.log('Creating default application settings...');
+      
+      const insertSettingSql = `
+        INSERT INTO app_settings (key, value, created_at, updated_at)
+        VALUES (?, ?, ?, ?)
+      `;
+      
+      await adapter.execute(insertSettingSql, ['public_registration_enabled', 'false', nowIso, nowIso]);
+      await adapter.execute(insertSettingSql, ['app_name', 'Cable Manager MVP', nowIso, nowIso]);
+      await adapter.execute(insertSettingSql, ['app_version', '1.0.0', nowIso, nowIso]);
+      
+      console.log('✅ Default application settings created');
+    }
+
+    await adapter.commit();
   } catch (error) {
+    await adapter.rollback();
     console.error('❌ Database seeding failed:', error);
     throw error;
   }

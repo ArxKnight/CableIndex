@@ -38,7 +38,7 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    service: 'wireindex-backend'
+    service: 'cableindex-backend'
   });
 });
 
@@ -46,7 +46,7 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api', (req, res) => {
   res.json({
-    message: 'WireIndex API',
+    message: 'CableIndex API',
     version: '1.0.0'
   });
 });

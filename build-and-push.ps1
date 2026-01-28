@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# PowerShell script to build and push WireIndex Docker image
+# PowerShell script to build and push CableIndex Docker image
 
 param(
     [string]$Tag = "latest",
@@ -9,16 +9,16 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "🚀 Building WireIndex Docker Image..." -ForegroundColor Cyan
+Write-Host "🚀 Building CableIndex Docker Image..." -ForegroundColor Cyan
 Write-Host ""
 
 # Build arguments
-$buildArgs = @("build", "-t", "arxknight/wireindex:$Tag", ".")
+$buildArgs = @("build", "-t", "arxknight/cableindex:$Tag", ".")
 if ($NoCache) {
     $buildArgs += "--no-cache"
 }
 
-Write-Host "📦 Building image: arxknight/wireindex:$Tag" -ForegroundColor Green
+Write-Host "📦 Building image: arxknight/cableindex:$Tag" -ForegroundColor Green
 docker @buildArgs
 
 if ($LASTEXITCODE -ne 0) {
@@ -31,7 +31,7 @@ Write-Host ""
 
 if (-not $NoPush) {
     Write-Host "📤 Pushing image to registry..." -ForegroundColor Cyan
-    docker push "arxknight/wireindex:$Tag"
+    docker push "arxknight/cableindex:$Tag"
     
     if ($LASTEXITCODE -ne 0) {
         Write-Host "❌ Push failed!" -ForegroundColor Red

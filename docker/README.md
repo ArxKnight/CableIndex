@@ -1,14 +1,14 @@
-# WireIndex Docker Setup
+# cableindex Docker Setup
 
 ## 🐳 Docker Deployment for Unraid
 
-This guide will help you deploy WireIndex on Unraid using Docker.
+This guide will help you deploy cableindex on Unraid using Docker.
 
 ### Quick Start
 
 1. **Build the Docker image:**
    ```bash
-   docker build -t wireindex:latest .
+   docker build -t cableindex:latest .
    ```
 
 2. **Run with Docker Compose:**
@@ -20,7 +20,7 @@ This guide will help you deploy WireIndex on Unraid using Docker.
 
 #### Method 1: Using Community Applications (Recommended)
 1. Install "Community Applications" plugin if not already installed
-2. Search for "WireIndex" in Community Applications
+2. Search for "cableindex" in Community Applications
 3. Click "Install" and configure the settings
 
 #### Method 2: Manual Template Installation
@@ -37,9 +37,9 @@ This guide will help you deploy WireIndex on Unraid using Docker.
 - **Container Port**: Keep this as 3000 (internal application port)
 
 #### Volume Mappings
-- **Data Directory**: `/mnt/user/appdata/wireindex/data` → `/app/data`
+- **Data Directory**: `/mnt/user/appdata/cableindex/data` → `/app/data`
   - Contains the SQLite database and application data
-- **Uploads Directory**: `/mnt/user/appdata/wireindex/uploads` → `/app/uploads`
+- **Uploads Directory**: `/mnt/user/appdata/cableindex/uploads` → `/app/uploads`
   - Contains uploaded files and generated labels
 
 #### Environment Variables
@@ -52,33 +52,33 @@ This guide will help you deploy WireIndex on Unraid using Docker.
 - **MYSQL_PORT**: MySQL server port (MySQL only, default: 3306)
 - **MYSQL_USER**: MySQL username (MySQL only)
 - **MYSQL_PASSWORD**: MySQL password (MySQL only)
-- **MYSQL_DATABASE**: MySQL database name (MySQL only, default: wireindex)
+- **MYSQL_DATABASE**: MySQL database name (MySQL only, default: cableindex)
 - **MYSQL_SSL**: Enable SSL for MySQL connection (MySQL only, default: false)
 
 ### Example Unraid Docker Run Command
 
 ```bash
 docker run -d \
-  --name=wireindex \
+  --name=cableindex \
   -p 8080:3000 \
-  -v /mnt/user/appdata/wireindex/data:/app/data \
-  -v /mnt/user/appdata/wireindex/uploads:/app/uploads \
+  -v /mnt/user/appdata/cableindex/data:/app/data \
+  -v /mnt/user/appdata/cableindex/uploads:/app/uploads \
   -e PORT=3000 \
   -e NODE_ENV=production \
   -e JWT_SECRET=your-secret-key-here \
   --restart unless-stopped \
-  wireindex:latest
+  cableindex:latest
 ```
 
 ### Accessing the Application
 
-After deployment, access WireIndex at:
+After deployment, access cableindex at:
 - **URL**: `http://YOUR_UNRAID_IP:HOST_PORT`
 - **Example**: `http://192.168.1.100:8080`
 
 ### First-Time Setup
 
-When you first access WireIndex, you'll be presented with a setup wizard that allows you to:
+When you first access cableindex, you'll be presented with a setup wizard that allows you to:
 
 1. **Choose Database Type**:
    - **SQLite** (Recommended): Simple, file-based database perfect for most users
@@ -102,7 +102,7 @@ When you first access WireIndex, you'll be presented with a setup wizard that al
 #### MySQL
 - **Pros**: Supports multiple application instances, better for high-traffic scenarios
 - **Cons**: Requires separate MySQL server, more complex setup
-- **Best for**: Advanced users, multiple WireIndex instances, existing MySQL infrastructure
+- **Best for**: Advanced users, multiple cableindex instances, existing MySQL infrastructure
 
 ### External MySQL Setup
 
@@ -114,10 +114,10 @@ If you choose MySQL during setup, you can:
 Example MySQL container setup for Unraid:
 ```bash
 docker run -d \
-  --name=mysql-wireindex \
+  --name=mysql-cableindex \
   -e MYSQL_ROOT_PASSWORD=your_password \
-  -e MYSQL_DATABASE=wireindex \
-  -v /mnt/user/appdata/mysql-wireindex:/var/lib/mysql \
+  -e MYSQL_DATABASE=cableindex \
+  -v /mnt/user/appdata/mysql-cableindex:/var/lib/mysql \
   -p 3306:3306 \
   mysql:8.0
 ```
@@ -125,20 +125,20 @@ docker run -d \
 ### Data Persistence
 
 All data is stored in the mounted volumes:
-- Database: `/mnt/user/appdata/wireindex/data/wireindex.db`
-- Uploads: `/mnt/user/appdata/wireindex/uploads/`
+- Database: `/mnt/user/appdata/cableindex/data/cableindex.db`
+- Uploads: `/mnt/user/appdata/cableindex/uploads/`
 
 ### Backup
 
-To backup your WireIndex data:
+To backup your cableindex data:
 1. Stop the container
-2. Copy the entire `/mnt/user/appdata/wireindex/` directory
+2. Copy the entire `/mnt/user/appdata/cableindex/` directory
 3. Restart the container
 
 ### Troubleshooting
 
 #### Container Won't Start
-- Check Unraid logs: `docker logs wireindex`
+- Check Unraid logs: `docker logs cableindex`
 - Verify port is not in use by another container
 - Ensure volume paths exist and have correct permissions
 
@@ -154,9 +154,9 @@ To backup your WireIndex data:
 
 ### Updates
 
-To update WireIndex:
+To update cableindex:
 1. Stop the container
-2. Pull the latest image: `docker pull wireindex:latest`
+2. Pull the latest image: `docker pull cableindex:latest`
 3. Restart the container with the same configuration
 
 ### Support

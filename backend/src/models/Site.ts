@@ -64,6 +64,10 @@ export class SiteModel {
     const { search, limit = 50, offset = 0 } = options;
     const safeLimit = parseInt(String(limit), 10) || 50;
     const safeOffset = parseInt(String(offset), 10) || 0;
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
+    const finalLimit = Math.max(0, safeLimit);
+    const finalOffset = Math.max(0, safeOffset);
     
     let query = `
       SELECT id, name, location, description, user_id, is_active, created_at, updated_at
@@ -79,8 +83,12 @@ export class SiteModel {
       params.push(searchPattern, searchPattern, searchPattern);
     }
     
-    query += ` ORDER BY name ASC LIMIT ? OFFSET ?`;
-    params.push(safeLimit, safeOffset);
+    if (isMySQL) {
+      query += ` ORDER BY name ASC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
+    } else {
+      query += ` ORDER BY name ASC LIMIT ? OFFSET ?`;
+      params.push(finalLimit, finalOffset);
+    }
     
     const rows = await this.adapter.query(query, params);
     return rows as Site[];
@@ -234,6 +242,10 @@ export class SiteModel {
     // Ensure limit and offset are integers for MySQL prepared statements
     const safeLimit = parseInt(String(limit), 10) || 50;
     const safeOffset = parseInt(String(offset), 10) || 0;
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
+    const finalLimit = Math.max(0, safeLimit);
+    const finalOffset = Math.max(0, safeOffset);
     
     let query = `
       SELECT 
@@ -252,8 +264,12 @@ export class SiteModel {
       params.push(searchPattern, searchPattern, searchPattern);
     }
     
-    query += ` GROUP BY s.id ORDER BY s.name ASC LIMIT ? OFFSET ?`;
-    params.push(safeLimit, safeOffset);
+    if (isMySQL) {
+      query += ` GROUP BY s.id ORDER BY s.name ASC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
+    } else {
+      query += ` GROUP BY s.id ORDER BY s.name ASC LIMIT ? OFFSET ?`;
+      params.push(finalLimit, finalOffset);
+    }
     
     const rows = await this.adapter.query(query, params);
     return rows as (Site & { label_count: number })[];

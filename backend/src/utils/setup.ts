@@ -71,7 +71,7 @@ async function usersTableExists(): Promise<boolean> {
     }
 
     if (config.type === 'mysql') {
-      const dbName = config.mysql?.database || 'wireindex';
+      const dbName = config.mysql?.database || 'cableindex';
       const rows = await adapter.query(
         'SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1',
         [dbName, 'users']

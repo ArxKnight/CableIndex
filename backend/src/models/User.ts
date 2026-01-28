@@ -81,16 +81,23 @@ export class UserModel {
    * Verify user credentials
    */
   async verifyCredentials(email: string, password: string): Promise<User | null> {
+    console.log(`🔍 Verifying credentials for: ${email}`);
     const user = await this.findByEmail(email);
     if (!user) {
+      console.warn(`⚠️  User not found in database: ${email}`);
       return null;
     }
 
+    console.log(`✓ User found: ${user.email} (ID: ${user.id})`);
     const isValidPassword = await comparePassword(password, user.password_hash);
     if (!isValidPassword) {
+      console.warn(`✗ Password mismatch for user: ${email}`);
+      console.log(`📋 User password_hash exists: ${!!user.password_hash}`);
+      console.log(`📋 Password hash length: ${user.password_hash?.length}`);
       return null;
     }
 
+    console.log(`✓ Credentials verified for: ${email}`);
     return user;
   }
 
@@ -177,13 +184,23 @@ export class UserModel {
   async findAll(limit: number = 50, offset: number = 0): Promise<User[]> {
     const safeLimit = parseInt(String(limit), 10) || 50;
     const safeOffset = parseInt(String(offset), 10) || 0;
-    const rows = await this.adapter.query(
-      `SELECT id, email, full_name, password_hash, role, created_at, updated_at
-       FROM users 
-       ORDER BY created_at DESC
-       LIMIT ? OFFSET ?`,
-      [safeLimit, safeOffset]
-    );
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
+    const finalLimit = Math.max(0, safeLimit);
+    const finalOffset = Math.max(0, safeOffset);
+
+    const query = isMySQL
+      ? `SELECT id, email, full_name, password_hash, role, created_at, updated_at
+         FROM users 
+         ORDER BY created_at DESC
+         LIMIT ${finalLimit} OFFSET ${finalOffset}`
+      : `SELECT id, email, full_name, password_hash, role, created_at, updated_at
+         FROM users 
+         ORDER BY created_at DESC
+         LIMIT ? OFFSET ?`;
+
+    const params = isMySQL ? [] : [finalLimit, finalOffset];
+    const rows = await this.adapter.query(query, params);
     
     return rows as User[];
   }

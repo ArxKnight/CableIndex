@@ -128,7 +128,7 @@ class DatabaseConnection {
           port: parseInt(process.env.MYSQL_PORT || '3306'),
           user: process.env.MYSQL_USER || 'root',
           password: process.env.MYSQL_PASSWORD || '',
-          database: process.env.MYSQL_DATABASE || 'wireindex',
+          database: process.env.MYSQL_DATABASE || 'cableindex',
           ssl: process.env.MYSQL_SSL === 'true',
         }
       };
@@ -138,7 +138,7 @@ class DatabaseConnection {
     return {
       type: 'sqlite',
       sqlite: {
-        filename: process.env.DATABASE_PATH || path.join('/app', 'data', 'wireindex.db'),
+        filename: process.env.DATABASE_PATH || path.join('/app', 'data', 'cableindex.db'),
       }
     };
   }

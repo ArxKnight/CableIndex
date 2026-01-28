@@ -102,11 +102,11 @@ const Navigation: React.FC = () => {
             <div className="flex-shrink-0 flex items-center">
               <Link to="/dashboard" className="flex items-center space-x-2">
                 <img 
-                  src="/wireindex-icon.png" 
-                  alt="WireIndex" 
+                  src="/cableindex-icon.png" 
+                  alt="CableIndex" 
                   className="h-8 w-8"
                 />
-                <span className="text-xl font-bold text-gray-900">WireIndex</span>
+                <span className="text-xl font-bold text-gray-900">CableIndex</span>
               </Link>
             </div>
             

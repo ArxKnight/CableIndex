@@ -55,14 +55,14 @@ const SetupPage: React.FC = () => {
       database: {
         type: 'sqlite',
         sqlite: {
-          filename: '/app/data/wireindex.db',
+          filename: '/app/data/cableindex.db',
         },
         mysql: {
           host: 'localhost',
           port: 3306,
           user: 'root',
           password: '',
-          database: 'wireindex',
+          database: 'cableindex',
           ssl: false,
         },
       },
@@ -168,7 +168,7 @@ const SetupPage: React.FC = () => {
             <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
             <CardTitle>Setup Complete!</CardTitle>
             <CardDescription>
-              WireIndex has been configured successfully. You'll be redirected to the login page shortly.
+              CableIndex has been configured successfully. You'll be redirected to the login page shortly.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -182,10 +182,10 @@ const SetupPage: React.FC = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="w-6 h-6" />
-            WireIndex Setup
+            CableIndex Setup
           </CardTitle>
           <CardDescription>
-            Welcome! Let's configure your WireIndex installation.
+            Welcome! Let's configure your CableIndex installation.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -230,7 +230,7 @@ const SetupPage: React.FC = () => {
                       <Input
                         id="sqlite-filename"
                         {...register('database.sqlite.filename')}
-                        placeholder="/app/data/wireindex.db"
+                        placeholder="/app/data/cableindex.db"
                       />
                       <p className="text-sm text-gray-500 mt-1">
                         Path where the SQLite database file will be stored
@@ -270,7 +270,7 @@ const SetupPage: React.FC = () => {
                         <Input
                           id="mysql-database"
                           {...register('database.mysql.database')}
-                          placeholder="wireindex"
+                          placeholder="cableindex"
                         />
                         {errors.database?.mysql?.database && (
                           <p className="text-sm text-red-600">{errors.database.mysql.database.message}</p>

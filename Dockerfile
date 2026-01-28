@@ -1,4 +1,4 @@
-# Multi-stage build for WireIndex
+# Multi-stage build for CableIndex
 FROM node:22-alpine AS base
 
 # Install dependencies only when needed
@@ -39,7 +39,7 @@ RUN apk add --no-cache su-exec
 
 # Create app user
 RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 wireindex
+RUN adduser --system --uid 1001 cableindex
 
 # Install production dependencies
 COPY --from=deps /app/backend/node_modules ./backend/node_modules
@@ -55,17 +55,17 @@ RUN chmod +x start.sh entrypoint.sh
 # Create data directory for database and uploads with proper permissions
 # Must be done as root before switching users
 RUN mkdir -p /app/data && \
-    chown -R wireindex:nodejs /app/data && \
+    chown -R cableindex:nodejs /app/data && \
     chmod -R 777 /app/data
 RUN mkdir -p /app/uploads && \
-    chown -R wireindex:nodejs /app/uploads && \
+    chown -R cableindex:nodejs /app/uploads && \
     chmod -R 777 /app/uploads
 RUN touch /app/.env && \
-    chown wireindex:nodejs /app/.env && \
+    chown cableindex:nodejs /app/.env && \
     chmod 666 /app/.env
 
-# Note: We don't switch to wireindex user here anymore
-# The entrypoint will handle permissions and then run as wireindex
+# Note: We don't switch to cableindex user here anymore
+# The entrypoint will handle permissions and then run as cableindex
 
 # Expose port (configurable via environment)
 EXPOSE 3000

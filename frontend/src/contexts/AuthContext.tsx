@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { AuthUser, AuthTokens, LoginCredentials, RegisterData, AuthState } from '../types';
 import { apiClient, setAuthTokens, getAuthTokens, clearAuthTokens } from '../lib/api';
+import { toast } from 'sonner';
 
 interface AuthContextType extends AuthState {
   login: (credentials: LoginCredentials) => Promise<void>;
@@ -65,6 +66,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(userData);
         setTokens(authTokens);
         setAuthTokens(authTokens);
+        toast.success(`Welcome back, ${userData.full_name}!`);
       } else {
         throw new Error(response.error || 'Login failed');
       }
@@ -88,6 +90,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(userData);
         setTokens(authTokens);
         setAuthTokens(authTokens);
+        toast.success(`Welcome to CableIndex, ${userData.full_name}!`);
       } else {
         throw new Error(response.error || 'Registration failed');
       }

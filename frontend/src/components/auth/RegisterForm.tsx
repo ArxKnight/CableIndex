@@ -76,15 +76,15 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onSwitchToLogin 
     <div className="w-full max-w-md mx-auto">
       <div className="text-center mb-6">
         <div className="flex justify-center mb-4">
-          <img 
-            src="/wireindex-logo.png" 
-            alt="WireIndex" 
+          <img
+            src="/cableindex-logo.png"
+            alt="CableIndex"
             className="h-16 w-auto"
           />
         </div>
         <h1 className="text-2xl font-bold">Create Account</h1>
         <p className="text-muted-foreground mt-2">
-          Sign up to start using WireIndex
+          Sign up to start using CableIndex
         </p>
       </div>
 

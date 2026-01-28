@@ -1,7 +1,7 @@
 {
-  "name": "wireindex-backend",
+  "name": "cableindex-backend",
   "version": "1.0.0",
-  "description": "Backend API for WireIndex",
+  "description": "Backend API for CableIndex",
   "main": "dist/app.js",
   "type": "module",
   "scripts": {

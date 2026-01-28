@@ -31,7 +31,7 @@ router.get('/', authenticateToken, requireUserManagement, async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
     const offset = (page - 1) * limit;
 
-    const users = roleService.getAllUsersWithRoles(limit, offset);
+    const users = await roleService.getAllUsersWithRoles(limit, offset);
     const totalUsers = await userModel.count();
     const totalPages = Math.ceil(totalUsers / limit);
 
@@ -70,7 +70,7 @@ router.get('/', authenticateToken, requireUserManagement, async (req, res) => {
 router.get('/stats', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const totalUsers = await userModel.count();
-    const usersByRole = roleService.countUsersByRole();
+    const usersByRole = await roleService.countUsersByRole();
 
     res.json({
       success: true,
@@ -147,7 +147,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
 
     // Update role if provided
     if (updateData.role && updateData.role !== existingUser.role) {
-      roleService.assignRole(userId, updateData.role);
+      await roleService.assignRole(userId, updateData.role);
     }
 
     // Remove password_hash from response
