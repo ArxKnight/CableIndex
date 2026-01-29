@@ -20,9 +20,9 @@ A professional cable labeling system for Brady printers with automatic reference
 
 ### User Management & Security
 - 👥 **Multi-User Support**: Complete user account management system
-- 🔐 **Role-Based Access**: Admin, Moderator, and User roles with granular permissions
+- 🔐 **Role-Based Access**: Global roles (Global Admin, Admin, User) plus per-site roles
 - 🎫 **JWT Authentication**: Secure token-based authentication with refresh
-- 📧 **User Invitations**: Admin-controlled user invitation system
+- 📧 **User Invitations**: Admin-controlled invitations with site assignments
 - 🛡️ **Data Security**: Password hashing, input validation, and secure sessions
 
 ### Dashboard & Analytics
@@ -86,9 +86,9 @@ A professional cable labeling system for Brady printers with automatic reference
 
 3. **Set up environment variables:**
    ```bash
-   # Copy example environment files
+   # Copy backend environment file
    cp backend/.env.example backend/.env
-   cp frontend/.env.example frontend/.env
+   # (Optional) create frontend/.env if you need to override defaults
    
    # Edit backend/.env with your configuration
    # Key settings: JWT_SECRET, database configuration
@@ -137,10 +137,13 @@ npm run build              # Build both for production
 npm run build:frontend     # Build React app only
 npm run build:backend      # Build Express API only
 
+# Preview
+npm run preview            # Preview frontend production build
+
 # Testing
-npm run test              # Run all tests
-cd frontend && npm test   # Frontend tests only
-cd backend && npm test    # Backend tests only
+cd frontend && npm run test       # Frontend tests only
+cd frontend && npm run test:watch # Frontend watch mode
+cd backend && npm run test        # Backend tests only
 ```
 
 ## 📁 Project Structure
@@ -195,12 +198,18 @@ cableindex/
 
 ### Authentication & User Management
 - `POST /api/auth/login` - User authentication with JWT tokens
-- `POST /api/auth/register` - User registration (if enabled)
+- `POST /api/auth/register` - User registration (currently disabled; use invitations)
 - `POST /api/auth/refresh` - Refresh JWT access token
-- `POST /api/auth/reset-password` - Password reset functionality
-- `GET /api/users/profile` - Get current user profile
-- `PUT /api/users/profile` - Update user profile information
-- `PUT /api/users/password` - Change user password
+- `GET /api/auth/me` - Get current user profile
+- `PUT /api/auth/profile` - Update user profile information
+- `PUT /api/auth/password` - Change user password
+- `POST /api/auth/logout` - Logout / invalidate session
+
+### User Administration (Legacy)
+- `GET /api/users` - List users (requires authentication)
+- `GET /api/users/stats` - User statistics (admin only)
+- `PUT /api/users/:id` - Update user (admin only)
+- `DELETE /api/users/:id` - Delete user (admin only)
 
 ### Sites Management
 - `GET /api/sites` - List user-accessible sites
@@ -210,34 +219,41 @@ cableindex/
 - `DELETE /api/sites/:id` - Delete site (if no associated labels)
 
 ### Label Operations
-- `GET /api/labels` - List user labels with filtering and pagination
-- `POST /api/labels` - Create new cable label with auto-reference
-- `GET /api/labels/:id` - Get specific label details
-- `PUT /api/labels/:id` - Update existing label
-- `DELETE /api/labels/:id` - Delete label
-- `POST /api/labels/export` - Bulk export labels as ZPL files
+- `GET /api/labels` - List labels for a site (requires `site_id`)
+- `GET /api/labels/stats` - Label statistics for a site
+- `GET /api/labels/recent` - Recent labels for dashboard (requires `site_id`)
+- `GET /api/labels/:id` - Get label details (requires `site_id`)
+- `POST /api/labels` - Create new label with auto-reference
+- `PUT /api/labels/:id` - Update existing label (requires `site_id`)
+- `DELETE /api/labels/:id` - Delete label (requires `site_id`)
+- `POST /api/labels/bulk-delete` - Bulk delete labels (requires `site_id`)
+- `GET /api/labels/:id/zpl` - Download label as ZPL (requires `site_id`)
+- `POST /api/labels/bulk-zpl` - Bulk export labels as ZPL (requires `site_id`)
 
 ### Label Generation
-- `POST /api/labels/cable` - Generate cable label ZPL
-- `POST /api/labels/port` - Generate port labels for switches
-- `POST /api/labels/pdu` - Generate PDU port labels
-- `GET /api/labels/download/:id` - Download label as ZPL file
+- `POST /api/labels/port-labels/zpl` - Generate port label ZPL
+- `POST /api/labels/pdu-labels/zpl` - Generate PDU label ZPL
 
-### Admin Panel (Admin/Moderator only)
-- `GET /api/admin/users` - List all system users
-- `POST /api/admin/invite` - Send user invitation email
+### Admin Panel (Global Admin/Admin)
+- `POST /api/admin/invite` - Create invitation with site assignments
+- `GET /api/admin/invitations` - List pending invitations
+- `DELETE /api/admin/invitations/:id` - Cancel invitation
+- `POST /api/admin/accept-invite` - Accept invitation (public)
+- `GET /api/admin/validate-invite/:token` - Validate invitation token
+- `GET /api/admin/users` - List users (scoped by shared sites for Admin)
 - `PUT /api/admin/users/:id/role` - Update user role
-- `PUT /api/admin/users/:id/permissions` - Update user permissions
+- `GET /api/admin/users/:id/sites` - List user site memberships
+- `PUT /api/admin/users/:id/sites` - Replace user site memberships
 - `DELETE /api/admin/users/:id` - Deactivate user account
-- `GET /api/admin/stats` - System statistics and analytics
 - `GET /api/admin/settings` - Application configuration
 - `PUT /api/admin/settings` - Update application settings
+- `GET /api/admin/stats` - System statistics (site-scoped for Admin)
 
 ### Setup & Health
 - `GET /api/health` - Health check endpoint for monitoring
 - `GET /api/setup/status` - Check if initial setup is complete
-- `POST /api/setup/database` - Configure database connection
-- `POST /api/setup/admin` - Create initial admin account
+- `POST /api/setup/test-connection` - Test database connection
+- `POST /api/setup/complete` - Configure database + create initial admin
 
 ## ⚙️ Configuration
 
@@ -248,7 +264,7 @@ cableindex/
 # Server Configuration
 PORT=3001                                    # API server port
 NODE_ENV=development                         # Environment mode
-FRONTEND_URL=http://localhost:3000          # Frontend URL for CORS
+FRONTEND_URL=http://localhost:3000          # Reserved (currently not used)
 
 # Authentication & Security
 JWT_SECRET=your-super-secret-jwt-key        # JWT signing secret (CHANGE THIS!)
@@ -257,10 +273,10 @@ JWT_REFRESH_EXPIRES_IN=7d                   # Refresh token expiration
 BCRYPT_ROUNDS=12                            # Password hashing rounds
 
 # Database Configuration
-DB_TYPE=sqlite                              # Database type: 'sqlite' or 'mysql'
+DB_TYPE=sqlite                              # Database type: 'sqlite' or 'mysql' (defaults to sqlite)
 
 # SQLite Settings (when DB_TYPE=sqlite)
-DATABASE_PATH=./data/cableindex.db       # SQLite database file path
+DATABASE_PATH=./data/cableindex.db       # SQLite database file path (adjust as needed)
 
 # MySQL Settings (when DB_TYPE=mysql)
 MYSQL_HOST=localhost                        # MySQL server host
@@ -269,16 +285,13 @@ MYSQL_USER=cableindex                    # MySQL username
 MYSQL_PASSWORD=your_password                # MySQL password
 MYSQL_DATABASE=cableindex                # MySQL database name
 MYSQL_SSL=false                             # Enable SSL connection
-
-# File Storage
-UPLOADS_PATH=./uploads                      # File upload directory
 ```
 
 ### Frontend Environment Variables (.env)
 ```bash
 # API Configuration
 VITE_API_URL=http://localhost:3001/api      # Backend API base URL
-VITE_APP_NAME=CableIndex                 # Application display name
+VITE_BASE_PATH=/                            # Base path when hosted under a sub-path
 ```
 
 ### Database Selection Guide
@@ -304,7 +317,6 @@ VITE_APP_NAME=CableIndex                 # Application display name
 PORT=3000                                   # Host port mapping
 JWT_SECRET=your-production-secret           # Production JWT secret
 DATABASE_PATH=/app/data/cableindex.db    # Container database path
-UPLOADS_PATH=/app/uploads                   # Container uploads path
 ```
 
 ## 🧪 Testing
@@ -327,20 +339,12 @@ The project includes comprehensive test suites for both frontend and backend:
 ### Running Tests
 
 ```bash
-# Run all tests
-npm run test
-
 # Frontend tests only
 cd frontend && npm run test
 cd frontend && npm run test:watch    # Watch mode
 
 # Backend tests only
 cd backend && npm run test
-cd backend && npm run test:watch     # Watch mode
-
-# Test with coverage
-cd frontend && npm run test:coverage
-cd backend && npm run test:coverage
 ```
 
 ### Test Database
@@ -443,7 +447,9 @@ Configure JWT settings in backend environment:
 3. Install dependencies: `npm run install:all`
 4. Start development servers: `npm run dev`
 5. Make your changes and add tests
-6. Run tests: `npm run test`
+6. Run tests:
+   - `cd frontend && npm run test`
+   - `cd backend && npm run test`
 7. Commit changes: `git commit -m 'Add amazing feature'`
 8. Push to branch: `git push origin feature/amazing-feature`
 9. Open a Pull Request
@@ -540,38 +546,51 @@ All labels generate industry-standard ZPL (Zebra Programming Language) code comp
 
 ## 🔐 User Roles & Permissions
 
-### Admin
+CableIndex uses **global roles** for system-wide access and **site roles** for per-site permissions.
+
+### Global Roles
+
+**Global Admin**
 - **Full system access** - all features and settings
 - **User management** - invite, modify roles, deactivate users
-- **Application settings** - configure system behavior
 - **Site management** - create, edit, delete any site
-- **Label management** - access all labels across all sites
-- **Analytics** - view system-wide statistics and reports
+- **Analytics** - system-wide statistics and reporting
 
-### Moderator
-- **Advanced features** - bulk operations, advanced search
-- **Limited user management** - view users, basic modifications
-- **Site management** - create and manage assigned sites
-- **Label management** - full access to assigned site labels
-- **Reporting** - site-specific analytics and reports
+**Admin**
+- **Scoped administration** - manage users and invitations within shared sites
+- **Site management** - create new sites and administer assigned sites
+- **Analytics** - site-scoped statistics and reports
 
-### User
-- **Basic functionality** - create and manage own labels
-- **Site access** - view and use assigned sites only
-- **Label database** - search and export own labels
+**User**
+- **Standard access** - work within assigned sites
+- **Label management** - create, update, and export labels in assigned sites
 - **Profile management** - update personal information
-- **Dashboard** - personal statistics and quick actions
 
-### Permission Matrix
-| Feature | Admin | Moderator | User |
-|---------|-------|-----------|------|
-| Create Labels | ✅ | ✅ | ✅ |
-| Manage Own Sites | ✅ | ✅ | ✅ |
-| Manage All Sites | ✅ | ❌ | ❌ |
-| User Management | ✅ | 👁️ | ❌ |
-| System Settings | ✅ | ❌ | ❌ |
-| View All Labels | ✅ | 🏢 | ❌ |
-| Bulk Operations | ✅ | ✅ | ❌ |
-| Analytics | ✅ | 🏢 | 👤 |
+### Site Roles (per site)
 
-**Legend**: ✅ Full Access, 👁️ View Only, 🏢 Site-Specific, 👤 Personal Only, ❌ No Access
+**Site Admin**
+- **Site settings** - update site details and metadata
+- **Label operations** - full label access within the site
+
+**Site User**
+- **Label operations** - create, update, and export labels within the site
+
+### Permission Matrix (Global Roles)
+| Capability              | Global Admin | Admin | User |
+|-------------------------|--------------|-------|------|
+| Access admin panel      | ✅          | ✅    | ❌   |
+| Manage users & invites  | ✅          | 🏢    | ❌   |
+| Create sites            | ✅          | ✅    | ❌   |
+| View all sites          | ✅          | 🏢    | 🏢   |
+| System settings         | ✅          | ✅    | ❌   |
+| System-wide analytics   | ✅          | 🏢    | ❌   |
+
+### Permission Matrix (Site Roles)
+| Capability           | Site Admin | Site User |
+|----------------------|------------|-----------|
+| Update site details  | ✅         | ❌       |
+| Create labels        | ✅         | ✅       |
+| Update/delete labels | ✅         | ✅       |
+| Bulk export/delete   | ✅         | ✅       |
+
+**Legend**: ✅ Full Access, 🏢 Site-Scoped Access, ❌ No Access
