@@ -339,10 +339,15 @@ class ApiClient {
     return this.request(`/admin/users/${userId}`, { method: 'DELETE' });
   }
 
-  async inviteUser(email: string, sites: Array<{ site_id: number; site_role: 'ADMIN' | 'USER' }>, full_name: string) {
+  async inviteUser(
+    email: string,
+    sites: Array<{ site_id: number; site_role: 'ADMIN' | 'USER' }>,
+    full_name: string,
+    expires_in_days?: number
+  ) {
     return this.request('/admin/invite', {
       method: 'POST',
-      body: JSON.stringify({ email, full_name, sites }),
+      body: JSON.stringify({ email, full_name, sites, ...(expires_in_days ? { expires_in_days } : {}) }),
     });
   }
 
@@ -363,6 +368,23 @@ class ApiClient {
 
   async cancelInvitation(invitationId: number) {
     return this.request(`/admin/invitations/${invitationId}`, { method: 'DELETE' });
+  }
+
+  async rotateInvitationLink(invitationId: number, params?: { expires_in_days?: number }) {
+    return this.request<{ invite_url: string; expires_at: string }>(`/admin/invitations/${invitationId}/link`, {
+      method: 'POST',
+      body: JSON.stringify({ ...(params?.expires_in_days ? { expires_in_days: params.expires_in_days } : {}) }),
+    });
+  }
+
+  async resendInvitation(invitationId: number, params?: { expires_in_days?: number }) {
+    return this.request<{ invite_url: string; expires_at: string; email_sent: boolean; email_error?: string }>(
+      `/admin/invitations/${invitationId}/resend`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ ...(params?.expires_in_days ? { expires_in_days: params.expires_in_days } : {}) }),
+      }
+    );
   }
 
   async getAdminStats(siteId: number) {

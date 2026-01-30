@@ -17,6 +17,7 @@ const routeLabels: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/sites': 'Sites',
   '/labels': 'Labels',
+  '/tools': 'Tools',
   '/port-labels': 'Port Labels',
   '/pdu-labels': 'PDU Labels',
   '/admin': 'Admin',

@@ -27,6 +27,7 @@ const inviteUserSchema = z.object({
     site_role: z.enum(['ADMIN', 'USER']).default('USER'),
   })).min(1),
   role: z.enum(['GLOBAL_ADMIN', 'ADMIN', 'USER']).optional(),
+  expires_in_days: z.number().int().min(1).max(30).optional().default(7),
 });
 
 const acceptInviteSchema = z.object({
@@ -57,7 +58,7 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
       });
     }
 
-    const { email, full_name, sites } = validation.data;
+    const { email, full_name, sites, expires_in_days } = validation.data;
 
     const requesterRole = req.user!.role as string;
     if (validation.data.role === 'GLOBAL_ADMIN' && requesterRole !== 'GLOBAL_ADMIN') {
@@ -130,7 +131,7 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
     // Generate invitation token
     const token = crypto.randomBytes(32).toString('hex');
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    const expiresAt = new Date(Date.now() + expires_in_days * 24 * 60 * 60 * 1000);
 
     await getAdapter().beginTransaction();
     let invitationId: number | undefined;
@@ -193,6 +194,7 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
         email_sent: emailResult.email_sent,
         ...(emailResult.email_error ? { email_error: emailResult.email_error } : {}),
         expiresAt: expiresAt.toISOString(),
+        expires_in_days,
         sites,
       },
       message: responseMessage,
@@ -239,6 +241,7 @@ router.get('/invitations', authenticateToken, requireAdmin, async (req, res) => 
         i.email,
         i.full_name,
         i.expires_at,
+        i.used_at,
         i.created_at,
         u.full_name as invited_by_name,
         isites.site_id,
@@ -249,7 +252,7 @@ router.get('/invitations', authenticateToken, requireAdmin, async (req, res) => 
       JOIN users u ON i.invited_by = u.id
       JOIN invitation_sites isites ON isites.invitation_id = i.id
       JOIN sites s ON s.id = isites.site_id
-      WHERE i.used_at IS NULL
+      WHERE 1=1
       ${siteFilter}
       ORDER BY i.created_at DESC`,
       params
@@ -263,6 +266,7 @@ router.get('/invitations', authenticateToken, requireAdmin, async (req, res) => 
           email: row.email,
           full_name: row.full_name,
           expires_at: row.expires_at,
+          used_at: row.used_at,
           created_at: row.created_at,
           invited_by_name: row.invited_by_name,
           sites: [],
@@ -286,6 +290,193 @@ router.get('/invitations', authenticateToken, requireAdmin, async (req, res) => 
     res.status(500).json({
       success: false,
       error: 'Failed to fetch invitations',
+    });
+  }
+});
+
+const invitationActionSchema = z.object({
+  expires_in_days: z.number().int().min(1).max(30).optional(),
+});
+
+const assertInvitationAccess = async (invitationId: number, requester: any) => {
+  const requesterRole = requester.role as string;
+  if (requesterRole === 'GLOBAL_ADMIN') return;
+
+  const accessRows = await getAdapter().query(
+    `SELECT 1
+     FROM invitation_sites isites
+     JOIN site_memberships sm ON sm.site_id = isites.site_id
+     WHERE isites.invitation_id = ? AND sm.user_id = ?
+     LIMIT 1`,
+    [invitationId, requester.userId]
+  );
+
+  if (accessRows.length === 0) {
+    const err: any = new Error('Access denied');
+    err.statusCode = 403;
+    throw err;
+  }
+};
+
+const rotateInvitationToken = async (invitationId: number, opts: { expiresInDays?: number }) => {
+  const rows = await getAdapter().query(
+    `SELECT id, email, full_name, expires_at, used_at
+     FROM invitations
+     WHERE id = ?
+     LIMIT 1`,
+    [invitationId]
+  );
+  const invitation = rows[0] as any;
+  if (!invitation) {
+    const err: any = new Error('Invitation not found');
+    err.statusCode = 404;
+    throw err;
+  }
+  if (invitation.used_at) {
+    const err: any = new Error('Invite already used');
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const now = new Date();
+  const currentExpires = new Date(invitation.expires_at);
+  const shouldExtend = !Number.isNaN(currentExpires.getTime()) && currentExpires <= now;
+  const effectiveDays = opts.expiresInDays ?? (shouldExtend ? 7 : undefined);
+  const nextExpiresAt = effectiveDays ? new Date(Date.now() + effectiveDays * 24 * 60 * 60 * 1000) : currentExpires;
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+  const result = await getAdapter().execute(
+    `UPDATE invitations
+     SET token_hash = ?, expires_at = ?
+     WHERE id = ? AND used_at IS NULL`,
+    [tokenHash, dbDateParam(nextExpiresAt), invitationId]
+  );
+
+  if (result.affectedRows === 0) {
+    const err: any = new Error('Invitation not found or already used');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  return {
+    invitation: {
+      id: invitation.id,
+      email: invitation.email,
+      full_name: invitation.full_name,
+      expires_at: nextExpiresAt,
+    },
+    token,
+    expires_at: nextExpiresAt,
+  };
+};
+
+/**
+ * POST /api/admin/invitations/:id/link - Rotate token and return a fresh invite URL (admin only)
+ */
+router.post('/invitations/:id/link', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const invitationId = parseInt(String(req.params.id));
+    if (isNaN(invitationId)) {
+      return res.status(400).json({ success: false, error: 'Invalid invitation ID' });
+    }
+
+    const validation = invitationActionSchema.safeParse(req.body ?? {});
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid input data',
+        details: validation.error.errors,
+      });
+    }
+
+    await assertInvitationAccess(invitationId, req.user);
+
+    const rotated = await rotateInvitationToken(
+      invitationId,
+      validation.data.expires_in_days ? { expiresInDays: validation.data.expires_in_days } : {}
+    );
+
+    const baseUrl = (process.env.APP_URL && String(process.env.APP_URL).trim())
+      ? String(process.env.APP_URL)
+      : `${req.protocol}://${req.get('host')}`;
+    const invite_url = buildInviteUrl(rotated.token, baseUrl);
+
+    res.json({
+      success: true,
+      data: {
+        invite_url,
+        expires_at: rotated.expires_at.toISOString(),
+      },
+    });
+  } catch (error: any) {
+    const statusCode = Number(error?.statusCode) || 500;
+    if (statusCode >= 500) {
+      console.error('Error rotating invitation link:', error);
+    }
+    res.status(statusCode).json({
+      success: false,
+      error: error?.message || 'Failed to rotate invitation link',
+    });
+  }
+});
+
+/**
+ * POST /api/admin/invitations/:id/resend - Rotate token, optionally extend expiry, and send email (admin only)
+ */
+router.post('/invitations/:id/resend', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const invitationId = parseInt(String(req.params.id));
+    if (isNaN(invitationId)) {
+      return res.status(400).json({ success: false, error: 'Invalid invitation ID' });
+    }
+
+    const validation = invitationActionSchema.safeParse(req.body ?? {});
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid input data',
+        details: validation.error.errors,
+      });
+    }
+
+    await assertInvitationAccess(invitationId, req.user);
+
+    const rotated = await rotateInvitationToken(invitationId, {
+      expiresInDays: validation.data.expires_in_days ?? 7,
+    });
+
+    const baseUrl = (process.env.APP_URL && String(process.env.APP_URL).trim())
+      ? String(process.env.APP_URL)
+      : `${req.protocol}://${req.get('host')}`;
+    const invite_url = buildInviteUrl(rotated.token, baseUrl);
+
+    const emailResult = await sendInviteEmailIfConfigured({
+      to: rotated.invitation.email,
+      inviteeName: rotated.invitation.full_name,
+      inviterName: String((req.user as any)?.full_name || req.user?.email || 'An Admin'),
+      inviteUrl: invite_url,
+      expiresAtIso: rotated.expires_at.toISOString(),
+    });
+
+    res.json({
+      success: true,
+      data: {
+        invite_url,
+        expires_at: rotated.expires_at.toISOString(),
+        email_sent: emailResult.email_sent,
+        ...(emailResult.email_error ? { email_error: emailResult.email_error } : {}),
+      },
+    });
+  } catch (error: any) {
+    const statusCode = Number(error?.statusCode) || 500;
+    if (statusCode >= 500) {
+      console.error('Error resending invitation:', error);
+    }
+    res.status(statusCode).json({
+      success: false,
+      error: error?.message || 'Failed to resend invitation',
     });
   }
 });

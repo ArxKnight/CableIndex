@@ -55,6 +55,12 @@ const bulkZplSchema = z.object({
   ids: z.array(z.number().min(1)).min(1, 'At least one label ID is required').max(100, 'Cannot export more than 100 labels at once'),
 });
 
+const bulkZplRangeSchema = z.object({
+  site_id: z.number().min(1),
+  start_ref: z.coerce.string().min(1, 'Start reference is required'),
+  end_ref: z.coerce.string().min(1, 'End reference is required'),
+});
+
 const portLabelSchema = z.object({
   sid: z.string().min(1, 'SID is required').max(50, 'SID must be less than 50 characters'),
   fromPort: z.number().min(1, 'From port must be at least 1'),
@@ -550,6 +556,72 @@ router.post('/bulk-zpl', authenticateToken, resolveSiteAccess(req => Number(req.
     }
 
     console.error('Generate bulk ZPL error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    } as ApiResponse);
+  }
+});
+
+/**
+ * POST /api/labels/bulk-zpl-range
+ * Generate and download ZPL for labels within a reference-number range (inclusive)
+ */
+router.post('/bulk-zpl-range', authenticateToken, resolveSiteAccess(req => Number(req.body.site_id)), async (req: Request, res: Response) => {
+  try {
+    const { start_ref, end_ref } = bulkZplRangeSchema.parse(req.body);
+
+    const parseTrailingNumber = (value: string): number | null => {
+      const match = value.trim().match(/(\d+)$/);
+      if (!match) return null;
+      const parsed = Number(match[1]);
+      if (!Number.isFinite(parsed)) return null;
+      return Math.floor(parsed);
+    };
+
+    const startNum = parseTrailingNumber(start_ref);
+    const endNum = parseTrailingNumber(end_ref);
+
+    if (!startNum || !endNum || startNum < 1 || endNum < 1 || startNum > endNum) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid reference range',
+      } as ApiResponse);
+    }
+
+    const labels = await labelModel.findByRefNumberRange(req.site!.id, startNum, endNum, 1000);
+
+    if (labels.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'No labels found in the specified range',
+      } as ApiResponse);
+    }
+
+    const site = await siteModel.findById(req.site!.id);
+    if (!site) {
+      return res.status(404).json({
+        success: false,
+        error: 'Site not found',
+      } as ApiResponse);
+    }
+
+    const zplContent = zplService.generateBulkLabels(labels, [site]);
+
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', `attachment; filename="labels-${site.code || site.name}-${startNum}-${endNum}-${timestamp}.zpl"`);
+    res.send(zplContent);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        details: error.errors,
+      } as ApiResponse);
+    }
+
+    console.error('Generate bulk ZPL range error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal server error',

@@ -36,6 +36,38 @@ export class LabelModel {
     return connection.getAdapter();
   }
 
+  async findByRefNumberRange(siteId: number, startRef: number, endRef: number, limit = 1000): Promise<Label[]> {
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
+
+    const safeStart = Math.max(1, Math.floor(Number(startRef)));
+    const safeEnd = Math.max(1, Math.floor(Number(endRef)));
+    const safeLimit = Math.min(1000, Math.max(1, Math.floor(Number(limit) || 1000)));
+
+    if (safeStart > safeEnd) {
+      throw new Error('Invalid reference range');
+    }
+
+    let query = `
+      SELECT id, site_id, created_by, ref_number, ref_string, type, payload_json, created_at, updated_at
+      FROM labels
+      WHERE site_id = ? AND ref_number BETWEEN ? AND ?
+      ORDER BY ref_number ASC
+    `;
+
+    const params: any[] = [siteId, safeStart, safeEnd];
+
+    if (isMySQL) {
+      query += ` LIMIT ${safeLimit}`;
+    } else {
+      query += ` LIMIT ?`;
+      params.push(safeLimit);
+    }
+
+    const rows = await this.adapter.query(query, params);
+    return (rows as Label[]).map((row) => this.mapLegacyFields(row));
+  }
+
   private async getNextRef(siteId: number): Promise<{ refNumber: number; refString: string }>{
     const config = connection.getConfig();
     const isMySQL = config?.type === 'mysql';

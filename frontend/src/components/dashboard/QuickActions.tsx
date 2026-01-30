@@ -51,7 +51,7 @@ const quickActions: QuickAction[] = [
   {
     title: 'Port Labels',
     description: 'Generate switch port labels',
-    href: '/port-labels',
+    href: '/tools?tool=port',
     icon: Tag,
     permission: 'port_labels',
     variant: 'outline',
@@ -59,7 +59,7 @@ const quickActions: QuickAction[] = [
   {
     title: 'PDU Labels',
     description: 'Generate PDU port labels',
-    href: '/pdu-labels',
+    href: '/tools?tool=pdu',
     icon: Zap,
     permission: 'pdu_labels',
     variant: 'outline',

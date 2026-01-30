@@ -5,15 +5,6 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Card, CardContent, CardHeader } from '../ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '../ui/dialog';
 import { 
   Search, 
   Filter, 
@@ -47,7 +38,6 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [selectedLabels, setSelectedLabels] = useState<Set<number>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
-  const [showRangeDialog, setShowRangeDialog] = useState(false);
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
   
@@ -192,61 +182,53 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     });
   };
 
-  const selectAllLabels = () => {
-    setSelectedLabels(new Set(labels.map(l => l.id)));
-  };
-  const toggleSelectAll = () => {
-    if (selectedLabels.size === labels.length) {
-      clearSelection();
-    } else {
-      const allIds = new Set(labels.map(label => label.id));
-      setSelectedLabels(allIds);
-    }
+  const clearSelection = () => {
+    setSelectedLabels(new Set());
   };
 
-  const selectByRange = (startRef: string | undefined, endRef: string | undefined) => {
-    // Guard against undefined values
-    if (!startRef || !endRef) {
+  const handleRangeDownload = async () => {
+    if (!selectedSiteId) {
+      setError('No site selected');
+      return;
+    }
+
+    if (!rangeStart.trim() || !rangeEnd.trim()) {
       setError('Please enter both start and end reference numbers');
       return;
     }
 
-    // Extract numeric part from references (e.g., "0001" from "SITE-0001")
-    const getRefNumber = (ref: string) => {
-      const match = ref.match(/(\d+)$/);
-      return match ? parseInt(match[1]) : 0;
+    const extractTrailingNumber = (value: string) => {
+      const match = value.trim().match(/(\d+)$/);
+      return match ? parseInt(match[1], 10) : 0;
     };
 
-    const start = getRefNumber(startRef);
-    const end = getRefNumber(endRef);
+    const start = extractTrailingNumber(rangeStart);
+    const end = extractTrailingNumber(rangeEnd);
 
-    if (start === 0 || end === 0 || start > end) {
+    if (!start || !end || start < 1 || end < 1 || start > end) {
       setError('Invalid reference range');
       return;
     }
 
-    // Find all labels within the range
-    const labelsInRange = labels.filter((label) => {
-      const ref = label.reference_number;
-      if (!ref) return false; // skip labels without a reference number
+    try {
+      setError(null);
+      const blob = await apiClient.downloadFile('/labels/bulk-zpl-range', {
+        site_id: selectedSiteId,
+        start_ref: rangeStart,
+        end_ref: rangeEnd,
+      });
 
-      const labelNum = getRefNumber(ref);
-      return labelNum >= start && labelNum <= end;
-    });
-
-    if (labelsInRange.length === 0) {
-      setError('No labels found in the specified range');
-      return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `labels-${start}-${end}-${new Date().toISOString().split('T')[0]}.zpl`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to download labels');
     }
-
-    const rangeIds = new Set(labelsInRange.map(l => l.id));
-    setSelectedLabels(rangeIds);
-    setShowRangeDialog(false);
-    setRangeStart('');
-    setRangeEnd('');
-  };
-  const clearSelection = () => {
-    setSelectedLabels(new Set());
   };
 
   // Handle bulk operations
@@ -271,32 +253,6 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete labels');
     }
-  };
-
-  const handleBulkDownload = () => {
-    if (selectedLabels.size === 0) return;
-    
-    const selectedLabelData = labels.filter(l => selectedLabels.has(l.id));
-    const zplContent = selectedLabelData.map(label => {
-      return `^XA
-^MUm^LH8,19^FS
-^MUm^FO0,2
-^A0N,7,5
-^FB280,1,1,C
-^FD${label.reference_number} ${label.source} > ${label.destination}
-^FS
-^XZ`;
-    }).join('\n\n');
-
-    const blob = new Blob([zplContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `labels-${selectedLabels.size}-${new Date().toISOString().split('T')[0]}.zpl`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   // Handle individual label operations
@@ -478,14 +434,35 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
               <div>
                 <h3 className="text-sm font-semibold mb-1">Bulk Operations</h3>
                 <p className="text-xs text-muted-foreground">
-                  {selectedLabels.size > 0 
-                    ? `${selectedLabels.size} of ${pagination.total} labels selected` 
-                    : `Select labels below to download or delete`}
+                  Download by reference range, or select labels to delete.
                 </p>
               </div>
               
               <div className="flex gap-2">
-                {selectedLabels.size > 0 ? (
+                <div className="flex gap-2 items-center">
+                  <Input
+                    placeholder="From (e.g., 0001)"
+                    value={rangeStart}
+                    onChange={(e) => setRangeStart(e.target.value)}
+                    className="w-[140px]"
+                  />
+                  <Input
+                    placeholder="To (e.g., 0010)"
+                    value={rangeEnd}
+                    onChange={(e) => setRangeEnd(e.target.value)}
+                    className="w-[140px]"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRangeDownload}
+                  >
+                    <Download className="h-4 w-4 mr-1" />
+                    Download Range
+                  </Button>
+                </div>
+
+                {selectedLabels.size > 0 && (
                   <>
                     <Button
                       variant="outline"
@@ -496,92 +473,14 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
                       Clear Selection
                     </Button>
                     <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleBulkDownload}
-                    >
-                      <Download className="h-4 w-4 mr-1" />
-                      Download Selected ({selectedLabels.size})
-                    </Button>
-                    <Button
                       variant="destructive"
                       size="sm"
                       onClick={handleBulkDelete}
                     >
                       <Trash2 className="h-4 w-4 mr-1" />
-                      Delete Selected
+                      Delete Selected ({selectedLabels.size})
                     </Button>
                   </>
-                ) : (
-                  <div className="flex gap-2">
-                    <Dialog open={showRangeDialog} onOpenChange={setShowRangeDialog}>
-                      <DialogTrigger>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setShowRangeDialog(true)}
-                        >
-                          <Download className="h-4 w-4 mr-1" />
-                          Select by Range
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Select Labels by Reference Range</DialogTitle>
-                          <DialogDescription>
-                            Enter the starting and ending reference numbers (e.g., 0001 to 0010)
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="range-start">Start Reference</Label>
-                            <Input
-                              id="range-start"
-                              placeholder="e.g., 0001"
-                              value={rangeStart}
-                              onChange={(e) => setRangeStart(e.target.value)}
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="range-end">End Reference</Label>
-                            <Input
-                              id="range-end"
-                              placeholder="e.g., 0010"
-                              value={rangeEnd}
-                              onChange={(e) => setRangeEnd(e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <DialogFooter>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => {
-                              setShowRangeDialog(false);
-                              setRangeStart('');
-                              setRangeEnd('');
-                            }}
-                          >
-                            Cancel
-                          </Button>
-                          <Button
-                            type="button"
-                            onClick={() => selectByRange(rangeStart, rangeEnd)}
-                          >
-                            Select Range
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={toggleSelectAll}
-                    >
-                      <CheckSquare className="h-4 w-4 mr-1" />
-                      Select All
-                    </Button>
-                  </div>
                 )}
               </div>
             </div>
@@ -622,18 +521,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
               <div className="border-b bg-muted/50 px-4 py-3">
                 <div className="grid grid-cols-12 gap-4 items-center text-sm font-medium">
                   <div className="col-span-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={selectedLabels.size === labels.length ? clearSelection : selectAllLabels}
-                      className="h-6 w-6 p-0"
-                    >
-                      {selectedLabels.size === labels.length ? (
-                        <CheckSquare className="h-4 w-4" />
-                      ) : (
-                        <Square className="h-4 w-4" />
-                      )}
-                    </Button>
+                    <span className="sr-only">Select</span>
                   </div>
                   <div className="col-span-2">Reference</div>
                   <div className="col-span-2">Site</div>

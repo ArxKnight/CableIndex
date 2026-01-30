@@ -12,8 +12,7 @@ import InviteSignupPage from './pages/InviteSignupPage'
 import DashboardPage from './pages/DashboardPage'
 import SitesPage from './pages/SitesPage'
 import LabelsPage from './pages/LabelsPage'
-import PortLabelsPage from './pages/PortLabelsPage'
-import PDULabelsPage from './pages/PDULabelsPage'
+import ToolsPage from './pages/ToolsPage'
 import ProfilePage from './pages/ProfilePage'
 import AdminPage from './pages/AdminPage'
 import SetupPage from './pages/SetupPage'
@@ -141,12 +140,20 @@ function App() {
                   } 
                 />
                 <Route 
-                  path="/port-labels" 
+                  path="/tools" 
                   element={
                     <ProtectedRoute>
                       <Layout>
-                        <PortLabelsPage />
+                        <ToolsPage />
                       </Layout>
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/port-labels" 
+                  element={
+                    <ProtectedRoute>
+                      <Navigate to="/tools?tool=port" replace />
                     </ProtectedRoute>
                   } 
                 />
@@ -154,9 +161,7 @@ function App() {
                   path="/pdu-labels" 
                   element={
                     <ProtectedRoute>
-                      <Layout>
-                        <PDULabelsPage />
-                      </Layout>
+                      <Navigate to="/tools?tool=pdu" replace />
                     </ProtectedRoute>
                   } 
                 />

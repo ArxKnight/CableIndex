@@ -104,10 +104,10 @@ describe('QuickActions', () => {
     expect(labelsLink).toHaveAttribute('href', '/labels');
     
     const portLabelsLink = screen.getByText('Port Labels').closest('a');
-    expect(portLabelsLink).toHaveAttribute('href', '/port-labels');
+    expect(portLabelsLink).toHaveAttribute('href', '/tools?tool=port');
     
     const pduLabelsLink = screen.getByText('PDU Labels').closest('a');
-    expect(pduLabelsLink).toHaveAttribute('href', '/pdu-labels');
+    expect(pduLabelsLink).toHaveAttribute('href', '/tools?tool=pdu');
   });
 
   it('should render icons for each action', () => {

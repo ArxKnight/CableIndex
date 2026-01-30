@@ -59,6 +59,7 @@ import { copyTextToClipboard } from '../../lib/clipboard';
 const inviteSchema = z.object({
   full_name: z.string().min(1, 'Name is required').max(100, 'Name must be less than 100 characters'),
   email: z.string().email('Please enter a valid email address'),
+  expires_in_days: z.coerce.number().int().min(1).max(30).default(7),
 });
 
 type InviteFormData = z.infer<typeof inviteSchema>;
@@ -68,6 +69,7 @@ interface Invitation {
   email: string;
   full_name?: string;
   expires_at: string;
+  used_at?: string | null;
   created_at: string;
   invited_by_name: string;
   sites: Array<{
@@ -90,6 +92,9 @@ const UserInvitations: React.FC = () => {
     | { email_sent: false; email_error?: string }
     | null
   >(null);
+  const [isResendDialogOpen, setIsResendDialogOpen] = useState(false);
+  const [resendInvitationId, setResendInvitationId] = useState<number | null>(null);
+  const [resendExpiresInDays, setResendExpiresInDays] = useState(7);
   const directInviteInputRef = React.useRef<HTMLInputElement | null>(null);
   const queryClient = useQueryClient();
   const canInvite = user?.role === 'GLOBAL_ADMIN' || user?.role === 'ADMIN';
@@ -98,10 +103,17 @@ const UserInvitations: React.FC = () => {
     register,
     handleSubmit,
     reset,
+    setValue,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<InviteFormData>({
     resolver: zodResolver(inviteSchema),
+    defaultValues: {
+      expires_in_days: 7,
+    },
   });
+
+  const inviteExpiresInDays = watch('expires_in_days');
 
   // Fetch pending invitations
   const { data: invitationsData, isLoading } = useQuery<{ invitations: Invitation[] }>({
@@ -133,8 +145,8 @@ const UserInvitations: React.FC = () => {
 
   // Send invitation mutation
   const sendInviteMutation = useMutation({
-    mutationFn: async (data: { full_name: string; email: string; sites: Array<{ site_id: number; site_role: SiteRole }> }) => {
-      return apiClient.inviteUser(data.email, data.sites, data.full_name);
+    mutationFn: async (data: { full_name: string; email: string; sites: Array<{ site_id: number; site_role: SiteRole }>; expires_in_days: number }) => {
+      return apiClient.inviteUser(data.email, data.sites, data.full_name, data.expires_in_days);
     },
     onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
@@ -176,6 +188,55 @@ const UserInvitations: React.FC = () => {
     },
   });
 
+  const rotateLinkMutation = useMutation({
+    mutationFn: async (invitationId: number) => {
+      return apiClient.rotateInvitationLink(invitationId);
+    },
+    onSuccess: async (response) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
+      const inviteUrl = (response.data as any)?.invite_url as string | undefined;
+      if (!inviteUrl) {
+        toast.error('Failed to generate invite link');
+        return;
+      }
+      const copied = await copyTextToClipboard(inviteUrl);
+      if (copied) toast.success('Invitation link copied to clipboard');
+      else toast.info('Copy manually');
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to generate invite link');
+    },
+  });
+
+  const resendInviteMutation = useMutation({
+    mutationFn: async (payload: { invitationId: number; expires_in_days: number }) => {
+      return apiClient.resendInvitation(payload.invitationId, { expires_in_days: payload.expires_in_days });
+    },
+    onSuccess: async (response) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
+      const inviteUrl = (response.data as any)?.invite_url as string | undefined;
+      const emailSent = Boolean((response.data as any)?.email_sent);
+      const emailError = (response.data as any)?.email_error as string | undefined;
+
+      if (emailSent) toast.success('Invitation resent');
+      else if (emailError === 'SMTP not configured') toast.info('Invite link generated (SMTP not configured)');
+      else if (emailError) toast.error(`Email not sent: ${emailError}`);
+      else toast.error('Email not sent');
+
+      if (inviteUrl) {
+        const copied = await copyTextToClipboard(inviteUrl);
+        if (copied) toast.info('Invitation link copied to clipboard');
+      }
+
+      setIsResendDialogOpen(false);
+      setResendInvitationId(null);
+      setResendExpiresInDays(7);
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to resend invitation');
+    },
+  });
+
   // Cancel invitation mutation
   const cancelInviteMutation = useMutation({
     mutationFn: async (invitationId: number) => {
@@ -201,21 +262,16 @@ const UserInvitations: React.FC = () => {
       return;
     }
 
-    sendInviteMutation.mutate({ full_name: data.full_name, email: data.email, sites });
+    sendInviteMutation.mutate({
+      full_name: data.full_name,
+      email: data.email,
+      sites,
+      expires_in_days: data.expires_in_days,
+    });
   };
 
   const handleCancelInvitation = (invitationId: number) => {
     cancelInviteMutation.mutate(invitationId);
-  };
-
-  const copyInviteLink = async (token: string) => {
-    const inviteUrl = `${window.location.origin}/auth/register?token=${token}`;
-    const copied = await copyTextToClipboard(inviteUrl);
-    if (copied) {
-      toast.success('Invitation link copied to clipboard');
-    } else {
-      toast.info('Copy manually');
-    }
   };
 
   const getRoleBadgeVariant = (role: SiteRole) => {
@@ -229,6 +285,10 @@ const UserInvitations: React.FC = () => {
 
   const isExpired = (expiresAt: string) => {
     return new Date(expiresAt) < new Date();
+  };
+
+  const isUsed = (invitation: Invitation) => {
+    return Boolean(invitation.used_at);
   };
 
   const resetInviteDialogState = () => {
@@ -411,6 +471,32 @@ const UserInvitations: React.FC = () => {
                           )}
                         </div>
                       </div>
+
+                      <div className="space-y-2">
+                        <Label>Invite expires in</Label>
+                        <input type="hidden" {...register('expires_in_days')} />
+                        <Select
+                          value={String(inviteExpiresInDays ?? 7)}
+                          onValueChange={(value) =>
+                            setValue('expires_in_days', Number(value), { shouldDirty: true, shouldValidate: true })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="7 days" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Array.from({ length: 30 }, (_, i) => i + 1).map((d) => (
+                              <SelectItem key={d} value={String(d)}>
+                                {d} day{d === 1 ? '' : 's'}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {errors.expires_in_days && (
+                          <p className="text-sm text-red-600">{String(errors.expires_in_days.message)}</p>
+                        )}
+                      </div>
+
                       <DialogFooter>
                         <Button
                           type="button"
@@ -431,6 +517,49 @@ const UserInvitations: React.FC = () => {
           </>
         )}
       </div>
+
+      <Dialog open={isResendDialogOpen} onOpenChange={setIsResendDialogOpen}>
+        <DialogContent onOpenChange={setIsResendDialogOpen}>
+          <DialogHeader>
+            <DialogTitle>Resend invitation</DialogTitle>
+            <DialogDescription>
+              This rotates the token and sends a new email (if SMTP is configured).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label>New expiry</Label>
+            <Select value={String(resendExpiresInDays)} onValueChange={(v) => setResendExpiresInDays(Number(v))}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Array.from({ length: 30 }, (_, i) => i + 1).map((d) => (
+                  <SelectItem key={d} value={String(d)}>
+                    {d} day{d === 1 ? '' : 's'}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsResendDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!resendInvitationId || resendInviteMutation.isPending}
+              onClick={() => {
+                if (!resendInvitationId) return;
+                resendInviteMutation.mutate({ invitationId: resendInvitationId, expires_in_days: resendExpiresInDays });
+              }}
+            >
+              {resendInviteMutation.isPending ? 'Sending...' : 'Resend'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Invitations Table */}
       <div className="border rounded-lg">
@@ -494,7 +623,12 @@ const UserInvitations: React.FC = () => {
                     </span>
                   </TableCell>
                   <TableCell>
-                    {isExpired(invitation.expires_at) ? (
+                    {isUsed(invitation) ? (
+                      <Badge variant="outline" className="flex items-center gap-1 w-fit">
+                        <CheckCircle className="w-3 h-3" />
+                        Used
+                      </Badge>
+                    ) : isExpired(invitation.expires_at) ? (
                       <Badge variant="destructive" className="flex items-center gap-1 w-fit">
                         <Clock className="w-3 h-3" />
                         Expired
@@ -513,18 +647,39 @@ const UserInvitations: React.FC = () => {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center gap-2 justify-end">
-                      {invitation.token && !isExpired(invitation.expires_at) && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => copyInviteLink(invitation.token!)}
-                        >
-                          <Copy className="w-4 h-4" />
-                        </Button>
+                      {!isUsed(invitation) && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={rotateLinkMutation.isPending}
+                            onClick={() => rotateLinkMutation.mutate(invitation.id)}
+                            title="Copy invite link"
+                          >
+                            <Copy className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setResendInvitationId(invitation.id);
+                              setResendExpiresInDays(7);
+                              setIsResendDialogOpen(true);
+                            }}
+                            title="Resend invite"
+                          >
+                            <Mail className="w-4 h-4" />
+                          </Button>
+                        </>
                       )}
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="outline" size="sm" className="text-red-600">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-red-600"
+                            disabled={cancelInviteMutation.isPending || isUsed(invitation)}
+                          >
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </AlertDialogTrigger>
