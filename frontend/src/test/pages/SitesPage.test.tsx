@@ -11,6 +11,7 @@ vi.mock('../../components/sites/SiteList', () => ({
       <button onClick={onCreateSite}>Create Site</button>
       <button onClick={() => onEditSite({ id: 1, name: 'Test Site' })}>Edit Site</button>
       <button onClick={() => onDeleteSite({ id: 1, name: 'Test Site', label_count: 0 })}>Delete Site</button>
+      <button onClick={() => onDeleteSite({ id: 2, name: 'Danger Site', label_count: 3 })}>Delete Site With Labels</button>
       <button onClick={() => onViewDetails(1)}>View Details</button>
     </div>
   ),
@@ -150,13 +151,13 @@ describe('SitesPage', () => {
     // Open delete dialog
     await user.click(screen.getByText('Delete Site'));
 
-    // Confirm deletion - get the destructive button in the dialog
+    // Confirm deletion
     const deleteButtons = screen.getAllByRole('button', { name: /delete site/i });
     const confirmDeleteButton = deleteButtons.find(btn => btn.className.includes('bg-destructive'));
     await user.click(confirmDeleteButton!);
 
     await waitFor(() => {
-      expect(apiClient.deleteSite).toHaveBeenCalledWith(1);
+      expect(apiClient.deleteSite).toHaveBeenCalledWith(1, { cascade: false });
     });
 
     // Dialog should close
@@ -206,7 +207,7 @@ describe('SitesPage', () => {
     // Open delete dialog
     await user.click(screen.getByText('Delete Site'));
 
-    // Confirm deletion - get the destructive button in the dialog
+    // Confirm deletion
     const deleteButtons = screen.getAllByRole('button', { name: /delete site/i });
     const confirmDeleteButton = deleteButtons.find(btn => btn.className.includes('bg-destructive'));
     await user.click(confirmDeleteButton!);
@@ -235,13 +236,27 @@ describe('SitesPage', () => {
     expect(screen.queryByRole('heading', { name: /delete site/i })).not.toBeInTheDocument();
   });
 
-  it('should show warning when site has labels', async () => {
+  it('should require typed confirmation + checkbox when site has labels', async () => {
     const user = userEvent.setup();
     render(<SitesPage />);
 
-    await user.click(screen.getByText('Delete Site'));
+    await user.click(screen.getByText('Delete Site With Labels'));
 
-    // Should show warning about labels (the mock site has 0 labels by default)
-    expect(screen.getByText(/associated labels/i)).toBeInTheDocument();
+    // Delete button should be disabled until confirmations are completed
+    const deleteButtons = screen.getAllByRole('button', { name: /delete site/i });
+    const deleteButton = deleteButtons.find(btn => btn.className.includes('bg-destructive'));
+    expect(deleteButton).toBeTruthy();
+    expect(deleteButton!).toBeDisabled();
+
+    await user.type(screen.getByLabelText('Confirm site name'), 'Danger Site');
+    await user.click(screen.getByLabelText(/I understand this will delete all labels/i));
+
+    expect(deleteButton!).toBeEnabled();
+
+    await user.click(deleteButton!);
+
+    await waitFor(() => {
+      expect(apiClient.deleteSite).toHaveBeenCalledWith(2, { cascade: true });
+    });
   });
 });

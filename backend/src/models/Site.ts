@@ -250,10 +250,10 @@ export class SiteModel {
   }
 
   /**
-   * Delete site (soft delete)
-   * Only allows deletion if no labels are associated with the site
+   * Delete site
+   * Only allows deletion if no labels are associated with the site unless cascade=true
    */
-  async delete(id: number, userId: number): Promise<boolean> {
+  async delete(id: number, userId: number, options: { cascade?: boolean } = {}): Promise<boolean> {
     // First check if site has any labels
     const labelRows = await this.adapter.query(
       `SELECT COUNT(*) as count 
@@ -264,18 +264,13 @@ export class SiteModel {
     
     const labelCount = labelRows[0].count;
     
-    if (labelCount > 0) {
+    if (labelCount > 0 && !options.cascade) {
       throw new Error('Cannot delete site with existing labels');
     }
 
-    // Soft delete the site
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-    
+    // Hard delete the site. Foreign keys are defined with ON DELETE CASCADE.
     const result = await this.adapter.execute(
-      isMySQL
-        ? `UPDATE sites SET is_active = 0 WHERE id = ? AND is_active = 1`
-        : `UPDATE sites SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND is_active = 1`,
+      `DELETE FROM sites WHERE id = ? AND is_active = 1`,
       [id]
     );
     

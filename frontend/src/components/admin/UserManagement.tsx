@@ -70,6 +70,18 @@ const UserManagement: React.FC = () => {
   const [siteSelections, setSiteSelections] = useState<Record<number, 'ADMIN' | 'USER'>>({});
   const queryClient = useQueryClient();
 
+  const resetSiteDialogState = () => {
+    setSelectedUser(null);
+    setSiteSelections({});
+  };
+
+  const handleSiteDialogOpenChange = (open: boolean) => {
+    setSiteDialogOpen(open);
+    if (!open) {
+      resetSiteDialogState();
+    }
+  };
+
   // Fetch users with statistics
   const { data: usersData, isLoading, error } = useQuery({
     queryKey: ['admin', 'users', searchTerm, roleFilter],
@@ -128,7 +140,7 @@ const UserManagement: React.FC = () => {
     onSuccess: () => {
       toast.success('User site access updated');
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
-      setSiteDialogOpen(false);
+      handleSiteDialogOpenChange(false);
     },
     onError: (error: any) => {
       toast.error(error.message || 'Failed to update site access');
@@ -144,8 +156,9 @@ const UserManagement: React.FC = () => {
   };
 
   const handleManageSites = async (user: UserWithStats) => {
+    resetSiteDialogState();
     setSelectedUser(user);
-    setSiteDialogOpen(true);
+    handleSiteDialogOpenChange(true);
     try {
       const response = await apiClient.getUserSites(user.id);
       if (response.success && response.data?.sites) {
@@ -364,8 +377,8 @@ const UserManagement: React.FC = () => {
         </Table>
       </div>
 
-      <Dialog open={siteDialogOpen} onOpenChange={setSiteDialogOpen}>
-        <DialogContent>
+      <Dialog open={siteDialogOpen} onOpenChange={handleSiteDialogOpenChange}>
+        <DialogContent onOpenChange={handleSiteDialogOpenChange}>
           <DialogHeader>
             <DialogTitle>Manage Site Access</DialogTitle>
           </DialogHeader>
@@ -424,7 +437,7 @@ const UserManagement: React.FC = () => {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setSiteDialogOpen(false)}
+              onClick={() => handleSiteDialogOpenChange(false)}
             >
               Cancel
             </Button>

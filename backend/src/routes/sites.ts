@@ -265,15 +265,20 @@ router.put('/:id', authenticateToken, resolveSiteAccess(req => Number(req.params
 
 /**
  * DELETE /api/sites/:id
- * Delete a site (soft delete)
+ * Delete a site
+ *
+ * By default, deletion is blocked if the site has labels.
+ * To delete the site and all associated labels, pass `?cascade=true`.
  */
 router.delete('/:id', authenticateToken, resolveSiteAccess(req => Number(req.params.id)), requireSiteRole('ADMIN'), async (req: Request, res: Response) => {
   try {
     // Validate site ID
     const { id } = siteIdSchema.parse(req.params);
 
+    const cascade = String(req.query.cascade || '').toLowerCase() === 'true';
+
     // Attempt to delete site
-    const deleted = await siteModel.delete(id, req.user!.userId);
+    const deleted = await siteModel.delete(id, req.user!.userId, { cascade });
 
     if (!deleted) {
       return res.status(404).json({

@@ -939,6 +939,13 @@ router.get('/settings', authenticateToken, requireAdmin, async (req, res) => {
       max_sites_per_user: null as number | null,
       maintenance_mode: false,
       maintenance_message: 'System is under maintenance. Please try again later.',
+      smtp_host: '',
+      smtp_port: null as number | null,
+      smtp_username: '',
+      smtp_password: '',
+      smtp_password_set: false,
+      smtp_from: '',
+      smtp_secure: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -950,6 +957,12 @@ router.get('/settings', authenticateToken, requireAdmin, async (req, res) => {
       'max_sites_per_user',
       'maintenance_mode',
       'maintenance_message',
+      'smtp_host',
+      'smtp_port',
+      'smtp_username',
+      'smtp_password',
+      'smtp_from',
+      'smtp_secure',
     ] as const;
 
     const placeholders = keys.map(() => '?').join(', ');
@@ -986,6 +999,13 @@ router.get('/settings', authenticateToken, requireAdmin, async (req, res) => {
       max_sites_per_user: parseNullableNumber(map.get('max_sites_per_user')),
       maintenance_mode: parseBoolean(map.get('maintenance_mode')),
       maintenance_message: map.get('maintenance_message') || defaultSettings.maintenance_message,
+      smtp_host: map.get('smtp_host') || defaultSettings.smtp_host,
+      smtp_port: parseNullableNumber(map.get('smtp_port')),
+      smtp_username: map.get('smtp_username') || defaultSettings.smtp_username,
+      smtp_password: '',
+      smtp_password_set: Boolean((map.get('smtp_password') || '').trim()),
+      smtp_from: map.get('smtp_from') || defaultSettings.smtp_from,
+      smtp_secure: parseBoolean(map.get('smtp_secure')),
     };
 
     res.json({
@@ -1012,7 +1032,15 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
       max_sites_per_user,
       maintenance_mode,
       maintenance_message,
+      smtp_host,
+      smtp_port,
+      smtp_username,
+      smtp_password,
+      smtp_from,
+      smtp_secure,
     } = req.body;
+
+    const hasOwn = (key: string): boolean => Object.prototype.hasOwnProperty.call(req.body ?? {}, key);
 
     const normalizeLimit = (value: any): number | null => {
       if (value === '' || value === null || value === undefined) return null;
@@ -1021,8 +1049,8 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
       return parsed;
     };
 
-    const normalizedMaxLabels = normalizeLimit(max_labels_per_user);
-    const normalizedMaxSites = normalizeLimit(max_sites_per_user);
+    const normalizedMaxLabels = hasOwn('max_labels_per_user') ? normalizeLimit(max_labels_per_user) : undefined;
+    const normalizedMaxSites = hasOwn('max_sites_per_user') ? normalizeLimit(max_sites_per_user) : undefined;
 
     if (!['user', 'moderator'].includes(default_user_role)) {
       return res.status(400).json({
@@ -1031,17 +1059,25 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
       });
     }
 
-    if (normalizedMaxLabels !== null && (!Number.isFinite(normalizedMaxLabels) || normalizedMaxLabels < 0)) {
+    if (normalizedMaxLabels !== undefined && normalizedMaxLabels !== null && (!Number.isFinite(normalizedMaxLabels) || normalizedMaxLabels < 0)) {
       return res.status(400).json({
         success: false,
         error: 'Invalid max labels per user value',
       });
     }
 
-    if (normalizedMaxSites !== null && (!Number.isFinite(normalizedMaxSites) || normalizedMaxSites < 0)) {
+    if (normalizedMaxSites !== undefined && normalizedMaxSites !== null && (!Number.isFinite(normalizedMaxSites) || normalizedMaxSites < 0)) {
       return res.status(400).json({
         success: false,
         error: 'Invalid max sites per user value',
+      });
+    }
+
+    const normalizedSmtpPort = hasOwn('smtp_port') ? normalizeLimit(smtp_port) : undefined;
+    if (normalizedSmtpPort !== undefined && normalizedSmtpPort !== null && (!Number.isFinite(normalizedSmtpPort) || normalizedSmtpPort <= 0 || normalizedSmtpPort > 65535)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid SMTP port',
       });
     }
 
@@ -1051,13 +1087,55 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
     const isMySQL = config?.type === 'mysql';
     const nowParam = dbDateParam(new Date());
 
-    const settingsToPersist: Array<{ key: string; value: string }> = [
-      { key: 'default_user_role', value: String(default_user_role) },
-      { key: 'max_labels_per_user', value: normalizedMaxLabels === null ? '' : String(normalizedMaxLabels) },
-      { key: 'max_sites_per_user', value: normalizedMaxSites === null ? '' : String(normalizedMaxSites) },
-      { key: 'maintenance_mode', value: maintenance_mode ? 'true' : 'false' },
-      { key: 'maintenance_message', value: maintenance_message ? String(maintenance_message) : '' },
-    ];
+    const settingsToPersist: Array<{ key: string; value: string }> = [];
+
+    settingsToPersist.push({ key: 'default_user_role', value: String(default_user_role) });
+
+    if (normalizedMaxLabels !== undefined) {
+      settingsToPersist.push({ key: 'max_labels_per_user', value: normalizedMaxLabels === null ? '' : String(normalizedMaxLabels) });
+    }
+
+    if (normalizedMaxSites !== undefined) {
+      settingsToPersist.push({ key: 'max_sites_per_user', value: normalizedMaxSites === null ? '' : String(normalizedMaxSites) });
+    }
+
+    if (hasOwn('maintenance_mode')) {
+      settingsToPersist.push({ key: 'maintenance_mode', value: maintenance_mode ? 'true' : 'false' });
+    }
+
+    if (hasOwn('maintenance_message')) {
+      settingsToPersist.push({ key: 'maintenance_message', value: maintenance_message ? String(maintenance_message) : '' });
+    }
+
+    if (hasOwn('smtp_host')) {
+      settingsToPersist.push({ key: 'smtp_host', value: smtp_host ? String(smtp_host) : '' });
+    }
+
+    if (normalizedSmtpPort !== undefined) {
+      settingsToPersist.push({ key: 'smtp_port', value: normalizedSmtpPort === null ? '' : String(normalizedSmtpPort) });
+    }
+
+    if (hasOwn('smtp_username')) {
+      settingsToPersist.push({ key: 'smtp_username', value: smtp_username ? String(smtp_username) : '' });
+    }
+
+    if (hasOwn('smtp_from')) {
+      settingsToPersist.push({ key: 'smtp_from', value: smtp_from ? String(smtp_from) : '' });
+    }
+
+    if (hasOwn('smtp_secure')) {
+      settingsToPersist.push({ key: 'smtp_secure', value: smtp_secure ? 'true' : 'false' });
+    }
+
+    // Do not return passwords in GET responses. For updates, only persist when a real password is provided.
+    if (hasOwn('smtp_password')) {
+      const pwd = smtp_password === undefined || smtp_password === null ? '' : String(smtp_password);
+      const trimmed = pwd.trim();
+      const looksMasked = trimmed === '••••••' || trimmed === '******';
+      if (trimmed.length > 0 && !looksMasked) {
+        settingsToPersist.push({ key: 'smtp_password', value: trimmed });
+      }
+    }
 
     const upsertSql = isMySQL
       ? `INSERT INTO app_settings (\`key\`, value, updated_at, created_at)
@@ -1087,6 +1165,45 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to update settings',
+    });
+  }
+});
+
+/**
+ * POST /api/admin/settings/test-email - Send a test email using configured SMTP (admin only)
+ */
+router.post('/settings/test-email', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const to = (req.body?.to && String(req.body.to).trim())
+      ? String(req.body.to).trim()
+      : String((req.user as any)?.email || '').trim();
+
+    if (!to) {
+      return res.status(400).json({
+        success: false,
+        error: 'Test email recipient is required',
+      });
+    }
+
+    const { sendTestEmailIfConfigured } = await import('../services/InvitationEmailService.js');
+    const result = await sendTestEmailIfConfigured({ to });
+
+    if (!result.email_sent) {
+      return res.status(400).json({
+        success: false,
+        error: result.email_error || 'SMTP not configured',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Test email sent successfully',
+    });
+  } catch (error) {
+    console.error('Error sending test email:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to send test email',
     });
   }
 });

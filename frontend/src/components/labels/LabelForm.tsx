@@ -34,6 +34,7 @@ interface LabelFormProps {
   onCancel?: () => void;
   isLoading?: boolean;
   showPreview?: boolean;
+  initialSiteId?: number;
 }
 
 const LabelForm: React.FC<LabelFormProps> = ({ 
@@ -41,7 +42,8 @@ const LabelForm: React.FC<LabelFormProps> = ({
   onSubmit, 
   onCancel, 
   isLoading = false,
-  showPreview = true
+  showPreview = true,
+  initialSiteId
 }) => {
   const [error, setError] = useState<string | null>(null);
   const [sites, setSites] = useState<Site[]>([]);
@@ -52,13 +54,14 @@ const LabelForm: React.FC<LabelFormProps> = ({
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<LabelFormData>({
     resolver: zodResolver(labelSchema),
     defaultValues: {
       source: label?.source || '',
       destination: label?.destination || '',
-      site_id: label?.site_id || 0,
+      site_id: label?.site_id || initialSiteId || 0,
       notes: label?.notes || '',
     },
   });
@@ -96,6 +99,13 @@ const LabelForm: React.FC<LabelFormProps> = ({
       setPreviewRef('');
     }
   }, [watchedValues.site_id, watchedValues.source, watchedValues.destination, sites]);
+
+  // If we navigated here with a site_id query param, preselect it for create flow.
+  useEffect(() => {
+    if (!label && initialSiteId && watchedValues.site_id === 0) {
+      setValue('site_id', initialSiteId, { shouldValidate: true });
+    }
+  }, [initialSiteId, label, setValue, watchedValues.site_id]);
 
   const handleFormSubmit = async (data: LabelFormData) => {
     try {

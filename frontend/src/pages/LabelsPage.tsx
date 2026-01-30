@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { LabelForm, LabelDatabase } from '../components/labels';
 import { LabelWithSiteInfo, CreateLabelData } from '../types';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { Plus, ArrowLeft, Lock } from 'lucide-react';
+import { Plus, ArrowLeft } from 'lucide-react';
 import apiClient from '../lib/api';
 
 type ViewMode = 'database' | 'create' | 'edit';
@@ -15,36 +15,30 @@ const LabelsPage: React.FC = () => {
   const [editingLabel, setEditingLabel] = useState<LabelWithSiteInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
+  const [searchParams] = useSearchParams();
 
-  // Fetch sites with query
-  const { data: sitesData, isLoading: sitesLoading } = useQuery({
-    queryKey: ['sites-labels'],
-    queryFn: async () => {
-      const response = await apiClient.getSites();
-      return response.data;
-    },
-  });
+  const initialSiteId = useMemo(() => {
+    const raw = searchParams.get('site_id');
+    if (!raw) return undefined;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  }, [searchParams]);
 
-  // Load initial site
+  const initialMode = useMemo(() => {
+    const mode = (searchParams.get('mode') || '').toLowerCase();
+    return mode === 'create' ? 'create' : null;
+  }, [searchParams]);
+
   useEffect(() => {
-    if (!selectedSiteId && sitesData?.sites && sitesData.sites.length > 0) {
-      setSelectedSiteId(sitesData.sites[0].id);
+    if (initialMode === 'create') {
+      setViewMode('create');
     }
-  }, [sitesData]);
+  }, [initialMode]);
 
   const handleCreateLabel = async (data: CreateLabelData) => {
-    if (!selectedSiteId) {
-      setMessage({ type: 'error', text: 'Please select a site first' });
-      return;
-    }
-
     try {
       setIsLoading(true);
-      const response = await apiClient.createLabel({
-        ...data,
-        site_id: selectedSiteId,
-      });
+      const response = await apiClient.createLabel(data);
       
       if (response.success) {
         setMessage({ type: 'success', text: 'Label created successfully!' });
@@ -60,12 +54,12 @@ const LabelsPage: React.FC = () => {
   };
 
   const handleUpdateLabel = async (data: CreateLabelData) => {
-    if (!editingLabel || !selectedSiteId) return;
+    if (!editingLabel) return;
     
     try {
       setIsLoading(true);
       const response = await apiClient.updateLabel(editingLabel.id, {
-        site_id: selectedSiteId,
+        site_id: data.site_id,
         source: data.source,
         destination: data.destination,
         notes: data.notes,
@@ -157,25 +151,6 @@ const LabelsPage: React.FC = () => {
   };
 
   const renderContent = () => {
-    // Check if user has no site access
-    if (!sitesLoading && (!sitesData?.sites || sitesData.sites.length === 0)) {
-      return (
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="pt-6">
-            <div className="flex gap-4">
-              <Lock className="h-6 w-6 text-amber-600 flex-shrink-0 mt-1" />
-              <div>
-                <h3 className="font-semibold text-amber-900 mb-2">No Site Access</h3>
-                <p className="text-amber-800">
-                  You do not have access to any sites. Please ask an Admin to grant you access before creating labels.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      );
-    }
-
     switch (viewMode) {
       case 'create':
         return (
@@ -185,6 +160,7 @@ const LabelsPage: React.FC = () => {
             </CardHeader>
             <CardContent>
               <LabelForm
+                initialSiteId={initialSiteId}
                 onSubmit={handleCreateLabel}
                 onCancel={handleCancel}
                 isLoading={isLoading}
@@ -216,6 +192,7 @@ const LabelsPage: React.FC = () => {
         return (
           <>
             <LabelDatabase
+              initialSiteId={initialSiteId}
               onEditLabel={handleEditLabel}
               onCreateLabel={() => setViewMode('create')}
             />

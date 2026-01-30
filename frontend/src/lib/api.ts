@@ -244,8 +244,9 @@ class ApiClient {
     });
   }
 
-  async deleteSite(id: number) {
-    return this.request(`/sites/${id}`, { method: 'DELETE' });
+  async deleteSite(id: number, options?: { cascade?: boolean }) {
+    const query = options?.cascade ? '?cascade=true' : '';
+    return this.request(`/sites/${id}${query}`, { method: 'DELETE' });
   }
 
   // Label endpoints

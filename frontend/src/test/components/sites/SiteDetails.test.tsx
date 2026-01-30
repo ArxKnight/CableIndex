@@ -1,8 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import SiteDetails from '../../../components/sites/SiteDetails';
 import { apiClient } from '../../../lib/api';
+
+const mockNavigate = vi.fn();
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<any>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
 
 const mockSite = {
   id: 1,
@@ -32,7 +43,11 @@ describe('SiteDetails', () => {
   });
 
   it('should render site details', async () => {
-    render(<SiteDetails {...mockProps} />);
+    render(
+      <MemoryRouter>
+        <SiteDetails {...mockProps} />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
@@ -45,7 +60,11 @@ describe('SiteDetails', () => {
   });
 
   it('should format dates correctly', async () => {
-    render(<SiteDetails {...mockProps} />);
+    render(
+      <MemoryRouter>
+        <SiteDetails {...mockProps} />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText(/Jan 1, 2024/)).toBeInTheDocument(); // created date
@@ -55,7 +74,11 @@ describe('SiteDetails', () => {
 
   it('should call onEdit when edit button is clicked', async () => {
     const user = userEvent.setup();
-    render(<SiteDetails {...mockProps} />);
+    render(
+      <MemoryRouter>
+        <SiteDetails {...mockProps} />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
@@ -75,7 +98,11 @@ describe('SiteDetails', () => {
       data: { site: siteWithoutLabels },
     });
 
-    render(<SiteDetails {...mockProps} />);
+    render(
+      <MemoryRouter>
+        <SiteDetails {...mockProps} />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
@@ -87,33 +114,30 @@ describe('SiteDetails', () => {
     expect(mockProps.onDelete).toHaveBeenCalledWith(siteWithoutLabels);
   });
 
-  it('should disable delete button when site has labels', async () => {
-    render(<SiteDetails {...mockProps} />);
+  it('should allow delete button click even when site has labels', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <SiteDetails {...mockProps} />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
     });
 
     const deleteButton = screen.getByText('Delete');
-    expect(deleteButton).toBeDisabled();
+    expect(deleteButton).toBeEnabled();
+    await user.click(deleteButton);
+    expect(mockProps.onDelete).toHaveBeenCalledWith(mockSite);
   });
 
-  it('should show delete warning when site has labels', async () => {
-    render(<SiteDetails {...mockProps} />);
-
-    await waitFor(() => {
-      expect(screen.getByText(/cannot be deleted because it has 5 associated labels/i)).toBeInTheDocument();
-    });
-  });
-
-  it('should not show delete warning when site has no labels', async () => {
-    const siteWithoutLabels = { ...mockSite, label_count: 0 };
-    vi.mocked(apiClient.getSite).mockResolvedValue({
-      success: true,
-      data: { site: siteWithoutLabels },
-    });
-
-    render(<SiteDetails {...mockProps} />);
+  it('should not show a persistent delete warning', async () => {
+    render(
+      <MemoryRouter>
+        <SiteDetails {...mockProps} />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
@@ -124,7 +148,11 @@ describe('SiteDetails', () => {
 
   it('should call onBack when back button is clicked', async () => {
     const user = userEvent.setup();
-    render(<SiteDetails {...mockProps} />);
+    render(
+      <MemoryRouter>
+        <SiteDetails {...mockProps} />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
@@ -137,14 +165,22 @@ describe('SiteDetails', () => {
   });
 
   it('should show loading state initially', () => {
-    render(<SiteDetails {...mockProps} />);
+    render(
+      <MemoryRouter>
+        <SiteDetails {...mockProps} />
+      </MemoryRouter>
+    );
     expect(screen.getByText('Loading site details...')).toBeInTheDocument();
   });
 
   it('should handle API error', async () => {
     vi.mocked(apiClient.getSite).mockRejectedValue(new Error('API Error'));
 
-    render(<SiteDetails {...mockProps} />);
+    render(
+      <MemoryRouter>
+        <SiteDetails {...mockProps} />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('API Error')).toBeInTheDocument();
@@ -158,7 +194,11 @@ describe('SiteDetails', () => {
       error: 'Site not found',
     });
 
-    render(<SiteDetails {...mockProps} />);
+    render(
+      <MemoryRouter>
+        <SiteDetails {...mockProps} />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Site not found')).toBeInTheDocument();
@@ -172,7 +212,11 @@ describe('SiteDetails', () => {
       data: { site: siteWithoutLabels },
     });
 
-    render(<SiteDetails {...mockProps} />);
+    render(
+      <MemoryRouter>
+        <SiteDetails {...mockProps} />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('No labels yet')).toBeInTheDocument();
@@ -181,7 +225,11 @@ describe('SiteDetails', () => {
   });
 
   it('should show labels statistics when labels exist', async () => {
-    render(<SiteDetails {...mockProps} />);
+    render(
+      <MemoryRouter>
+        <SiteDetails {...mockProps} />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
@@ -190,5 +238,43 @@ describe('SiteDetails', () => {
     // Check for the label count in the statistics section
     const labelCountElements = screen.getAllByText('5');
     expect(labelCountElements.length).toBeGreaterThan(0);
+  });
+
+  it('should navigate to create label with site_id when create buttons are clicked', async () => {
+    const user = userEvent.setup();
+    const siteWithoutLabels = { ...mockSite, label_count: 0 };
+    vi.mocked(apiClient.getSite).mockResolvedValue({
+      success: true,
+      data: { site: siteWithoutLabels },
+    });
+
+    render(
+      <MemoryRouter>
+        <SiteDetails {...mockProps} />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText('Create First Label'));
+    expect(mockNavigate).toHaveBeenCalledWith('/labels?mode=create&site_id=1');
+  });
+
+  it('should navigate to labels list filtered by site_id', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <SiteDetails {...mockProps} />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText('View All Labels'));
+    expect(mockNavigate).toHaveBeenCalledWith('/labels?site_id=1');
   });
 });

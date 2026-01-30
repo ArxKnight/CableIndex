@@ -14,6 +14,8 @@ import {
 } from '../components/ui/dialog';
 import { Button } from '../components/ui/button';
 import { Alert, AlertDescription } from '../components/ui/alert';
+import { Input } from '../components/ui/input';
+import { Checkbox } from '../components/ui/checkbox';
 import { Loader2, AlertTriangle } from 'lucide-react';
 
 type ViewMode = 'list' | 'details';
@@ -27,6 +29,8 @@ const SitesPage: React.FC = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [deleteCascadeConfirmed, setDeleteCascadeConfirmed] = useState(false);
 
   const handleCreateSite = () => {
     setSelectedSite(null);
@@ -57,6 +61,8 @@ const SitesPage: React.FC = () => {
     setDialogMode(null);
     setSelectedSite(null);
     setError(null);
+    setDeleteConfirmName('');
+    setDeleteCascadeConfirmed(false);
   };
 
   const handleSubmitSite = async (data: { name: string; location?: string; description?: string }) => {
@@ -92,7 +98,10 @@ const SitesPage: React.FC = () => {
       setIsLoading(true);
       setError(null);
 
-      const response = await apiClient.deleteSite(selectedSite.id);
+      const labelCount = (selectedSite as any).label_count || 0;
+      const cascade = labelCount > 0;
+
+      const response = await apiClient.deleteSite(selectedSite.id, { cascade });
       if (!response.success) {
         throw new Error(response.error || 'Failed to delete site');
       }
@@ -183,12 +192,43 @@ const SitesPage: React.FC = () => {
                     {(selectedSite as any).label_count || 0}
                   </span>
                 </div>
-                {(selectedSite as any).label_count > 0 && (
-                  <p className="text-xs text-destructive mt-2">
-                    Cannot delete site with existing labels. Delete all labels first.
-                  </p>
-                )}
               </div>
+
+              {(selectedSite as any).label_count > 0 && (
+                <div className="mt-4 space-y-3">
+                  <Alert>
+                    <AlertDescription>
+                      Deleting this site will also delete all associated labels.
+                    </AlertDescription>
+                  </Alert>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Type the site name to confirm:</p>
+                    <Input
+                      value={deleteConfirmName}
+                      onChange={(e) => setDeleteConfirmName(e.target.value)}
+                      placeholder={selectedSite.name}
+                      disabled={isLoading}
+                      aria-label="Confirm site name"
+                    />
+                  </div>
+
+                  <div className="flex items-start gap-2">
+                    <Checkbox
+                      id="confirm-cascade-delete"
+                      checked={deleteCascadeConfirmed}
+                      onCheckedChange={(checked) => setDeleteCascadeConfirmed(checked === true)}
+                      disabled={isLoading}
+                    />
+                    <label
+                      htmlFor="confirm-cascade-delete"
+                      className="text-sm leading-tight"
+                    >
+                      I understand this will delete all labels for this site.
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -202,10 +242,17 @@ const SitesPage: React.FC = () => {
             <Button variant="outline" onClick={handleCloseDialog} disabled={isLoading}>
               Cancel
             </Button>
+            {(() => {
+              const labelCount = (selectedSite as any)?.label_count || 0;
+              const requiresExtraConfirmation = labelCount > 0;
+              const nameMatches = selectedSite ? deleteConfirmName.trim() === selectedSite.name : false;
+              const canDelete = !requiresExtraConfirmation || (nameMatches && deleteCascadeConfirmed);
+
+              return (
             <Button 
               variant="destructive" 
               onClick={handleConfirmDelete} 
-              disabled={isLoading || ((selectedSite as any)?.label_count > 0)}
+              disabled={isLoading || !canDelete}
             >
               {isLoading ? (
                 <>
@@ -216,6 +263,8 @@ const SitesPage: React.FC = () => {
                 'Delete Site'
               )}
             </Button>
+              );
+            })()}
           </DialogFooter>
         </DialogContent>
       </Dialog>

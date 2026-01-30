@@ -268,7 +268,7 @@ const UserInvitations: React.FC = () => {
             </Button>
 
             <Dialog open={isInviteDialogOpen} onOpenChange={handleInviteDialogOpenChange}>
-              <DialogContent>
+              <DialogContent onOpenChange={handleInviteDialogOpenChange}>
                 {inviteDialogMode === 'success' ? (
                   <>
                     <DialogHeader>

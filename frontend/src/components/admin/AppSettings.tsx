@@ -12,7 +12,8 @@ import {
   Save,
   RefreshCw,
   Shield,
-  Database,
+  Mail,
+  Send,
   AlertCircle
 } from 'lucide-react';
 import { Alert, AlertDescription } from '../ui/alert';
@@ -27,20 +28,29 @@ const emptyToUndefined = (value: unknown) => {
 
 const settingsSchema = z.object({
   default_user_role: z.enum(['user', 'moderator']),
-  max_labels_per_user: z.preprocess(emptyToUndefined, z.coerce.number().int().min(0).max(10000).optional()),
-  max_sites_per_user: z.preprocess(emptyToUndefined, z.coerce.number().int().min(0).max(1000).optional()),
   maintenance_mode: z.boolean(),
   maintenance_message: z.string().max(200).optional(),
+  smtp_host: z.preprocess(emptyToUndefined, z.string().max(255).optional()),
+  smtp_port: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(65535).optional()),
+  smtp_username: z.preprocess(emptyToUndefined, z.string().max(255).optional()),
+  smtp_password: z.preprocess(emptyToUndefined, z.string().max(255).optional()),
+  smtp_from: z.preprocess(emptyToUndefined, z.string().max(255).optional()),
+  smtp_secure: z.boolean(),
 });
 
 type SettingsFormData = z.infer<typeof settingsSchema>;
 
 interface AppSettingsData {
   default_user_role: 'user' | 'moderator';
-  max_labels_per_user?: number;
-  max_sites_per_user?: number;
   maintenance_mode: boolean;
   maintenance_message?: string;
+  smtp_host?: string;
+  smtp_port?: number;
+  smtp_username?: string;
+  smtp_password?: string;
+  smtp_password_set?: boolean;
+  smtp_from?: string;
+  smtp_secure?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -61,6 +71,7 @@ const AppSettings: React.FC = () => {
     defaultValues: {
       default_user_role: 'user',
       maintenance_mode: false,
+      smtp_secure: false,
     },
   });
 
@@ -77,8 +88,11 @@ const AppSettings: React.FC = () => {
   React.useEffect(() => {
     if (settingsData?.settings) {
       reset(settingsData.settings);
+
+      // Never hydrate SMTP password into the form
+      setValue('smtp_password', undefined);
     }
-  }, [settingsData, reset]);
+  }, [settingsData, reset, setValue]);
 
   // Update settings mutation
   const updateSettingsMutation = useMutation({
@@ -92,6 +106,18 @@ const AppSettings: React.FC = () => {
     },
     onError: (error: any) => {
       toast.error(error.message || 'Failed to update settings');
+    },
+  });
+
+  const testEmailMutation = useMutation({
+    mutationFn: async () => {
+      return apiClient.post('/admin/settings/test-email', {});
+    },
+    onSuccess: () => {
+      toast.success('Test email sent successfully');
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to send test email');
     },
   });
 
@@ -134,59 +160,104 @@ const AppSettings: React.FC = () => {
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        {/* User Registration Settings */}
-        {/* System Limits */}
+        {/* Email (SMTP) */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              System Limits
+              <Mail className="h-5 w-5" />
+              Email (SMTP)
             </CardTitle>
             <CardDescription>
-              Set limits on user resources to manage system usage
+              Configure SMTP for invitation emails. Invites still work without SMTP; users can copy the direct invite link.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="max_labels">Max Labels per User</Label>
-                <Input
-                  id="max_labels"
-                  type="number"
-                  min="0"
-                  max="10000"
-                  placeholder="Unlimited"
-                  {...register('max_labels_per_user', {
-                    setValueAs: (value) => (value === '' ? undefined : Number(value)),
-                  })}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Leave empty for unlimited
-                </p>
-                {errors.max_labels_per_user && (
-                  <p className="text-sm text-red-600">{errors.max_labels_per_user.message}</p>
+                <Label htmlFor="smtp_host">SMTP Host</Label>
+                <Input id="smtp_host" placeholder="smtp.example.com" {...register('smtp_host')} />
+                {errors.smtp_host && (
+                  <p className="text-sm text-red-600">{errors.smtp_host.message}</p>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="max_sites">Max Sites per User</Label>
-                <Input
-                  id="max_sites"
-                  type="number"
-                  min="0"
-                  max="1000"
-                  placeholder="Unlimited"
-                  {...register('max_sites_per_user', {
-                    setValueAs: (value) => (value === '' ? undefined : Number(value)),
-                  })}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Leave empty for unlimited
-                </p>
-                {errors.max_sites_per_user && (
-                  <p className="text-sm text-red-600">{errors.max_sites_per_user.message}</p>
+                <Label htmlFor="smtp_port">SMTP Port</Label>
+                <Input id="smtp_port" type="number" min="1" max="65535" placeholder="587" {...register('smtp_port')} />
+                {errors.smtp_port && (
+                  <p className="text-sm text-red-600">{errors.smtp_port.message}</p>
                 )}
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="smtp_username">SMTP Username</Label>
+                <Input id="smtp_username" placeholder="user@example.com" {...register('smtp_username')} />
+                {errors.smtp_username && (
+                  <p className="text-sm text-red-600">{errors.smtp_username.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="smtp_password">SMTP Password</Label>
+                <Input
+                  id="smtp_password"
+                  type="password"
+                  placeholder={settingsData?.settings?.smtp_password_set ? '••••••' : ''}
+                  autoComplete="new-password"
+                  {...register('smtp_password')}
+                />
+                <p className="text-sm text-muted-foreground">
+                  {settingsData?.settings?.smtp_password_set
+                    ? 'Password is set. Leave blank to keep it unchanged.'
+                    : 'Set a password to enable SMTP auth.'}
+                </p>
+                {errors.smtp_password && (
+                  <p className="text-sm text-red-600">{errors.smtp_password.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="smtp_from">From Address</Label>
+                <Input id="smtp_from" placeholder="CableIndex <noreply@example.com>" {...register('smtp_from')} />
+                {errors.smtp_from && (
+                  <p className="text-sm text-red-600">{errors.smtp_from.message}</p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between rounded-md border p-3 md:col-span-2">
+                <div className="space-y-0.5">
+                  <Label htmlFor="smtp_secure">Enable TLS/SSL</Label>
+                  <p className="text-sm text-muted-foreground">
+                    If enabled, connects using TLS (commonly port 465). Otherwise STARTTLS (commonly 587).
+                  </p>
+                </div>
+                <Switch
+                  id="smtp_secure"
+                  checked={Boolean(watch('smtp_secure'))}
+                  onCheckedChange={(checked) => setValue('smtp_secure', checked)}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => testEmailMutation.mutate()}
+                disabled={testEmailMutation.isPending}
+              >
+                {testEmailMutation.isPending ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" />
+                    Test Email
+                  </>
+                )}
+              </Button>
             </div>
           </CardContent>
         </Card>

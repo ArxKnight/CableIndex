@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Site } from '../../types';
 import { apiClient } from '../../lib/api';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
@@ -32,6 +33,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
   onDelete, 
   onBack 
 }) => {
+  const navigate = useNavigate();
   const [site, setSite] = useState<SiteWithLabelCount | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -130,7 +132,6 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
           <Button 
             variant="destructive" 
             onClick={() => onDelete(site)}
-            disabled={site.label_count > 0}
           >
             <Trash2 className="mr-2 h-4 w-4" />
             Delete
@@ -217,7 +218,11 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
               <p className="text-muted-foreground mb-4">
                 Labels created for this site will appear here.
               </p>
-              <Button variant="outline" size="sm">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/labels?mode=create&site_id=${site.id}`)}
+              >
                 Create First Label
               </Button>
             </div>
@@ -248,10 +253,17 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
                   Detailed label management will be available in the next update.
                 </p>
                 <div className="flex justify-center mt-3 space-x-2">
-                  <Button variant="outline" size="sm">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigate(`/labels?site_id=${site.id}`)}
+                  >
                     View All Labels
                   </Button>
-                  <Button size="sm">
+                  <Button
+                    size="sm"
+                    onClick={() => navigate(`/labels?mode=create&site_id=${site.id}`)}
+                  >
                     Create New Label
                   </Button>
                 </div>
@@ -260,16 +272,6 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
           )}
         </CardContent>
       </Card>
-
-      {/* Delete Warning */}
-      {site.label_count > 0 && (
-        <Alert>
-          <AlertDescription>
-            This site cannot be deleted because it has {site.label_count} associated label{site.label_count !== 1 ? 's' : ''}. 
-            Delete all labels first to remove this site.
-          </AlertDescription>
-        </Alert>
-      )}
     </div>
   );
 };

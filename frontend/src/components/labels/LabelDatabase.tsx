@@ -32,11 +32,13 @@ import apiClient from '../../lib/api';
 interface LabelDatabaseProps {
   onEditLabel?: (label: LabelWithSiteInfo) => void;
   onCreateLabel?: () => void;
+  initialSiteId?: number;
 }
 
 const LabelDatabase: React.FC<LabelDatabaseProps> = ({ 
   onEditLabel, 
-  onCreateLabel 
+  onCreateLabel,
+  initialSiteId
 }) => {
   const [labels, setLabels] = useState<LabelWithSiteInfo[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
@@ -75,9 +77,17 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
         const response = await apiClient.getSites();
         if (response.success && response.data) {
           setSites(response.data.sites);
-          // Set initial selected site to first site if not already set
-          if (!selectedSiteId && response.data.sites.length > 0) {
-            setSelectedSiteId(response.data.sites[0].id);
+          // Set initial selected site
+          if (!selectedSiteId) {
+            const exists = initialSiteId
+              ? response.data.sites.some((s: Site) => s.id === initialSiteId)
+              : false;
+
+            if (exists) {
+              setSelectedSiteId(initialSiteId!);
+            } else if (response.data.sites.length > 0) {
+              setSelectedSiteId(response.data.sites[0].id);
+            }
           }
         }
       } catch (err) {
@@ -86,7 +96,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     };
 
     loadSites();
-  }, []);
+  }, [initialSiteId]);
 
   // Update search params when selected site changes
   useEffect(() => {
