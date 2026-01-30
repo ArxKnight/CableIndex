@@ -88,6 +88,19 @@ export const resolveSiteAccess = (siteIdResolver: (req: Request) => number | und
 
       const result = rows[0] as any;
       if (!result) {
+        const siteExistsRows = await adapter.query(
+          `SELECT id FROM sites WHERE id = ?`,
+          [siteId]
+        );
+
+        if (!siteExistsRows.length) {
+          res.status(404).json({
+            success: false,
+            error: 'Site not found'
+          });
+          return;
+        }
+
         res.status(403).json({
           success: false,
           error: 'Site access denied'

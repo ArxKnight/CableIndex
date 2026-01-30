@@ -1,24 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from '../../App';
-
-// Mock the API client
-vi.mock('../../lib/api', () => ({
-  apiClient: {
-    getCurrentUser: vi.fn(),
-    login: vi.fn(),
-    getUsers: vi.fn(),
-    updateUserRole: vi.fn(),
-    deleteUser: vi.fn(),
-    inviteUser: vi.fn(),
-    getInvitations: vi.fn(),
-    getAppSettings: vi.fn(),
-    updateAppSettings: vi.fn(),
-    getAdminStats: vi.fn(),
-  },
-}));
 
 // Mock sonner toast
 vi.mock('sonner', () => ({
@@ -30,104 +13,74 @@ vi.mock('sonner', () => ({
   Toaster: () => null,
 }));
 
-// Mock usePermissions hook
-vi.mock('../../hooks/usePermissions', () => ({
-  usePermissions: () => ({
-    hasRole: (role: string) => role === 'admin',
-    canAccess: () => true,
-    canCreate: () => true,
-    canEdit: () => true,
-    canDelete: () => true,
-    isAdmin: true,
-  }),
-}));
-
-const createTestQueryClient = () => new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: false,
+const setAuthRole = (role: 'GLOBAL_ADMIN' | 'ADMIN' | 'USER') => {
+  const current = (globalThis as any).__TEST_AUTH__;
+  (globalThis as any).__TEST_AUTH__ = {
+    ...current,
+    user: {
+      ...(current?.user ?? {}),
+      id: role === 'USER' ? 2 : 1,
+      email: role === 'USER' ? 'user@example.com' : 'admin@example.com',
+      full_name: role === 'USER' ? 'Regular User' : 'Admin User',
+      role,
     },
-    mutations: {
-      retry: false,
-    },
-  },
-});
-
-const renderApp = () => {
-  const queryClient = createTestQueryClient();
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  );
+    isAuthenticated: true,
+    isLoading: false,
+  };
 };
+
+const renderApp = () => render(<App />);
 
 describe('Admin Workflow Integration Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    // Ensure each test starts from a known route; previous tests may leave the app on /admin.
+    window.history.pushState({}, '', '/dashboard');
   });
 
   it('should allow admin to access admin panel', async () => {
     const { apiClient } = await import('../../lib/api');
+    setAuthRole('ADMIN');
 
-    // Mock authenticated admin user
-    vi.mocked(apiClient.getCurrentUser).mockResolvedValue({
-      success: true,
-      data: {
-        user: {
-          id: 1,
-          email: 'admin@example.com',
-          full_name: 'Admin User',
-          role: 'admin',
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-01T00:00:00Z',
-        },
-      },
-    });
+    // Dashboard dependencies
+    vi.mocked(apiClient.getSites).mockResolvedValue({ success: true, data: { sites: [] } } as any);
+    vi.mocked(apiClient.getLabelStats).mockResolvedValue({ success: true, data: { stats: {} } } as any);
+    vi.mocked(apiClient.getRecentLabels).mockResolvedValue({ success: true, data: { labels: [] } } as any);
 
-    // Mock admin data
-    vi.mocked(apiClient.getUsers).mockResolvedValue({
-      success: true,
-      data: { users: [] },
-    });
+    // Admin page dependencies
+    vi.mocked(apiClient.get).mockImplementation(async (endpoint: string) => {
+      if (endpoint.startsWith('/admin/users')) {
+        return { success: true, data: { users: [] } } as any;
+      }
+      if (endpoint === '/admin/invitations') {
+        return { success: true, data: { invitations: [] } } as any;
+      }
+      if (endpoint === '/admin/settings') {
+        return {
+          success: true,
+          data: {
+            settings: {
+              default_user_role: 'user',
+              maintenance_mode: false,
+            },
+          },
+        } as any;
+      }
 
-    vi.mocked(apiClient.getInvitations).mockResolvedValue({
-      success: true,
-      data: { invitations: [] },
-    });
-
-    vi.mocked(apiClient.getAppSettings).mockResolvedValue({
-      success: true,
-      data: {
-        settings: {
-          public_registration_enabled: false,
-          default_user_role: 'user',
-          maintenance_mode: false,
-        },
-      },
-    });
-
-    vi.mocked(apiClient.getAdminStats).mockResolvedValue({
-      success: true,
-      data: {
-        total_users: 1,
-        total_sites: 0,
-        total_labels: 0,
-        recent_registrations: 0,
-      },
+      return { success: true, data: {} } as any;
     });
 
     renderApp();
 
     // Wait for dashboard to load
     await waitFor(() => {
-      expect(screen.getByText('Dashboard')).toBeInTheDocument();
+      expect(screen.getAllByRole('link', { name: 'Dashboard' }).length).toBeGreaterThan(0);
     });
 
     // Navigate to admin panel
-    const adminLink = screen.getByRole('link', { name: /admin/i });
-    await userEvent.click(adminLink);
+    const adminLinks = screen.getAllByRole('link', { name: /admin/i });
+    await userEvent.click(adminLinks[0]);
 
     // Wait for admin page
     await waitFor(() => {
@@ -136,6 +89,9 @@ describe('Admin Workflow Integration Tests', () => {
 
     // Verify admin sections are visible
     expect(screen.getByText('User Management')).toBeInTheDocument();
+
+    // Application Settings lives under the Settings tab
+    await userEvent.click(screen.getByRole('tab', { name: /settings/i }));
     expect(screen.getByText('Application Settings')).toBeInTheDocument();
   });
 
@@ -143,175 +99,190 @@ describe('Admin Workflow Integration Tests', () => {
     const { apiClient } = await import('../../lib/api');
     const user = userEvent.setup();
 
-    // Mock authenticated admin user
-    vi.mocked(apiClient.getCurrentUser).mockResolvedValue({
-      success: true,
-      data: {
-        user: {
-          id: 1,
-          email: 'admin@example.com',
-          full_name: 'Admin User',
-          role: 'admin',
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-01T00:00:00Z',
-        },
-      },
-    });
+    setAuthRole('ADMIN');
 
-    // Mock admin data
-    vi.mocked(apiClient.getUsers).mockResolvedValue({
-      success: true,
-      data: { users: [] },
-    });
+    const sites = [{ id: 1, name: 'Site A', code: 'A' }];
 
-    vi.mocked(apiClient.getInvitations).mockResolvedValue({
+    // Dashboard dependencies
+    vi.mocked(apiClient.getSites).mockResolvedValue({ success: true, data: { sites } } as any);
+    vi.mocked(apiClient.getLabelStats).mockResolvedValue({
       success: true,
-      data: { invitations: [] },
+      data: { stats: { total_labels: 0, labels_this_month: 0, labels_today: 0 } },
+    } as any);
+    vi.mocked(apiClient.getRecentLabels).mockResolvedValue({ success: true, data: { labels: [] } } as any);
+
+    // Admin page dependencies
+    vi.mocked(apiClient.get).mockImplementation(async (endpoint: string) => {
+      if (endpoint.startsWith('/admin/users')) {
+        return { success: true, data: { users: [] } } as any;
+      }
+      if (endpoint === '/admin/invitations') {
+        return { success: true, data: { invitations: [] } } as any;
+      }
+      if (endpoint === '/admin/settings') {
+        return {
+          success: true,
+          data: {
+            settings: {
+              default_user_role: 'user',
+              maintenance_mode: false,
+            },
+          },
+        } as any;
+      }
+      return { success: true, data: {} } as any;
     });
 
     vi.mocked(apiClient.inviteUser).mockResolvedValue({
       success: true,
-      data: { token: 'mock-invitation-token' },
-    });
+      data: {
+        token: 'mock-invitation-token',
+        invite_url: 'http://localhost/auth/register?token=mock-invitation-token',
+        email_sent: false,
+        email_error: 'SMTP not configured',
+      },
+    } as any);
 
     renderApp();
 
     // Navigate to admin panel
     await waitFor(() => {
-      expect(screen.getByText('Dashboard')).toBeInTheDocument();
+      expect(screen.getAllByRole('link', { name: 'Dashboard' }).length).toBeGreaterThan(0);
     });
 
-    const adminLink = screen.getByRole('link', { name: /admin/i });
-    await user.click(adminLink);
+    const adminLinks = screen.getAllByRole('link', { name: /admin/i });
+    await user.click(adminLinks[0]);
 
     // Wait for admin page
     await waitFor(() => {
       expect(screen.getByText('Admin Panel')).toBeInTheDocument();
     });
 
+    // Switch to Invitations tab
+    await user.click(screen.getByRole('tab', { name: /invitations/i }));
+
     // Click invite user button
-    const inviteButton = screen.getByRole('button', { name: /invite user/i });
+    const inviteButton = await screen.findByRole('button', { name: /invite user/i });
     await user.click(inviteButton);
 
     // Fill in invitation form
-    const emailInput = screen.getByLabelText(/email/i);
+    const nameInput = screen.getByLabelText(/full name/i);
+    await user.type(nameInput, 'New User');
+
+    const emailInput = screen.getByLabelText(/email address/i);
     await user.type(emailInput, 'newuser@example.com');
 
-    // Select role
-    const roleSelect = screen.getByRole('combobox', { name: /role/i });
-    await user.click(roleSelect);
-    
-    const userOption = screen.getByText('User');
-    await user.click(userOption);
+    // Select at least one site (defaults to USER role)
+    await user.click(screen.getByRole('checkbox', { name: /site a/i }));
 
     // Submit invitation
     const sendButton = screen.getByRole('button', { name: /send invitation/i });
     await user.click(sendButton);
 
     // Verify API was called
-    expect(apiClient.inviteUser).toHaveBeenCalledWith('newuser@example.com', 'user');
+    await waitFor(() => {
+      expect(apiClient.inviteUser).toHaveBeenCalledWith(
+        'newuser@example.com',
+        [{ site_id: 1, site_role: 'USER' }],
+        'New User'
+      );
+    });
   });
 
   it('should allow admin to update application settings', async () => {
     const { apiClient } = await import('../../lib/api');
     const user = userEvent.setup();
 
-    // Mock authenticated admin user
-    vi.mocked(apiClient.getCurrentUser).mockResolvedValue({
-      success: true,
-      data: {
-        user: {
-          id: 1,
-          email: 'admin@example.com',
-          full_name: 'Admin User',
-          role: 'admin',
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-01T00:00:00Z',
-        },
-      },
+    setAuthRole('ADMIN');
+
+    // Dashboard dependencies
+    vi.mocked(apiClient.getSites).mockResolvedValue({ success: true, data: { sites: [] } } as any);
+    vi.mocked(apiClient.getLabelStats).mockResolvedValue({ success: true, data: { stats: {} } } as any);
+    vi.mocked(apiClient.getRecentLabels).mockResolvedValue({ success: true, data: { labels: [] } } as any);
+
+    // Settings data
+    vi.mocked(apiClient.get).mockImplementation(async (endpoint: string) => {
+      if (endpoint === '/admin/settings') {
+        return {
+          success: true,
+          data: {
+            settings: {
+              default_user_role: 'user',
+              maintenance_mode: false,
+            },
+          },
+        } as any;
+      }
+      if (endpoint.startsWith('/admin/users')) {
+        return { success: true, data: { users: [] } } as any;
+      }
+      if (endpoint === '/admin/invitations') {
+        return { success: true, data: { invitations: [] } } as any;
+      }
+      return { success: true, data: {} } as any;
     });
 
-    // Mock settings data
-    vi.mocked(apiClient.getAppSettings).mockResolvedValue({
-      success: true,
-      data: {
-        settings: {
-          public_registration_enabled: false,
-          default_user_role: 'user',
-          maintenance_mode: false,
-        },
-      },
-    });
-
-    vi.mocked(apiClient.updateAppSettings).mockResolvedValue({
-      success: true,
-      data: {},
-    });
+    vi.mocked(apiClient.put).mockResolvedValue({ success: true, data: {} } as any);
 
     renderApp();
 
     // Navigate to admin panel
     await waitFor(() => {
-      expect(screen.getByText('Dashboard')).toBeInTheDocument();
+      expect(screen.getAllByRole('link', { name: 'Dashboard' }).length).toBeGreaterThan(0);
     });
 
-    const adminLink = screen.getByRole('link', { name: /admin/i });
-    await user.click(adminLink);
+    const adminLinks = screen.getAllByRole('link', { name: /admin/i });
+    await user.click(adminLinks[0]);
 
-    // Wait for admin page and settings to load
+    // Wait for admin page
+    await waitFor(() => {
+      expect(screen.getByText('Admin Panel')).toBeInTheDocument();
+    });
+
+    // Switch to Settings tab (App defaults to Users)
+    await user.click(screen.getByRole('tab', { name: /settings/i }));
+
+    // Wait for settings tab content
     await waitFor(() => {
       expect(screen.getByText('Application Settings')).toBeInTheDocument();
     });
 
-    // Toggle public registration
-    const publicRegToggle = screen.getByRole('switch', { name: /public registration/i });
-    await user.click(publicRegToggle);
+    // Make a change so the Save button becomes enabled
+    const maxLabelsInput = screen.getByLabelText(/max labels per user/i);
+    await user.clear(maxLabelsInput);
+    await user.type(maxLabelsInput, '10');
 
     // Save settings
     const saveButton = screen.getByRole('button', { name: /save settings/i });
     await user.click(saveButton);
 
     // Verify API was called
-    expect(apiClient.updateAppSettings).toHaveBeenCalledWith({
-      public_registration_enabled: true,
-      default_user_role: 'user',
-      maintenance_mode: false,
+    await waitFor(() => {
+      expect(apiClient.put).toHaveBeenCalledWith(
+        '/admin/settings',
+        expect.objectContaining({
+          default_user_role: 'user',
+          maintenance_mode: false,
+          max_labels_per_user: 10,
+        })
+      );
     });
   });
 
   it('should prevent non-admin users from accessing admin panel', async () => {
     const { apiClient } = await import('../../lib/api');
+    setAuthRole('USER');
 
-    // Mock authenticated regular user
-    vi.mocked(apiClient.getCurrentUser).mockResolvedValue({
-      success: true,
-      data: {
-        user: {
-          id: 2,
-          email: 'user@example.com',
-          full_name: 'Regular User',
-          role: 'user',
-          created_at: '2024-01-01T00:00:00Z',
-          updated_at: '2024-01-01T00:00:00Z',
-        },
-      },
-    });
-
-    // Mock usePermissions to return non-admin permissions
-    vi.mocked(require('../../hooks/usePermissions').usePermissions).mockReturnValue({
-      hasRole: (role: string) => role === 'user',
-      canAccess: () => true,
-      canCreate: () => true,
-      canEdit: () => true,
-      canDelete: () => false,
-      isAdmin: false,
-    });
+    // Dashboard dependencies
+    vi.mocked(apiClient.getSites).mockResolvedValue({ success: true, data: { sites: [] } } as any);
+    vi.mocked(apiClient.getLabelStats).mockResolvedValue({ success: true, data: { stats: {} } } as any);
+    vi.mocked(apiClient.getRecentLabels).mockResolvedValue({ success: true, data: { labels: [] } } as any);
 
     renderApp();
 
     // Wait for dashboard to load
     await waitFor(() => {
-      expect(screen.getByText('Dashboard')).toBeInTheDocument();
+      expect(screen.getAllByRole('link', { name: 'Dashboard' }).length).toBeGreaterThan(0);
     });
 
     // Admin link should not be visible for regular users

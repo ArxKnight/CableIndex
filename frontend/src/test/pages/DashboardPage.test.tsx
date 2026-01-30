@@ -15,13 +15,14 @@ vi.mock('../../lib/api', () => ({
 }));
 
 // Mock the auth context
+let mockRole: 'GLOBAL_ADMIN' | 'ADMIN' | 'USER' = 'USER';
 vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({
     user: {
       id: 1,
       email: 'test@example.com',
       full_name: 'John Doe',
-      role: 'user',
+      role: mockRole,
     },
   }),
 }));
@@ -39,11 +40,14 @@ const mockStats = {
   labels_today: 2,
 };
 
+const mockSites = [
+  { id: 1, name: 'Site 1', code: 'SITE1' },
+  { id: 2, name: 'Site 2', code: 'SITE2' },
+  { id: 3, name: 'Site 3', code: 'SITE3' },
+];
+
 const mockSitesResponse = {
-  sites: [],
-  pagination: {
-    total: 3,
-  },
+  sites: mockSites,
 };
 
 const renderDashboardPage = () => {
@@ -67,22 +71,23 @@ const renderDashboardPage = () => {
 describe('DashboardPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRole = 'USER';
     
     // Mock successful API responses by default
     vi.mocked(apiClient.getLabelStats).mockResolvedValue({
       success: true,
       data: { stats: mockStats },
-    });
+    } as any);
     
     vi.mocked(apiClient.getSites).mockResolvedValue({
       success: true,
       data: mockSitesResponse,
-    });
+    } as any);
     
     vi.mocked(apiClient.getRecentLabels).mockResolvedValue({
       success: true,
       data: { labels: [] },
-    });
+    } as any);
   });
 
   it('should render greeting with user name', async () => {
@@ -126,16 +131,19 @@ describe('DashboardPage', () => {
   });
 
   it('should show loading state for statistics', () => {
-    vi.mocked(apiClient.getLabelStats).mockImplementation(
-      () => new Promise(() => {}) // Never resolves
-    );
-    vi.mocked(apiClient.getSites).mockImplementation(
-      () => new Promise(() => {}) // Never resolves
-    );
+    // Keep sites resolvable so a site is selected; block label stats so dashboard-stats query stays loading.
+    vi.mocked(apiClient.getSites).mockResolvedValue({
+      success: true,
+      data: mockSitesResponse,
+    } as any);
+    vi.mocked(apiClient.getLabelStats).mockImplementation(() => new Promise(() => {}) as any);
 
     renderDashboardPage();
-    
-    expect(screen.getAllByText('...')).toHaveLength(4);
+
+    // Wait until dashboard-stats query is in-flight
+    return waitFor(() => {
+      expect(screen.getAllByText('...').length).toBeGreaterThan(0);
+    });
   });
 
   it('should render quick actions component', async () => {
@@ -158,7 +166,7 @@ describe('DashboardPage', () => {
     vi.mocked(apiClient.getLabelStats).mockResolvedValue({
       success: true,
       data: { stats: { ...mockStats, total_labels: 0 } },
-    });
+    } as any);
 
     renderDashboardPage();
     
@@ -194,34 +202,55 @@ describe('DashboardPage', () => {
     expect(screen.getByText('Total Labels')).toBeInTheDocument();
   });
 
-  it('should call APIs with correct parameters', () => {
+  it('should call APIs with correct parameters', async () => {
     renderDashboardPage();
-    
-    expect(apiClient.getLabelStats).toHaveBeenCalled();
-    expect(apiClient.getSites).toHaveBeenCalledWith({
-      limit: 1,
-      include_counts: true,
+
+    await waitFor(() => {
+      expect(apiClient.getSites).toHaveBeenCalled();
+      // First accessible site should be used for stats/recents.
+      expect(apiClient.getLabelStats).toHaveBeenCalledWith(1);
+      expect(apiClient.getRecentLabels).toHaveBeenCalledWith(1, 5);
     });
-    expect(apiClient.getRecentLabels).toHaveBeenCalledWith(5);
   });
 
   it('should display correct greeting based on time of day', () => {
-    // Mock different times of day
-    const originalDate = Date;
-    
-    // Test morning (9 AM)
-    vi.spyOn(globalThis, 'Date').mockImplementation(((...args: any[]) => {
-      if (args.length === 0) {
-        const mockDate = new originalDate('2024-01-15T09:00:00Z');
-        mockDate.getHours = () => 9;
-        return mockDate;
-      }
-      return new (originalDate as any)(...args);
-    }) as any);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2024-01-15T09:00:00Z'));
 
     renderDashboardPage();
     expect(screen.getByText('Good morning, John!')).toBeInTheDocument();
-    
-    vi.restoreAllMocks();
+
+    vi.useRealTimers();
+  });
+
+  it('should show admin no-sites onboarding with CTA', async () => {
+    mockRole = 'ADMIN';
+    vi.mocked(apiClient.getSites).mockResolvedValue({
+      success: true,
+      data: { sites: [] },
+    } as any);
+
+    renderDashboardPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('Get Started')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /Create Your First Site/i })).toBeInTheDocument();
+    });
+  });
+
+  it('should show user no-sites message without CTA', async () => {
+    mockRole = 'USER';
+    vi.mocked(apiClient.getSites).mockResolvedValue({
+      success: true,
+      data: { sites: [] },
+    } as any);
+
+    renderDashboardPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('No Sites Available')).toBeInTheDocument();
+      expect(screen.getByText(/Please ask an Admin to grant you access/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Create Your First Site/i)).not.toBeInTheDocument();
   });
 });

@@ -11,6 +11,7 @@ import {
   Zap
 } from 'lucide-react';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useAuth } from '../../contexts/AuthContext';
 import { cn } from '../../lib/utils';
 
 interface QuickAction {
@@ -40,7 +41,7 @@ const quickActions: QuickAction[] = [
     variant: 'outline',
   },
   {
-    title: 'View Database',
+    title: 'View Labels',
     description: 'Browse all your labels',
     href: '/labels',
     icon: Database,
@@ -67,10 +68,19 @@ const quickActions: QuickAction[] = [
 
 const QuickActions: React.FC = () => {
   const { canAccess } = usePermissions();
+  const { user } = useAuth();
 
-  const filteredActions = quickActions.filter(action => 
-    !action.permission || canAccess(action.permission)
-  );
+  const isAdmin = user?.role === 'GLOBAL_ADMIN' || user?.role === 'ADMIN';
+  const sitesActionTitle = isAdmin ? 'Manage Sites' : 'View Sites';
+
+  const filteredActions = quickActions
+    .map((action) => {
+      if (action.href === '/sites') {
+        return { ...action, title: sitesActionTitle };
+      }
+      return action;
+    })
+    .filter((action) => !action.permission || canAccess(action.permission));
 
   return (
     <Card>

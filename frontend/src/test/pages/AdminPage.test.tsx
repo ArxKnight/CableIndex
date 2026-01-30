@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
+import userEvent from '@testing-library/user-event';
 import AdminPage from '../../pages/AdminPage';
 import { AuthProvider } from '../../contexts/AuthContext';
 
@@ -18,16 +19,13 @@ vi.mock('../../components/admin/AppSettings', () => ({
   default: () => <div data-testid="app-settings">App Settings Component</div>
 }));
 
-vi.mock('../../components/admin/AdminStats', () => ({
-  default: () => <div data-testid="admin-stats">Admin Stats Component</div>
-}));
-
 // Mock usePermissions hook
+let mockIsAdmin = true;
 vi.mock('../../hooks/usePermissions', () => ({
   usePermissions: () => ({
-    isAdmin: true,
+    isAdmin: mockIsAdmin,
     canAccess: vi.fn(() => true),
-  })
+  }),
 }));
 
 const createWrapper = () => {
@@ -56,6 +54,7 @@ const createWrapper = () => {
 describe('AdminPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsAdmin = true;
   });
 
   it('renders admin panel with all tabs', async () => {
@@ -69,7 +68,6 @@ describe('AdminPage', () => {
     expect(screen.getByRole('tab', { name: /users/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /invitations/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /settings/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /statistics/i })).toBeInTheDocument();
   });
 
   it('shows user management by default', async () => {
@@ -85,9 +83,11 @@ describe('AdminPage', () => {
     const Wrapper = createWrapper();
     render(<AdminPage />, { wrapper: Wrapper });
 
+    const user = userEvent.setup();
+
     // Click on invitations tab
     const invitationsTab = screen.getByRole('tab', { name: /invitations/i });
-    invitationsTab.click();
+    await user.click(invitationsTab);
 
     await waitFor(() => {
       expect(screen.getByTestId('user-invitations')).toBeInTheDocument();
@@ -95,29 +95,18 @@ describe('AdminPage', () => {
 
     // Click on settings tab
     const settingsTab = screen.getByRole('tab', { name: /settings/i });
-    settingsTab.click();
+    await user.click(settingsTab);
 
     await waitFor(() => {
       expect(screen.getByTestId('app-settings')).toBeInTheDocument();
     });
 
-    // Click on statistics tab
-    const statsTab = screen.getByRole('tab', { name: /statistics/i });
-    statsTab.click();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('admin-stats')).toBeInTheDocument();
-    });
   });
 });
 
 describe('AdminPage - Non-Admin Access', () => {
   it('redirects non-admin users', () => {
-    // Mock non-admin user
-    vi.mocked(require('../../hooks/usePermissions')).usePermissions.mockReturnValue({
-      isAdmin: false,
-      canAccess: vi.fn(() => false),
-    });
+    mockIsAdmin = false;
 
     const queryClient = new QueryClient({
       defaultOptions: {

@@ -84,7 +84,6 @@ async function seedDatabase(): Promise<void> {
         VALUES (?, ?, ?, ?)
       `;
       
-      await adapter.execute(insertSettingSql, ['public_registration_enabled', 'false', nowIso, nowIso]);
       await adapter.execute(insertSettingSql, ['app_name', 'Cable Manager MVP', nowIso, nowIso]);
       await adapter.execute(insertSettingSql, ['app_version', '1.0.0', nowIso, nowIso]);
       

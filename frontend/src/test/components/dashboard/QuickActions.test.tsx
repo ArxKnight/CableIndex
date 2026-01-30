@@ -3,11 +3,26 @@ import { render, screen } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import QuickActions from '../../../components/dashboard/QuickActions';
 
+let mockUserRole: 'GLOBAL_ADMIN' | 'ADMIN' | 'USER' = 'ADMIN';
+
 // Mock the permissions hook
 const mockUsePermissions = vi.fn();
 
 vi.mock('../../../hooks/usePermissions', () => ({
   usePermissions: () => mockUsePermissions(),
+}));
+
+vi.mock('../../../contexts/AuthContext', () => ({
+  useAuth: () => ({
+    user: {
+      id: 1,
+      email: 'test@example.com',
+      full_name: 'Test User',
+      role: mockUserRole,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  }),
 }));
 
 const renderQuickActions = () => {
@@ -21,6 +36,8 @@ const renderQuickActions = () => {
 describe('QuickActions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    mockUserRole = 'ADMIN';
     
     mockUsePermissions.mockReturnValue({
       canAccess: vi.fn().mockReturnValue(true),
@@ -38,9 +55,17 @@ describe('QuickActions', () => {
     
     expect(screen.getByText('Create Label')).toBeInTheDocument();
     expect(screen.getByText('Manage Sites')).toBeInTheDocument();
-    expect(screen.getByText('View Database')).toBeInTheDocument();
+    expect(screen.getByText('View Labels')).toBeInTheDocument();
     expect(screen.getByText('Port Labels')).toBeInTheDocument();
     expect(screen.getByText('PDU Labels')).toBeInTheDocument();
+  });
+
+  it('should show View Sites label for USER role', () => {
+    mockUserRole = 'USER';
+    renderQuickActions();
+
+    expect(screen.getByText('View Sites')).toBeInTheDocument();
+    expect(screen.queryByText('Manage Sites')).not.toBeInTheDocument();
   });
 
   it('should render action descriptions', () => {
@@ -62,7 +87,8 @@ describe('QuickActions', () => {
     
     expect(screen.getByText('Create Label')).toBeInTheDocument();
     expect(screen.queryByText('Manage Sites')).not.toBeInTheDocument();
-    expect(screen.getByText('View Database')).toBeInTheDocument();
+    expect(screen.queryByText('View Sites')).not.toBeInTheDocument();
+    expect(screen.getByText('View Labels')).toBeInTheDocument();
   });
 
   it('should render correct links for actions', () => {
@@ -74,7 +100,7 @@ describe('QuickActions', () => {
     const sitesLink = screen.getByText('Manage Sites').closest('a');
     expect(sitesLink).toHaveAttribute('href', '/sites');
     
-    const labelsLink = screen.getByText('View Database').closest('a');
+    const labelsLink = screen.getByText('View Labels').closest('a');
     expect(labelsLink).toHaveAttribute('href', '/labels');
     
     const portLabelsLink = screen.getByText('Port Labels').closest('a');
@@ -96,11 +122,11 @@ describe('QuickActions', () => {
     renderQuickActions();
     
     // Create Label should have default variant (primary styling)
-    const createLabelButton = screen.getByText('Create Label').closest('a');
+    const createLabelButton = screen.getByText('Create Label').closest('button');
     expect(createLabelButton).toHaveClass('bg-blue-600');
     
     // Other buttons should have outline variant
-    const sitesButton = screen.getByText('Manage Sites').closest('a');
+    const sitesButton = screen.getByText('Manage Sites').closest('button');
     expect(sitesButton).not.toHaveClass('bg-blue-600');
   });
 });

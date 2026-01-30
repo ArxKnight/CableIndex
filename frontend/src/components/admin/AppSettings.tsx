@@ -8,9 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import {
-  Settings,
   Save,
   RefreshCw,
   Shield,
@@ -21,13 +19,16 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { toast } from 'sonner';
 import { apiClient } from '../../lib/api';
 
+const emptyToUndefined = (value: unknown) => {
+  if (value === '' || value === null || value === undefined) return undefined;
+  if (typeof value === 'number' && Number.isNaN(value)) return undefined;
+  return value;
+};
+
 const settingsSchema = z.object({
-  public_registration_enabled: z.boolean(),
   default_user_role: z.enum(['user', 'moderator']),
-  max_labels_per_user: z.number().min(0).max(10000).optional(),
-  max_sites_per_user: z.number().min(0).max(1000).optional(),
-  system_name: z.string().min(1).max(100),
-  system_description: z.string().max(500).optional(),
+  max_labels_per_user: z.preprocess(emptyToUndefined, z.coerce.number().int().min(0).max(10000).optional()),
+  max_sites_per_user: z.preprocess(emptyToUndefined, z.coerce.number().int().min(0).max(1000).optional()),
   maintenance_mode: z.boolean(),
   maintenance_message: z.string().max(200).optional(),
 });
@@ -35,12 +36,9 @@ const settingsSchema = z.object({
 type SettingsFormData = z.infer<typeof settingsSchema>;
 
 interface AppSettingsData {
-  public_registration_enabled: boolean;
   default_user_role: 'user' | 'moderator';
   max_labels_per_user?: number;
   max_sites_per_user?: number;
-  system_name: string;
-  system_description?: string;
   maintenance_mode: boolean;
   maintenance_message?: string;
   created_at: string;
@@ -61,9 +59,7 @@ const AppSettings: React.FC = () => {
   } = useForm<SettingsFormData>({
     resolver: zodResolver(settingsSchema),
     defaultValues: {
-      public_registration_enabled: false,
       default_user_role: 'user',
-      system_name: 'Cable Manager',
       maintenance_mode: false,
     },
   });
@@ -160,7 +156,9 @@ const AppSettings: React.FC = () => {
                   min="0"
                   max="10000"
                   placeholder="Unlimited"
-                  {...register('max_labels_per_user', { valueAsNumber: true })}
+                  {...register('max_labels_per_user', {
+                    setValueAs: (value) => (value === '' ? undefined : Number(value)),
+                  })}
                 />
                 <p className="text-sm text-muted-foreground">
                   Leave empty for unlimited
@@ -178,7 +176,9 @@ const AppSettings: React.FC = () => {
                   min="0"
                   max="1000"
                   placeholder="Unlimited"
-                  {...register('max_sites_per_user', { valueAsNumber: true })}
+                  {...register('max_sites_per_user', {
+                    setValueAs: (value) => (value === '' ? undefined : Number(value)),
+                  })}
                 />
                 <p className="text-sm text-muted-foreground">
                   Leave empty for unlimited
@@ -187,51 +187,6 @@ const AppSettings: React.FC = () => {
                   <p className="text-sm text-red-600">{errors.max_sites_per_user.message}</p>
                 )}
               </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* System Information */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              System Information
-            </CardTitle>
-            <CardDescription>
-              Customize system branding and information
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="system_name">System Name</Label>
-              <Input
-                id="system_name"
-                placeholder="Cable Manager"
-                {...register('system_name')}
-              />
-              <p className="text-sm text-muted-foreground">
-                Name displayed in the application header
-              </p>
-              {errors.system_name && (
-                <p className="text-sm text-red-600">{errors.system_name.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="system_description">System Description</Label>
-              <Textarea
-                id="system_description"
-                placeholder="Professional cable labeling system for Brady printers"
-                rows={3}
-                {...register('system_description')}
-              />
-              <p className="text-sm text-muted-foreground">
-                Optional description shown on login page
-              </p>
-              {errors.system_description && (
-                <p className="text-sm text-red-600">{errors.system_description.message}</p>
-              )}
             </div>
           </CardContent>
         </Card>

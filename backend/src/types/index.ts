@@ -5,7 +5,7 @@ export interface User {
   full_name: string;
   password_hash: string;
   role: UserRole;
-  is_active?: boolean;
+  is_active?: boolean | number;
   created_at: string;
   updated_at: string;
 }
@@ -17,7 +17,7 @@ export interface Site {
   created_by: number;
   location?: string;
   description?: string;
-  is_active?: boolean;
+  is_active?: boolean | number;
   created_at: string;
   updated_at: string;
 }

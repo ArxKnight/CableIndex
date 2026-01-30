@@ -26,19 +26,19 @@ describe('Admin Routes', () => {
       email: 'admin@example.com',
       full_name: 'Admin User',
       password: 'AdminPassword123!',
-      role: 'admin',
+      role: 'GLOBAL_ADMIN',
     });
 
     regularUser = await userModel.create({
       email: 'user@example.com',
       full_name: 'Regular User',
       password: 'UserPassword123!',
-      role: 'user',
+      role: 'USER',
     });
 
     // Generate tokens
-    adminToken = generateToken({ userId: adminUser.id, email: adminUser.email, role: adminUser.role });
-    userToken = generateToken({ userId: regularUser.id, email: regularUser.email, role: regularUser.role });
+    adminToken = generateToken(adminUser);
+    userToken = generateToken(regularUser);
   });
 
   afterEach(() => {
@@ -293,7 +293,7 @@ describe('Admin Routes', () => {
       `);
       
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-      stmt.run('invite@example.com', validToken, adminUser.id, 'moderator', expiresAt);
+      stmt.run('invite@example.com', validToken, adminUser.id, 'ADMIN', expiresAt);
     });
 
     it('should accept valid invitation and create account', async () => {
@@ -311,7 +311,7 @@ describe('Admin Routes', () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data.email).toBe('invite@example.com');
       expect(response.body.data.full_name).toBe(acceptData.full_name);
-      expect(response.body.data.role).toBe('moderator');
+      expect(response.body.data.role).toBe('ADMIN');
       expect(response.body.data.password_hash).toBeUndefined();
 
       // Verify invitation was marked as used
@@ -319,9 +319,9 @@ describe('Admin Routes', () => {
       expect(invitation.used_at).toBeDefined();
 
       // Verify user was created
-      const user = userModel.findByEmail('invite@example.com');
+      const user = await userModel.findByEmail('invite@example.com');
       expect(user).toBeDefined();
-      expect(user?.role).toBe('moderator');
+      expect(user?.role).toBe('ADMIN');
     });
 
     it('should reject invalid token', async () => {
@@ -395,7 +395,7 @@ describe('Admin Routes', () => {
         email: 'moderator@example.com',
         full_name: 'Moderator User',
         password: 'ModPassword123!',
-        role: 'moderator',
+        role: 'ADMIN',
       });
     });
 
@@ -433,7 +433,7 @@ describe('Admin Routes', () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.users).toHaveLength(1);
-      expect(response.body.data.users[0].role).toBe('moderator');
+      expect(response.body.data.users[0].role).toBe('ADMIN');
     });
 
     it('should deny access for regular user', async () => {
@@ -451,22 +451,22 @@ describe('Admin Routes', () => {
       const response = await request(app)
         .put(`/api/admin/users/${regularUser.id}/role`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ role: 'moderator' })
+        .send({ role: 'ADMIN' })
         .expect(200);
 
       expect(response.body.success).toBe(true);
       expect(response.body.message).toContain('updated successfully');
 
       // Verify role was updated
-      const updatedUser = userModel.findById(regularUser.id);
-      expect(updatedUser?.role).toBe('moderator');
+      const updatedUser = await userModel.findById(regularUser.id);
+      expect(updatedUser?.role).toBe('ADMIN');
     });
 
     it('should deny access for regular user', async () => {
       const response = await request(app)
         .put(`/api/admin/users/${regularUser.id}/role`)
         .set('Authorization', `Bearer ${userToken}`)
-        .send({ role: 'moderator' })
+        .send({ role: 'ADMIN' })
         .expect(403);
 
       expect(response.body.success).toBe(false);
@@ -503,7 +503,7 @@ describe('Admin Routes', () => {
         email: 'delete@example.com',
         full_name: 'Delete User',
         password: 'DeletePassword123!',
-        role: 'user',
+        role: 'USER',
       });
     });
 
@@ -517,7 +517,7 @@ describe('Admin Routes', () => {
       expect(response.body.message).toContain('deleted successfully');
 
       // Verify user was deleted
-      const deletedUser = userModel.findById(targetUser.id);
+      const deletedUser = await userModel.findById(targetUser.id);
       expect(deletedUser).toBeNull();
     });
 
@@ -604,10 +604,9 @@ describe('Admin Routes', () => {
         .expect(200);
 
       expect(response.body.success).toBe(true);
-      expect(response.body.data.settings).toHaveProperty('public_registration_enabled');
       expect(response.body.data.settings).toHaveProperty('default_user_role');
-      expect(response.body.data.settings).toHaveProperty('system_name');
-      expect(response.body.data.settings.system_name).toBe('Cable Manager');
+      expect(response.body.data.settings).not.toHaveProperty('system_name');
+      expect(response.body.data.settings).not.toHaveProperty('system_description');
     });
 
     it('should deny access for regular user', async () => {
@@ -622,12 +621,9 @@ describe('Admin Routes', () => {
 
   describe('PUT /api/admin/settings', () => {
     const validSettings = {
-      public_registration_enabled: true,
       default_user_role: 'moderator',
       max_labels_per_user: 1000,
       max_sites_per_user: 50,
-      system_name: 'Custom Cable Manager',
-      system_description: 'Custom description',
       maintenance_mode: false,
       maintenance_message: 'Under maintenance',
     };
@@ -642,10 +638,10 @@ describe('Admin Routes', () => {
       expect(response.body.success).toBe(true);
       expect(response.body.message).toContain('updated successfully');
 
-      // Verify settings were saved
-      const settings = db.prepare('SELECT * FROM app_settings ORDER BY created_at DESC LIMIT 1').get() as any;
-      expect(settings.system_name).toBe(validSettings.system_name);
-      expect(settings.default_user_role).toBe(validSettings.default_user_role);
+      // Verify settings were saved (key/value)
+      const getValue = (key: string) => db.prepare('SELECT value FROM app_settings WHERE `key` = ?').get(key) as any;
+      expect(getValue('default_user_role').value).toBe(validSettings.default_user_role);
+      expect(getValue('max_labels_per_user').value).toBe(String(validSettings.max_labels_per_user));
     });
 
     it('should deny access for regular user', async () => {
@@ -662,11 +658,11 @@ describe('Admin Routes', () => {
       const response = await request(app)
         .put('/api/admin/settings')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ ...validSettings, system_name: '' })
+          .send({ ...validSettings, default_user_role: 'invalid' })
         .expect(400);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain('System name is required');
+      expect(response.body.error).toContain('Invalid default user role');
     });
 
     it('should validate default user role', async () => {

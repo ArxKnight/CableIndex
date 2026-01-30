@@ -357,7 +357,7 @@ class ApiClient {
   }
 
   async getInvitations() {
-    return this.request<{ invitations: any[] }>('/admin/invitations');
+    return this.request<any[]>('/admin/invitations');
   }
 
   async cancelInvitation(invitationId: number) {

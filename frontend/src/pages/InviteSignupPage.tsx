@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Navigate, useSearchParams } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -9,7 +9,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Alert, AlertDescription } from '../components/ui/alert';
-import { Loader2 } from 'lucide-react';
+import { CheckCircle2, Loader2 } from 'lucide-react';
 
 const inviteSchema = z.object({
   full_name: z.string().min(2, 'Full name must be at least 2 characters'),
@@ -30,16 +30,18 @@ type InviteFormData = z.infer<typeof inviteSchema>;
 
 const InviteSignupPage: React.FC = () => {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token') || '';
   const [inviteData, setInviteData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [isAccepted, setIsAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const {
     register,
     handleSubmit,
-    formState: { errors },
+    formState: { errors, isSubmitting },
   } = useForm<InviteFormData>({
     resolver: zodResolver(inviteSchema),
   });
@@ -48,7 +50,7 @@ const InviteSignupPage: React.FC = () => {
     const validate = async () => {
       if (!token) return;
       try {
-        setIsLoading(true);
+        setIsValidating(true);
         const response = await apiClient.validateInvite(token);
         if (response.success) {
           setInviteData(response.data);
@@ -58,7 +60,7 @@ const InviteSignupPage: React.FC = () => {
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to validate invitation');
       } finally {
-        setIsLoading(false);
+        setIsValidating(false);
       }
     };
 
@@ -67,7 +69,6 @@ const InviteSignupPage: React.FC = () => {
 
   const onSubmit = async (data: InviteFormData) => {
     try {
-      setIsLoading(true);
       setError(null);
 
       const response = await apiClient.acceptInvite({
@@ -78,11 +79,12 @@ const InviteSignupPage: React.FC = () => {
 
       if (!response.success) {
         setError(response.error || 'Failed to accept invitation');
+        return;
       }
+
+      setIsAccepted(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to accept invitation');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -98,7 +100,8 @@ const InviteSignupPage: React.FC = () => {
     );
   }
 
-  const invitedSites = useMemo(() => inviteData?.sites || [], [inviteData]);
+  const invitedSites = inviteData?.sites || [];
+  const submitDisabled = isValidating || isSubmitting || !inviteData || !token || isAccepted;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -110,6 +113,21 @@ const InviteSignupPage: React.FC = () => {
               Set your password to activate your account
             </p>
           </div>
+
+          {isAccepted && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-center gap-2 text-green-700">
+                <CheckCircle2 className="h-5 w-5" />
+                <span className="font-medium">Account created successfully</span>
+              </div>
+              <p className="text-sm text-muted-foreground text-center">
+                You can now log in with your email and password.
+              </p>
+              <Button className="w-full" onClick={() => navigate('/auth/login')}>
+                Go to Login
+              </Button>
+            </div>
+          )}
 
           {!token && (
             <Alert variant="destructive" className="mb-4">
@@ -123,7 +141,7 @@ const InviteSignupPage: React.FC = () => {
             </Alert>
           )}
 
-          {inviteData && (
+          {!isAccepted && inviteData && (
             <div className="mb-4 text-sm text-muted-foreground space-y-2">
               <div>Email: <span className="font-medium text-foreground">{inviteData.email}</span></div>
               {invitedSites.length > 0 && (
@@ -141,6 +159,7 @@ const InviteSignupPage: React.FC = () => {
             </div>
           )}
 
+          {!isAccepted && (
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="full_name">Full Name</Label>
@@ -149,7 +168,7 @@ const InviteSignupPage: React.FC = () => {
                 type="text"
                 placeholder="Enter your full name"
                 {...register('full_name')}
-                disabled={isLoading || !inviteData}
+                disabled={submitDisabled}
               />
               {errors.full_name && (
                 <p className="text-sm text-destructive">{errors.full_name.message}</p>
@@ -163,7 +182,7 @@ const InviteSignupPage: React.FC = () => {
                 type="password"
                 placeholder="Create a password"
                 {...register('password')}
-                disabled={isLoading || !inviteData}
+                disabled={submitDisabled}
               />
               {errors.password && (
                 <p className="text-sm text-destructive">{errors.password.message}</p>
@@ -177,15 +196,15 @@ const InviteSignupPage: React.FC = () => {
                 type="password"
                 placeholder="Confirm your password"
                 {...register('confirmPassword')}
-                disabled={isLoading || !inviteData}
+                disabled={submitDisabled}
               />
               {errors.confirmPassword && (
                 <p className="text-sm text-destructive">{errors.confirmPassword.message}</p>
               )}
             </div>
 
-            <Button type="submit" className="w-full" disabled={isLoading || !inviteData}>
-              {isLoading ? (
+            <Button type="submit" className="w-full" disabled={submitDisabled}>
+              {isValidating || isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Creating account...
@@ -195,6 +214,7 @@ const InviteSignupPage: React.FC = () => {
               )}
             </Button>
           </form>
+          )}
         </div>
       </div>
     </div>

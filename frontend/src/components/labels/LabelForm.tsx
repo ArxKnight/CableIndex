@@ -89,8 +89,8 @@ const LabelForm: React.FC<LabelFormProps> = ({
     if (watchedValues.site_id && watchedValues.source && watchedValues.destination) {
       const selectedSite = sites.find(s => s.id === watchedValues.site_id);
       if (selectedSite) {
-        // For preview, we'll show a placeholder reference number with 4 digits
-        setPreviewRef(`${selectedSite.code}-XXXX`);
+        // For preview, show a placeholder reference number with 4 digits
+        setPreviewRef('XXXX');
       }
     } else {
       setPreviewRef('');
@@ -117,8 +117,7 @@ const LabelForm: React.FC<LabelFormProps> = ({
       return '';
     }
     
-    // Extract just the reference number (e.g., XXXX from SITE-XXXX)
-    const referenceNumber = previewRef.split('-')[1] || 'XXXX';
+    const referenceNumber = previewRef || 'XXXX';
     
     return `^XA
 ^MUm^LH8,19^FS
@@ -153,6 +152,14 @@ const LabelForm: React.FC<LabelFormProps> = ({
       <div className="flex items-center justify-center p-8">
         <Loader2 className="h-6 w-6 animate-spin" />
         <span className="ml-2">Loading sites...</span>
+      </div>
+    );
+  }
+
+  if (!loadingSites && sites.length === 0) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        You do not have access to any sites
       </div>
     );
   }
@@ -282,10 +289,10 @@ const LabelForm: React.FC<LabelFormProps> = ({
           
           <div className="space-y-2">
             <div className="text-sm">
-              <span className="font-medium">Reference:</span> {previewRef}
+              <span className="font-medium">Reference:</span> #{previewRef}
             </div>
             <div className="text-sm">
-              <span className="font-medium">Label Text:</span> {previewRef} {watchedValues.source} &gt; {watchedValues.destination}
+              <span className="font-medium">Label Text:</span> #{previewRef} {watchedValues.source} &gt; {watchedValues.destination}
             </div>
             
             <details className="text-xs">

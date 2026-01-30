@@ -25,6 +25,8 @@ const DashboardPage: React.FC = () => {
   const { user } = useAuth();
   const [selectedSiteId, setSelectedSiteId] = React.useState<number | null>(null);
 
+  const canCreateSites = user?.role === 'GLOBAL_ADMIN' || user?.role === 'ADMIN';
+
   // Fetch dashboard statistics  // Fetch sites
   const { data: sitesData, isLoading: sitesLoading } = useQuery({
     queryKey: ['sites'],
@@ -101,16 +103,27 @@ const DashboardPage: React.FC = () => {
         </div>
 
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center max-w-2xl mx-auto">
-          <h2 className="text-2xl font-semibold text-blue-900 mb-3">Get Started</h2>
-          <p className="text-blue-700 mb-6 text-lg">
-            You don't have any sites yet. Create your first site to start managing cable labels.
-          </p>
-          <a
-            href="/sites"
-            className="inline-block px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium"
-          >
-            Create Your First Site
-          </a>
+          <h2 className="text-2xl font-semibold text-blue-900 mb-3">
+            {canCreateSites ? 'Get Started' : 'No Sites Available'}
+          </h2>
+
+          {canCreateSites ? (
+            <>
+              <p className="text-blue-700 mb-6 text-lg">
+                You don't have any sites yet. Create your first site to start managing cable labels.
+              </p>
+              <a
+                href="/sites"
+                className="inline-block px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium"
+              >
+                Create Your First Site
+              </a>
+            </>
+          ) : (
+            <p className="text-blue-700 text-lg">
+              You do not have access to any sites yet. Please ask an Admin to grant you access.
+            </p>
+          )}
         </div>
       </div>
     );

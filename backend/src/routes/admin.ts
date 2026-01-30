@@ -5,10 +5,18 @@ import UserModel from '../models/User.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireAdmin, requireGlobalRole, resolveSiteAccess } from '../middleware/permissions.js';
 import connection from '../database/connection.js';
+import { buildInviteUrl, sendInviteEmailIfConfigured } from '../services/InvitationEmailService.js';
 
 const router = express.Router();
 const getUserModel = () => new UserModel();
 const getAdapter = () => connection.getAdapter();
+
+const isMySQL = () => connection.getConfig()?.type === 'mysql';
+const dbDateParam = (date: Date): Date | string => {
+  // mysql2 can safely bind JS Date objects; SQLite expects text
+  if (isMySQL()) return date;
+  return date.toISOString();
+};
 
 // Validation schemas
 const inviteUserSchema = z.object({
@@ -68,11 +76,11 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     // Check if there's already a pending invitation
-    const nowIso = new Date().toISOString();
+    const now = new Date();
     const existingInviteRows = await getAdapter().query(
       `SELECT id FROM invitations
        WHERE email = ? AND used_at IS NULL AND expires_at > ?`,
-      [email, nowIso]
+      [email, dbDateParam(now)]
     );
     const existingInvite = existingInviteRows[0];
 
@@ -85,6 +93,24 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
 
     // Validate site access for non-global admins
     const siteIds = sites.map(site => site.site_id);
+
+    // Validate that all referenced sites actually exist (prevents FK errors -> 500)
+    {
+      const placeholders = siteIds.map(() => '?').join(', ');
+      const siteRows = await getAdapter().query(
+        `SELECT id FROM sites WHERE id IN (${placeholders})`,
+        [...siteIds]
+      );
+      const existingIds = new Set((siteRows as any[]).map(r => Number(r.id)));
+      const missing = siteIds.filter(id => !existingIds.has(id));
+      if (missing.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'One or more selected sites do not exist',
+        });
+      }
+    }
+
     if (requesterRole !== 'GLOBAL_ADMIN') {
       const placeholders = siteIds.map(() => '?').join(', ');
       const rows = await getAdapter().query(
@@ -114,7 +140,7 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
       const result = await getAdapter().execute(
         `INSERT INTO invitations (email, full_name, token_hash, invited_by, expires_at)
          VALUES (?, ?, ?, ?, ?)`,
-        [email, full_name, tokenHash, req.user!.userId, expiresAt.toISOString()]
+        [email, full_name, tokenHash, req.user!.userId, dbDateParam(expiresAt)]
       );
 
       invitationId = Number(result.insertId);
@@ -137,18 +163,39 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
       throw error;
     }
 
-    // In a real application, you would send an email here
-    // For now, return the invitation details and token once
+    const baseUrl = (process.env.APP_URL && String(process.env.APP_URL).trim())
+      ? String(process.env.APP_URL)
+      : `${req.protocol}://${req.get('host')}`;
+    const invite_url = buildInviteUrl(token, baseUrl);
+
+    const emailResult = await sendInviteEmailIfConfigured({
+      to: email,
+      inviteeName: full_name,
+      inviterName: String((req.user as any)?.full_name || req.user?.email || 'An Admin'),
+      inviteUrl: invite_url,
+      expiresAtIso: expiresAt.toISOString(),
+    });
+
+    const emailNotConfigured = emailResult.email_error === 'SMTP not configured';
+    const responseMessage = emailResult.email_sent
+      ? 'User invitation created successfully'
+      : emailNotConfigured
+        ? 'Email not sent (SMTP not configured).'
+        : 'Email not sent (SMTP error).';
+
     res.status(201).json({
       success: true,
       data: {
         id: invitationId,
         email,
         token, // In production, don't return the token
+        invite_url,
+        email_sent: emailResult.email_sent,
+        ...(emailResult.email_error ? { email_error: emailResult.email_error } : {}),
         expiresAt: expiresAt.toISOString(),
         sites,
       },
-      message: 'User invitation created successfully',
+      message: responseMessage,
     });
   } catch (error) {
     console.error('Error creating invitation:', error);
@@ -318,16 +365,33 @@ router.post('/accept-invite', async (req, res) => {
     const { token, full_name, password } = validation.data;
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
-    // Find valid invitation
-    const nowIso = new Date().toISOString();
+    // Find invitation (differentiate used vs expired vs invalid)
+    const now = new Date();
     const invitationRows = await getAdapter().query(
-      `SELECT * FROM invitations 
-       WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?`,
-      [tokenHash, nowIso]
+      `SELECT id, email, full_name, expires_at, used_at
+       FROM invitations
+       WHERE token_hash = ?
+       LIMIT 1`,
+      [tokenHash]
     );
     const invitation = invitationRows[0] as any;
 
     if (!invitation) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid or expired invitation token',
+      });
+    }
+
+    if (invitation.used_at) {
+      return res.status(409).json({
+        success: false,
+        error: 'Invite already used',
+      });
+    }
+
+    const expiresAt = new Date(invitation.expires_at);
+    if (Number.isNaN(expiresAt.getTime()) || expiresAt <= now) {
       return res.status(400).json({
         success: false,
         error: 'Invalid or expired invitation token',
@@ -392,7 +456,7 @@ router.post('/accept-invite', async (req, res) => {
         `UPDATE invitations 
          SET used_at = ? 
          WHERE id = ?`,
-        [new Date().toISOString(), invitation.id]
+        [dbDateParam(new Date()), invitation.id]
       );
 
       await getAdapter().commit();
@@ -426,11 +490,11 @@ router.get('/validate-invite/:token', async (req, res) => {
     const { token } = req.params;
     const tokenHash = crypto.createHash('sha256').update(String(token)).digest('hex');
 
-    const nowIso = new Date().toISOString();
+    const now = new Date();
     const invitationRows = await getAdapter().query(
       `SELECT id, email, expires_at FROM invitations 
        WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?`,
-      [tokenHash, nowIso]
+      [tokenHash, dbDateParam(now)]
     );
     const invitation = invitationRows[0] as any;
 
@@ -612,7 +676,7 @@ router.put('/users/:id/role', authenticateToken, requireAdmin, async (req, res) 
     const validRole = role as 'GLOBAL_ADMIN' | 'ADMIN' | 'USER';
     const result = await getAdapter().execute(
       'UPDATE users SET role = ?, updated_at = ? WHERE id = ?',
-      [validRole, new Date().toISOString(), userId]
+      [validRole, dbDateParam(new Date()), userId]
     );
 
     if (result.affectedRows === 0) {
@@ -787,7 +851,7 @@ router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) =>
     }
 
     // Check if user exists
-    const user = getUserModel().findById(userId);
+    const user = await getUserModel().findById(userId);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -822,13 +886,29 @@ router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) =>
       });
     }
 
-    // Delete user and cascade delete their data
+    // Hard-delete user and their associated data
+    // NOTE: schema uses labels.created_by and sites.created_by (not user_id)
     const adapter = getAdapter();
     try {
       await adapter.beginTransaction();
-      await adapter.execute('DELETE FROM labels WHERE user_id = ?', [userId]);
-      await adapter.execute('DELETE FROM sites WHERE user_id = ?', [userId]);
+
+      // Invitations sent by this user
+      await adapter.execute(
+        'DELETE FROM invitation_sites WHERE invitation_id IN (SELECT id FROM invitations WHERE invited_by = ?)',
+        [userId]
+      );
+      await adapter.execute('DELETE FROM invitations WHERE invited_by = ?', [userId]);
+
+      // Memberships for this user
+      await adapter.execute('DELETE FROM site_memberships WHERE user_id = ?', [userId]);
+
+      // Data created/owned by this user
+      await adapter.execute('DELETE FROM labels WHERE created_by = ?', [userId]);
+      await adapter.execute('DELETE FROM sites WHERE created_by = ?', [userId]);
+
+      // Finally delete the user
       await adapter.execute('DELETE FROM users WHERE id = ?', [userId]);
+
       await adapter.commit();
     } catch (err) {
       await adapter.rollback();
@@ -853,30 +933,64 @@ router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) =>
  */
 router.get('/settings', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const settingsRows = await getAdapter().query(
-      `SELECT * FROM app_settings ORDER BY created_at DESC LIMIT 1`
-    );
-    const settings = settingsRows[0] as any;
-
-    // Return default settings if none exist
     const defaultSettings = {
-      public_registration_enabled: false,
       default_user_role: 'user',
-      max_labels_per_user: null,
-      max_sites_per_user: null,
-      system_name: 'Cable Manager',
-      system_description: 'Professional cable labeling system for Brady printers',
+      max_labels_per_user: null as number | null,
+      max_sites_per_user: null as number | null,
       maintenance_mode: false,
       maintenance_message: 'System is under maintenance. Please try again later.',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
+    // app_settings is a key/value table (see migrations)
+    const keys = [
+      'default_user_role',
+      'max_labels_per_user',
+      'max_sites_per_user',
+      'maintenance_mode',
+      'maintenance_message',
+    ] as const;
+
+    const placeholders = keys.map(() => '?').join(', ');
+    const rows = await getAdapter().query(
+      `SELECT \`key\` AS setting_key, \`value\` AS setting_value FROM app_settings WHERE \`key\` IN (${placeholders})`,
+      [...keys]
+    );
+
+    const map = new Map<string, string>();
+    for (const row of rows as any[]) {
+      if (row?.setting_key) {
+        map.set(String(row.setting_key), String(row.setting_value ?? ''));
+      }
+    }
+
+    const parseNullableNumber = (value: string | undefined): number | null => {
+      if (value === undefined) return null;
+      const trimmed = String(value).trim();
+      if (trimmed.length === 0) return null;
+      const parsed = Number(trimmed);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    const parseBoolean = (value: string | undefined): boolean => {
+      if (value === undefined) return false;
+      const trimmed = String(value).trim().toLowerCase();
+      return trimmed === 'true' || trimmed === '1' || trimmed === 'yes';
+    };
+
+    const settings = {
+      ...defaultSettings,
+      default_user_role: map.get('default_user_role') || defaultSettings.default_user_role,
+      max_labels_per_user: parseNullableNumber(map.get('max_labels_per_user')),
+      max_sites_per_user: parseNullableNumber(map.get('max_sites_per_user')),
+      maintenance_mode: parseBoolean(map.get('maintenance_mode')),
+      maintenance_message: map.get('maintenance_message') || defaultSettings.maintenance_message,
+    };
+
     res.json({
       success: true,
-      data: {
-        settings: settings || defaultSettings,
-      },
+      data: { settings },
     });
   } catch (error) {
     console.error('Error fetching settings:', error);
@@ -893,23 +1007,22 @@ router.get('/settings', authenticateToken, requireAdmin, async (req, res) => {
 router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const {
-      public_registration_enabled,
       default_user_role,
       max_labels_per_user,
       max_sites_per_user,
-      system_name,
-      system_description,
       maintenance_mode,
       maintenance_message,
     } = req.body;
 
-    // Validate required fields
-    if (!system_name || system_name.trim().length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'System name is required',
-      });
-    }
+    const normalizeLimit = (value: any): number | null => {
+      if (value === '' || value === null || value === undefined) return null;
+      const parsed = Number(value);
+      if (Number.isNaN(parsed)) return NaN;
+      return parsed;
+    };
+
+    const normalizedMaxLabels = normalizeLimit(max_labels_per_user);
+    const normalizedMaxSites = normalizeLimit(max_sites_per_user);
 
     if (!['user', 'moderator'].includes(default_user_role)) {
       return res.status(400).json({
@@ -918,63 +1031,51 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
       });
     }
 
-    // Check if settings exist
-    const existingSettingsRows = await getAdapter().query(
-      `SELECT id FROM app_settings ORDER BY created_at DESC LIMIT 1`
-    );
-    const existingSettings = existingSettingsRows[0] as any;
+    if (normalizedMaxLabels !== null && (!Number.isFinite(normalizedMaxLabels) || normalizedMaxLabels < 0)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid max labels per user value',
+      });
+    }
 
-    if (existingSettings) {
-      // Update existing settings
-      await getAdapter().execute(
-        `UPDATE app_settings SET
-          public_registration_enabled = ?,
-          default_user_role = ?,
-          max_labels_per_user = ?,
-          max_sites_per_user = ?,
-          system_name = ?,
-          system_description = ?,
-          maintenance_mode = ?,
-          maintenance_message = ?,
-          updated_at = ?
-        WHERE id = ?`,
-        [
-          public_registration_enabled ? 1 : 0,
-          default_user_role,
-          max_labels_per_user || null,
-          max_sites_per_user || null,
-          system_name,
-          system_description || null,
-          maintenance_mode ? 1 : 0,
-          maintenance_message || null,
-          new Date().toISOString(),
-          existingSettings.id
-        ]
-      );
-    } else {
-      // Create new settings
-      await getAdapter().execute(
-        `INSERT INTO app_settings (
-          public_registration_enabled,
-          default_user_role,
-          max_labels_per_user,
-          max_sites_per_user,
-          system_name,
-          system_description,
-          maintenance_mode,
-          maintenance_message
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          public_registration_enabled ? 1 : 0,
-          default_user_role,
-          max_labels_per_user || null,
-          max_sites_per_user || null,
-          system_name,
-          system_description || null,
-          maintenance_mode ? 1 : 0,
-          maintenance_message || null
-        ]
-      );
+    if (normalizedMaxSites !== null && (!Number.isFinite(normalizedMaxSites) || normalizedMaxSites < 0)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid max sites per user value',
+      });
+    }
+
+    // Persist settings in app_settings key/value table
+    const adapter = getAdapter();
+    const config = connection.getConfig();
+    const isMySQL = config?.type === 'mysql';
+    const nowParam = dbDateParam(new Date());
+
+    const settingsToPersist: Array<{ key: string; value: string }> = [
+      { key: 'default_user_role', value: String(default_user_role) },
+      { key: 'max_labels_per_user', value: normalizedMaxLabels === null ? '' : String(normalizedMaxLabels) },
+      { key: 'max_sites_per_user', value: normalizedMaxSites === null ? '' : String(normalizedMaxSites) },
+      { key: 'maintenance_mode', value: maintenance_mode ? 'true' : 'false' },
+      { key: 'maintenance_message', value: maintenance_message ? String(maintenance_message) : '' },
+    ];
+
+    const upsertSql = isMySQL
+      ? `INSERT INTO app_settings (\`key\`, value, updated_at, created_at)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = VALUES(updated_at)`
+      : `INSERT INTO app_settings (key, value, updated_at, created_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`;
+
+    await adapter.beginTransaction();
+    try {
+      for (const entry of settingsToPersist) {
+        await adapter.execute(upsertSql, [entry.key, entry.value, nowParam, nowParam]);
+      }
+      await adapter.commit();
+    } catch (err) {
+      await adapter.rollback();
+      throw err;
     }
 
     res.json({
@@ -1000,8 +1101,8 @@ router.get('/stats', authenticateToken, requireAdmin, resolveSiteAccess(req => N
     thirtyDaysAgo.setDate(now.getDate() - 30);
     const todayStart = new Date(now);
     todayStart.setHours(0, 0, 0, 0);
-    const thirtyDaysAgoIso = thirtyDaysAgo.toISOString();
-    const todayStartIso = todayStart.toISOString();
+    const thirtyDaysAgoParam = dbDateParam(thirtyDaysAgo);
+    const todayStartParam = dbDateParam(todayStart);
 
     const siteId = req.site!.id;
 
@@ -1016,7 +1117,7 @@ router.get('/stats', authenticateToken, requireAdmin, resolveSiteAccess(req => N
       FROM users u
       JOIN site_memberships sm ON sm.user_id = u.id
       WHERE sm.site_id = ?`,
-      [thirtyDaysAgoIso, siteId, thirtyDaysAgoIso, siteId]
+      [thirtyDaysAgoParam, siteId, thirtyDaysAgoParam, siteId]
     );
     const userStats = userStatsRows[0] as any;
 
@@ -1049,7 +1150,7 @@ router.get('/stats', authenticateToken, requireAdmin, resolveSiteAccess(req => N
         COUNT(CASE WHEN created_at >= ? THEN 1 END) as created_today
       FROM labels
       WHERE site_id = ?`,
-      [thirtyDaysAgoIso, todayStartIso, siteId]
+      [thirtyDaysAgoParam, todayStartParam, siteId]
     );
     const labelStats = labelStatsRows[0] as any;
 
@@ -1077,7 +1178,7 @@ router.get('/stats', authenticateToken, requireAdmin, resolveSiteAccess(req => N
       LEFT JOIN labels l ON s.id = l.site_id
       WHERE s.id = ?
       GROUP BY s.id`,
-      [thirtyDaysAgoIso, siteId]
+      [thirtyDaysAgoParam, siteId]
     );
     const siteStats = siteStatsRows[0] as any;
 

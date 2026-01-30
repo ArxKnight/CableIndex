@@ -144,8 +144,8 @@ export function PortLabels() {
             </Alert>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
+          <div className="space-y-4">
+            <div className="max-w-xl mx-auto space-y-2">
               <Label htmlFor="sid">Switch/Device SID</Label>
               <Input
                 id="sid"
@@ -157,28 +157,32 @@ export function PortLabels() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="fromPort">From Port</Label>
-              <Input
-                id="fromPort"
-                type="number"
-                min="1"
-                max="999"
-                value={formData.fromPort}
-                onChange={(e) => handleInputChange('fromPort', parseInt(e.target.value) || 1)}
-              />
-            </div>
+            <div className="flex justify-center">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-md">
+                <div className="space-y-2">
+                  <Label htmlFor="fromPort">From Port</Label>
+                  <Input
+                    id="fromPort"
+                    type="number"
+                    min="1"
+                    max="999"
+                    value={formData.fromPort}
+                    onChange={(e) => handleInputChange('fromPort', parseInt(e.target.value) || 1)}
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="toPort">To Port</Label>
-              <Input
-                id="toPort"
-                type="number"
-                min="1"
-                max="999"
-                value={formData.toPort}
-                onChange={(e) => handleInputChange('toPort', parseInt(e.target.value) || 1)}
-              />
+                <div className="space-y-2">
+                  <Label htmlFor="toPort">To Port</Label>
+                  <Input
+                    id="toPort"
+                    type="number"
+                    min="1"
+                    max="999"
+                    value={formData.toPort}
+                    onChange={(e) => handleInputChange('toPort', parseInt(e.target.value) || 1)}
+                  />
+                </div>
+              </div>
             </div>
           </div>
 

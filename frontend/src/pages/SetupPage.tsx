@@ -336,7 +336,7 @@ const SetupPage: React.FC = () => {
               <TabsContent value="2" className="space-y-4">
                 <div className="space-y-4">
                   <div>
-                    <Label htmlFor="admin-email">Admin Email</Label>
+                    <Label htmlFor="admin-email">Global Admin Email</Label>
                     <Input
                       id="admin-email"
                       type="email"
@@ -348,7 +348,7 @@ const SetupPage: React.FC = () => {
                     )}
                   </div>
                   <div>
-                    <Label htmlFor="admin-fullName">Full Name</Label>
+                    <Label htmlFor="admin-fullName">Global Admin Full Name</Label>
                     <Input
                       id="admin-fullName"
                       {...register('admin.fullName')}
@@ -359,7 +359,7 @@ const SetupPage: React.FC = () => {
                     )}
                   </div>
                   <div>
-                    <Label htmlFor="admin-password">Password</Label>
+                    <Label htmlFor="admin-password">Global Admin Password</Label>
                     <Input
                       id="admin-password"
                       type="password"
@@ -400,7 +400,7 @@ const SetupPage: React.FC = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <h4 className="font-medium">Admin User</h4>
+                    <h4 className="font-medium">Global Admin User</h4>
                     <p className="text-sm text-gray-600">
                       Email: {watch('admin.email')}
                       <br />Name: {watch('admin.fullName')}

@@ -29,7 +29,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   AlertDialog,
@@ -54,6 +53,8 @@ import { toast } from 'sonner';
 import { apiClient } from '../../lib/api';
 import { Site, SiteRole } from '../../types';
 import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
+import { useAuth } from '../../contexts/AuthContext';
+import { copyTextToClipboard } from '../../lib/clipboard';
 
 const inviteSchema = z.object({
   full_name: z.string().min(1, 'Name is required').max(100, 'Name must be less than 100 characters'),
@@ -79,9 +80,19 @@ interface Invitation {
 }
 
 const UserInvitations: React.FC = () => {
+  const { user } = useAuth();
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
+  const [inviteDialogMode, setInviteDialogMode] = useState<'form' | 'success'>('form');
   const [selectedSites, setSelectedSites] = useState<Record<number, SiteRole>>({});
+  const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
+  const [inviteEmailStatus, setInviteEmailStatus] = useState<
+    | { email_sent: true }
+    | { email_sent: false; email_error?: string }
+    | null
+  >(null);
+  const directInviteInputRef = React.useRef<HTMLInputElement | null>(null);
   const queryClient = useQueryClient();
+  const canInvite = user?.role === 'GLOBAL_ADMIN' || user?.role === 'ADMIN';
 
   const {
     register,
@@ -93,11 +104,17 @@ const UserInvitations: React.FC = () => {
   });
 
   // Fetch pending invitations
-  const { data: invitationsData, isLoading } = useQuery({
+  const { data: invitationsData, isLoading } = useQuery<{ invitations: Invitation[] }>({
     queryKey: ['admin', 'invitations'],
-    queryFn: async () => {
-      const response = await apiClient.get<{ invitations: Invitation[] }>('/admin/invitations');
-      return response.data;
+    queryFn: async (): Promise<{ invitations: Invitation[] }> => {
+      // Backend returns { success: true, data: Invitation[] }
+      // Normalize to { invitations: Invitation[] } for this component.
+      const response = await apiClient.get<Invitation[] | { invitations: Invitation[] }>('/admin/invitations');
+      const data = response.data as unknown;
+      const invitations = Array.isArray(data)
+        ? (data as Invitation[])
+        : ((data as { invitations?: Invitation[] } | null | undefined)?.invitations ?? []);
+      return { invitations };
     },
   });
 
@@ -110,6 +127,10 @@ const UserInvitations: React.FC = () => {
     },
   });
 
+  const availableSites = sitesData?.sites ?? [];
+  const hasAvailableSites = availableSites.length > 0;
+  const hasSelectedSites = Object.keys(selectedSites).length > 0;
+
   // Send invitation mutation
   const sendInviteMutation = useMutation({
     mutationFn: async (data: { full_name: string; email: string; sites: Array<{ site_id: number; site_role: SiteRole }> }) => {
@@ -117,16 +138,37 @@ const UserInvitations: React.FC = () => {
     },
     onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
-      toast.success('Invitation sent successfully');
-      reset();
-      setSelectedSites({});
-      setIsInviteDialogOpen(false);
+      queryClient.refetchQueries({ queryKey: ['admin', 'invitations'] });
+      const token = (response.data as any)?.token as string | undefined;
+      const inviteUrlFromApi = (response.data as any)?.invite_url as string | undefined;
+      const inviteUrl = inviteUrlFromApi || (token ? `${window.location.origin}/auth/register?token=${token}` : null);
 
-      // Show invitation link if available
-      if (response.data && typeof response.data === 'object' && 'token' in response.data) {
-        const inviteUrl = `${window.location.origin}/auth/register?token=${(response.data as any).token}`;
-        navigator.clipboard.writeText(inviteUrl);
-        toast.info('Invitation link copied to clipboard');
+      const emailSent = Boolean((response.data as any)?.email_sent);
+      const emailError = (response.data as any)?.email_error as string | undefined;
+      setInviteEmailStatus(emailSent ? { email_sent: true } : { email_sent: false, email_error: emailError });
+
+      if (inviteUrl) {
+        setCreatedInviteUrl(inviteUrl);
+      } else {
+        setCreatedInviteUrl(null);
+      }
+
+      setInviteDialogMode('success');
+
+      toast.success('Invitation created successfully');
+
+      // Best-effort auto-copy; never throw if clipboard API is unavailable
+      if (inviteUrl) {
+        void (async () => {
+          const copied = await copyTextToClipboard(inviteUrl, {
+            fallbackInput: directInviteInputRef.current,
+          });
+          if (copied) {
+            toast.info('Invitation link copied to clipboard');
+          } else {
+            toast.info('Copy manually');
+          }
+        })();
       }
     },
     onError: (error: any) => {
@@ -166,10 +208,14 @@ const UserInvitations: React.FC = () => {
     cancelInviteMutation.mutate(invitationId);
   };
 
-  const copyInviteLink = (token: string) => {
+  const copyInviteLink = async (token: string) => {
     const inviteUrl = `${window.location.origin}/auth/register?token=${token}`;
-    navigator.clipboard.writeText(inviteUrl);
-    toast.success('Invitation link copied to clipboard');
+    const copied = await copyTextToClipboard(inviteUrl);
+    if (copied) {
+      toast.success('Invitation link copied to clipboard');
+    } else {
+      toast.info('Copy manually');
+    }
   };
 
   const getRoleBadgeVariant = (role: SiteRole) => {
@@ -185,6 +231,21 @@ const UserInvitations: React.FC = () => {
     return new Date(expiresAt) < new Date();
   };
 
+  const resetInviteDialogState = () => {
+    setInviteDialogMode('form');
+    setCreatedInviteUrl(null);
+    setInviteEmailStatus(null);
+    setSelectedSites({});
+    reset();
+  };
+
+  const handleInviteDialogOpenChange = (open: boolean) => {
+    setIsInviteDialogOpen(open);
+    if (!open) {
+      resetInviteDialogState();
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header with Invite Button */}
@@ -195,110 +256,180 @@ const UserInvitations: React.FC = () => {
             Manage user invitations and send new invites
           </p>
         </div>
-        <Dialog open={isInviteDialogOpen} onOpenChange={setIsInviteDialogOpen}>
-          <DialogTrigger>
-            <Button>
+        {canInvite && (
+          <>
+            <Button
+              onClick={() => {
+                setIsInviteDialogOpen(true);
+              }}
+            >
               <UserPlus className="w-4 h-4 mr-2" />
               Invite User
             </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Invite New User</DialogTitle>
-              <DialogDescription>
-                Send an invitation to a new user to join the system. They will receive an email with a link to set their password.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="full_name">Full Name *</Label>
-                <Input
-                  id="full_name"
-                  type="text"
-                  placeholder="John Doe"
-                  {...register('full_name')}
-                />
-                {errors.full_name && (
-                  <p className="text-sm text-red-600">{errors.full_name.message}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="email">Email Address *</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="user@example.com"
-                  {...register('email')}
-                />
-                {errors.email && (
-                  <p className="text-sm text-red-600">{errors.email.message}</p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label>Sites</Label>
-                <div className="space-y-2 max-h-48 overflow-y-auto border rounded-md p-3">
-                  {sitesData?.sites?.length ? (
-                    sitesData.sites.map((site: Site) => (
-                      <div key={site.id} className="flex items-center justify-between gap-2">
-                        <label className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(selectedSites[site.id])}
-                            onChange={(event) => {
-                              const checked = event.target.checked;
-                              setSelectedSites((prev) => {
-                                if (!checked) {
-                                  const updated = { ...prev };
-                                  delete updated[site.id];
-                                  return updated;
-                                }
-                                return { ...prev, [site.id]: 'USER' };
-                              });
-                            }}
+
+            <Dialog open={isInviteDialogOpen} onOpenChange={handleInviteDialogOpenChange}>
+              <DialogContent>
+                {inviteDialogMode === 'success' ? (
+                  <>
+                    <DialogHeader>
+                      <DialogTitle>Invitation created</DialogTitle>
+                      <DialogDescription>
+                        Share the direct invite link below.
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    {createdInviteUrl && (
+                      <div className="space-y-2 rounded-md border p-3 bg-muted/20">
+                        <Label>Direct invite link</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            ref={directInviteInputRef}
+                            readOnly
+                            value={createdInviteUrl}
+                            onFocus={(e) => e.currentTarget.select()}
                           />
-                          <span>{site.name} ({site.code})</span>
-                        </label>
-                        {selectedSites[site.id] && (
-                          <Select
-                            value={selectedSites[site.id]}
-                            onValueChange={(value) =>
-                              setSelectedSites((prev) => ({
-                                ...prev,
-                                [site.id]: value as SiteRole,
-                              }))
-                            }
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={async () => {
+                              const copied = await copyTextToClipboard(createdInviteUrl, {
+                                fallbackInput: directInviteInputRef.current,
+                              });
+                              if (copied) toast.success('Invitation link copied to clipboard');
+                              else toast.info('Copy manually');
+                            }}
                           >
-                            <SelectTrigger className="w-32">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="USER">User</SelectItem>
-                              <SelectItem value="ADMIN">Admin</SelectItem>
-                            </SelectContent>
-                          </Select>
+                            <Copy className="w-4 h-4 mr-2" />
+                            Copy invite link
+                          </Button>
+                        </div>
+
+                        {inviteEmailStatus && (
+                          <p className="text-sm text-muted-foreground">
+                            {inviteEmailStatus.email_sent
+                              ? 'Email sent.'
+                              : inviteEmailStatus.email_error === 'SMTP not configured'
+                                ? 'Email not sent (SMTP not configured).'
+                                : inviteEmailStatus.email_error
+                                  ? `Email not sent: ${inviteEmailStatus.email_error}`
+                                  : 'Email not sent.'}
+                          </p>
                         )}
                       </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No sites available</p>
-                  )}
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsInviteDialogOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? 'Sending...' : 'Send Invitation'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+                    )}
+
+                    <DialogFooter>
+                      <Button type="button" onClick={() => handleInviteDialogOpenChange(false)}>
+                        Done
+                      </Button>
+                    </DialogFooter>
+                  </>
+                ) : (
+                  <>
+                    <DialogHeader>
+                      <DialogTitle>Invite New User</DialogTitle>
+                      <DialogDescription>
+                        Send an invitation to a new user to join the system. They will receive an email with a link to set their password.
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="full_name">Full Name *</Label>
+                        <Input
+                          id="full_name"
+                          type="text"
+                          placeholder="John Doe"
+                          {...register('full_name')}
+                        />
+                        {errors.full_name && (
+                          <p className="text-sm text-red-600">{errors.full_name.message}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="email">Email Address *</Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          placeholder="user@example.com"
+                          {...register('email')}
+                        />
+                        {errors.email && (
+                          <p className="text-sm text-red-600">{errors.email.message}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Sites</Label>
+                        <div className="space-y-2 max-h-48 overflow-y-auto border rounded-md p-3">
+                          {hasAvailableSites ? (
+                            availableSites.map((site: Site) => (
+                              <div key={site.id} className="flex items-center justify-between gap-2">
+                                <label className="flex items-center gap-2 text-sm">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(selectedSites[site.id])}
+                                    onChange={(event) => {
+                                      const checked = event.target.checked;
+                                      setSelectedSites((prev) => {
+                                        if (!checked) {
+                                          const updated = { ...prev };
+                                          delete updated[site.id];
+                                          return updated;
+                                        }
+                                        return { ...prev, [site.id]: 'USER' };
+                                      });
+                                    }}
+                                  />
+                                  <span>{site.name} ({site.code})</span>
+                                </label>
+                                {selectedSites[site.id] && (
+                                  <Select
+                                    value={selectedSites[site.id]}
+                                    onValueChange={(value) =>
+                                      setSelectedSites((prev) => ({
+                                        ...prev,
+                                        [site.id]: value as SiteRole,
+                                      }))
+                                    }
+                                  >
+                                    <SelectTrigger className="w-32">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="USER">User</SelectItem>
+                                      <SelectItem value="ADMIN">Admin</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                              </div>
+                            ))
+                          ) : (
+                            <div className="space-y-1">
+                              <p className="text-sm text-muted-foreground">No sites available</p>
+                              <p className="text-xs text-muted-foreground">Create a site first before inviting users.</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => handleInviteDialogOpenChange(false)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button type="submit" disabled={isSubmitting || !hasAvailableSites || !hasSelectedSites}>
+                          {isSubmitting ? 'Sending...' : 'Send Invitation'}
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </>
+                )}
+              </DialogContent>
+            </Dialog>
+          </>
+        )}
       </div>
 
       {/* Invitations Table */}
@@ -333,7 +464,7 @@ const UserInvitations: React.FC = () => {
                 </TableCell>
               </TableRow>
             ) : (
-              invitationsData.invitations.map((invitation) => (
+              invitationsData.invitations.map((invitation: Invitation) => (
                 <TableRow key={invitation.id}>
                   <TableCell>
                     <span className="font-medium">{invitation.full_name || 'N/A'}</span>
@@ -347,7 +478,7 @@ const UserInvitations: React.FC = () => {
                   <TableCell>
                     <div className="flex flex-wrap gap-2">
                       {invitation.sites?.length ? (
-                        invitation.sites.map((site) => (
+                        invitation.sites.map((site: Invitation['sites'][number]) => (
                           <Badge key={`${invitation.id}-${site.site_id}`} variant={getRoleBadgeVariant(site.site_role)}>
                             {site.site_code || site.site_name} ({site.site_role})
                           </Badge>

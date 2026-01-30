@@ -11,14 +11,27 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { apiClient } from '../../lib/api';
-import { LabelWithSiteInfo } from '../../types';
+import { LabelWithSiteInfo, Site } from '../../types';
 
 
 const RecentActivity: React.FC = () => {
-  const { data: recentLabels, isLoading, error } = useQuery({
-    queryKey: ['recent-labels'],
+  const { data: sitesData, isLoading: sitesLoading } = useQuery({
+    queryKey: ['sites', 'recent-activity'],
     queryFn: async () => {
-      const response = await apiClient.getRecentLabels(5);
+      const response = await apiClient.getSites({ limit: 1000 });
+      return response.data;
+    },
+  });
+
+  const accessibleSites = (sitesData?.sites || []) as Site[];
+  const selectedSiteId = accessibleSites[0]?.id;
+  const hasNoSites = !sitesLoading && accessibleSites.length === 0;
+
+  const { data: recentLabels, isLoading, error } = useQuery({
+    queryKey: ['recent-labels', selectedSiteId],
+    enabled: Boolean(selectedSiteId),
+    queryFn: async () => {
+      const response = await apiClient.getRecentLabels(selectedSiteId!, 5);
       if (response.success) {
         return response.data?.labels || [];
       }
@@ -58,7 +71,7 @@ const RecentActivity: React.FC = () => {
         </Link>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
+        {sitesLoading || isLoading ? (
           <div className="space-y-3">
             {[...Array(3)].map((_, i) => (
               <div key={i} className="flex items-center space-x-3 animate-pulse">
@@ -70,6 +83,11 @@ const RecentActivity: React.FC = () => {
               </div>
             ))}
           </div>
+        ) : hasNoSites ? (
+          <div className="text-center py-6 text-gray-500">
+            <MapPin className="w-8 h-8 mx-auto mb-2 opacity-50" />
+            <p>You do not have access to any sites</p>
+          </div>
         ) : error ? (
           <div className="text-center py-6 text-gray-500">
             <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
@@ -78,7 +96,7 @@ const RecentActivity: React.FC = () => {
         ) : !recentLabels || recentLabels.length === 0 ? (
           <div className="text-center py-6 text-gray-500">
             <Tag className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p>No recent labels created</p>
+            <p>No recent activity</p>
             <Link to="/labels/create">
               <Button variant="outline" size="sm" className="mt-2">
                 Create your first label

@@ -8,6 +8,7 @@ import { apiClient } from '../../../lib/api';
 // Mock the API client
 vi.mock('../../../lib/api', () => ({
   apiClient: {
+    getSites: vi.fn(),
     getRecentLabels: vi.fn(),
   },
 }));
@@ -60,13 +61,19 @@ const renderRecentActivity = () => {
 describe('RecentActivity', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(apiClient.getSites).mockResolvedValue({
+      success: true,
+      data: {
+        sites: [{ id: 1, name: 'Main Office', code: 'SITE1' }],
+      },
+    } as any);
   });
 
   it('should render recent activity title', () => {
     vi.mocked(apiClient.getRecentLabels).mockResolvedValue({
       success: true,
       data: { labels: mockRecentLabels },
-    });
+    } as any);
 
     renderRecentActivity();
     
@@ -77,7 +84,7 @@ describe('RecentActivity', () => {
     vi.mocked(apiClient.getRecentLabels).mockResolvedValue({
       success: true,
       data: { labels: mockRecentLabels },
-    });
+    } as any);
 
     renderRecentActivity();
     
@@ -89,7 +96,7 @@ describe('RecentActivity', () => {
     vi.mocked(apiClient.getRecentLabels).mockResolvedValue({
       success: true,
       data: { labels: mockRecentLabels },
-    });
+    } as any);
 
     renderRecentActivity();
     
@@ -104,9 +111,7 @@ describe('RecentActivity', () => {
   });
 
   it('should show loading state initially', () => {
-    vi.mocked(apiClient.getRecentLabels).mockImplementation(
-      () => new Promise(() => {}) // Never resolves
-    );
+    vi.mocked(apiClient.getSites).mockImplementation(() => new Promise(() => {}) as any);
 
     renderRecentActivity();
     
@@ -119,21 +124,19 @@ describe('RecentActivity', () => {
     vi.mocked(apiClient.getRecentLabels).mockResolvedValue({
       success: true,
       data: { labels: [] },
-    });
+    } as any);
 
     renderRecentActivity();
     
     await waitFor(() => {
-      expect(screen.getByText('No recent labels created')).toBeInTheDocument();
+      expect(screen.getByText('No recent activity')).toBeInTheDocument();
     });
 
     expect(screen.getByText('Create your first label')).toBeInTheDocument();
   });
 
   it('should show error state when API call fails', async () => {
-    vi.mocked(apiClient.getRecentLabels).mockRejectedValue(
-      new Error('API Error')
-    );
+    vi.mocked(apiClient.getRecentLabels).mockRejectedValue(new Error('API Error'));
 
     renderRecentActivity();
     
@@ -154,7 +157,7 @@ describe('RecentActivity', () => {
     vi.mocked(apiClient.getRecentLabels).mockResolvedValue({
       success: true,
       data: { labels: [recentLabel] },
-    });
+    } as any);
 
     renderRecentActivity();
     
@@ -163,14 +166,30 @@ describe('RecentActivity', () => {
     });
   });
 
-  it('should call API with correct limit', () => {
+  it('should call API with correct limit', async () => {
     vi.mocked(apiClient.getRecentLabels).mockResolvedValue({
       success: true,
       data: { labels: mockRecentLabels },
-    });
+    } as any);
 
     renderRecentActivity();
-    
-    expect(apiClient.getRecentLabels).toHaveBeenCalledWith(5);
+
+    await waitFor(() => {
+      expect(apiClient.getSites).toHaveBeenCalledWith({ limit: 1000 });
+      expect(apiClient.getRecentLabels).toHaveBeenCalledWith(1, 5);
+    });
+  });
+
+  it('should show no-sites message when user has no sites', async () => {
+    vi.mocked(apiClient.getSites).mockResolvedValue({
+      success: true,
+      data: { sites: [] },
+    } as any);
+
+    renderRecentActivity();
+
+    await waitFor(() => {
+      expect(screen.getByText('You do not have access to any sites')).toBeInTheDocument();
+    });
   });
 });

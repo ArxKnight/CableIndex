@@ -48,7 +48,7 @@ export class UserModel {
    */
   async findById(id: number): Promise<User | null> {
     const rows = await this.adapter.query(
-      `SELECT id, email, full_name, password_hash, role, created_at, updated_at
+      `SELECT id, email, full_name, password_hash, role, is_active, created_at, updated_at
        FROM users 
        WHERE id = ?`,
       [id]
@@ -67,9 +67,9 @@ export class UserModel {
     // MySQL is case-insensitive by default for VARCHAR, SQLite needs COLLATE NOCASE
     const rows = await this.adapter.query(
       isMySQL
-        ? `SELECT id, email, full_name, password_hash, role, created_at, updated_at
+        ? `SELECT id, email, full_name, password_hash, role, is_active, created_at, updated_at
            FROM users WHERE email = ?`
-        : `SELECT id, email, full_name, password_hash, role, created_at, updated_at
+        : `SELECT id, email, full_name, password_hash, role, is_active, created_at, updated_at
            FROM users WHERE email = ? COLLATE NOCASE`,
       [email]
     );
@@ -85,6 +85,12 @@ export class UserModel {
     const user = await this.findByEmail(email);
     if (!user) {
       console.warn(`⚠️  User not found in database: ${email}`);
+      return null;
+    }
+
+    const isActive = user.is_active === undefined ? true : Boolean(user.is_active);
+    if (!isActive) {
+      console.warn(`⚠️  Inactive user attempted login: ${email}`);
       return null;
     }
 
@@ -190,11 +196,11 @@ export class UserModel {
     const finalOffset = Math.max(0, safeOffset);
 
     const query = isMySQL
-      ? `SELECT id, email, full_name, password_hash, role, created_at, updated_at
+      ? `SELECT id, email, full_name, password_hash, role, is_active, created_at, updated_at
          FROM users 
          ORDER BY created_at DESC
          LIMIT ${finalLimit} OFFSET ${finalOffset}`
-      : `SELECT id, email, full_name, password_hash, role, created_at, updated_at
+      : `SELECT id, email, full_name, password_hash, role, is_active, created_at, updated_at
          FROM users 
          ORDER BY created_at DESC
          LIMIT ? OFFSET ?`;

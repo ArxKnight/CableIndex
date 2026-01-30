@@ -21,12 +21,9 @@ vi.mock('sonner', () => ({
 }));
 
 const mockSettings = {
-  public_registration_enabled: false,
   default_user_role: 'user',
   max_labels_per_user: 1000,
   max_sites_per_user: 50,
-  system_name: 'Cable Manager',
-  system_description: 'Professional cable labeling system',
   maintenance_mode: false,
   maintenance_message: 'System under maintenance',
   created_at: '2024-01-01T00:00:00Z',
@@ -62,16 +59,13 @@ describe('AppSettings', () => {
     render(<AppSettings />, { wrapper: Wrapper });
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue('Cable Manager')).toBeInTheDocument();
-      expect(screen.getByDisplayValue('Professional cable labeling system')).toBeInTheDocument();
       expect(screen.getByDisplayValue('1000')).toBeInTheDocument();
       expect(screen.getByDisplayValue('50')).toBeInTheDocument();
     });
 
     // Check section headers
-    expect(screen.getByText('User Registration')).toBeInTheDocument();
     expect(screen.getByText('System Limits')).toBeInTheDocument();
-    expect(screen.getByText('System Information')).toBeInTheDocument();
+    expect(screen.queryByText('System Information')).not.toBeInTheDocument();
     expect(screen.getByText('Maintenance Mode')).toBeInTheDocument();
   });
 
@@ -80,31 +74,16 @@ describe('AppSettings', () => {
     render(<AppSettings />, { wrapper: Wrapper });
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue('Cable Manager')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('1000')).toBeInTheDocument();
     });
 
-    // Modify system name
-    const systemNameInput = screen.getByDisplayValue('Cable Manager');
-    fireEvent.change(systemNameInput, { target: { value: 'Modified Cable Manager' } });
+    // Modify a field
+    const maxLabelsInput = screen.getByLabelText('Max Labels per User');
+    fireEvent.change(maxLabelsInput, { target: { value: '999' } });
 
     await waitFor(() => {
       expect(screen.getByText(/You have unsaved changes/)).toBeInTheDocument();
     });
-  });
-
-  it('toggles public registration switch', async () => {
-    const Wrapper = createWrapper();
-    render(<AppSettings />, { wrapper: Wrapper });
-
-    await waitFor(() => {
-      const publicRegSwitch = screen.getByRole('switch', { name: /public registration/i });
-      expect(publicRegSwitch).not.toBeChecked();
-    });
-
-    const publicRegSwitch = screen.getByRole('switch', { name: /public registration/i });
-    fireEvent.click(publicRegSwitch);
-
-    expect(publicRegSwitch).toBeChecked();
   });
 
   it('shows maintenance message field when maintenance mode is enabled', async () => {
@@ -155,12 +134,12 @@ describe('AppSettings', () => {
     render(<AppSettings />, { wrapper: Wrapper });
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue('Cable Manager')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('1000')).toBeInTheDocument();
     });
 
-    // Modify system name
-    const systemNameInput = screen.getByDisplayValue('Cable Manager');
-    fireEvent.change(systemNameInput, { target: { value: 'Updated Cable Manager' } });
+    // Modify a field
+    const maxLabelsInput = screen.getByLabelText('Max Labels per User');
+    fireEvent.change(maxLabelsInput, { target: { value: '999' } });
 
     // Submit form
     const saveButton = screen.getByRole('button', { name: /save settings/i });
@@ -168,7 +147,7 @@ describe('AppSettings', () => {
 
     await waitFor(() => {
       expect(apiClient.put).toHaveBeenCalledWith('/admin/settings', expect.objectContaining({
-        system_name: 'Updated Cable Manager',
+        max_labels_per_user: 999,
       }));
     });
   });
@@ -178,19 +157,19 @@ describe('AppSettings', () => {
     render(<AppSettings />, { wrapper: Wrapper });
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue('Cable Manager')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('1000')).toBeInTheDocument();
     });
 
-    // Modify system name
-    const systemNameInput = screen.getByDisplayValue('Cable Manager');
-    fireEvent.change(systemNameInput, { target: { value: 'Modified Name' } });
+    // Modify a field
+    const maxLabelsInput = screen.getByLabelText('Max Labels per User');
+    fireEvent.change(maxLabelsInput, { target: { value: '999' } });
 
     // Reset form
     const resetButton = screen.getByRole('button', { name: /reset/i });
     fireEvent.click(resetButton);
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue('Cable Manager')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('1000')).toBeInTheDocument();
       expect(screen.queryByText(/You have unsaved changes/)).not.toBeInTheDocument();
     });
   });
@@ -200,12 +179,12 @@ describe('AppSettings', () => {
     render(<AppSettings />, { wrapper: Wrapper });
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue('Cable Manager')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('1000')).toBeInTheDocument();
     });
 
-    // Clear system name (required field)
-    const systemNameInput = screen.getByDisplayValue('Cable Manager');
-    fireEvent.change(systemNameInput, { target: { value: '' } });
+    // max_labels_per_user must be >= 0
+    const maxLabelsInput = screen.getByLabelText('Max Labels per User');
+    fireEvent.change(maxLabelsInput, { target: { value: '-1' } });
 
     // Try to submit
     const saveButton = screen.getByRole('button', { name: /save settings/i });
@@ -213,7 +192,7 @@ describe('AppSettings', () => {
 
     // Should show validation error
     await waitFor(() => {
-      expect(screen.getByText(/required/i)).toBeInTheDocument();
+      expect(screen.getByText(/greater than or equal to 0|at least 0|min/i)).toBeInTheDocument();
     });
   });
 
@@ -224,12 +203,12 @@ describe('AppSettings', () => {
     render(<AppSettings />, { wrapper: Wrapper });
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue('Cable Manager')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('1000')).toBeInTheDocument();
     });
 
     // Modify and submit
-    const systemNameInput = screen.getByDisplayValue('Cable Manager');
-    fireEvent.change(systemNameInput, { target: { value: 'Updated Name' } });
+    const maxLabelsInput = screen.getByLabelText('Max Labels per User');
+    fireEvent.change(maxLabelsInput, { target: { value: '999' } });
 
     const saveButton = screen.getByRole('button', { name: /save settings/i });
     fireEvent.click(saveButton);

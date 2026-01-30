@@ -147,8 +147,8 @@ export function PDULabels() {
             </Alert>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
+          <div className="space-y-4">
+            <div className="max-w-xl mx-auto space-y-2">
               <Label htmlFor="pduSid">PDU SID</Label>
               <Input
                 id="pduSid"
@@ -160,40 +160,32 @@ export function PDULabels() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="fromPort">From Outlet</Label>
-              <Input
-                id="fromPort"
-                type="number"
-                min="1"
-                max="48"
-                value={formData.fromPort}
-                onChange={(e) => handleInputChange('fromPort', parseInt(e.target.value) || 1)}
-              />
-            </div>
+            <div className="flex justify-center">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-md">
+                <div className="space-y-2">
+                  <Label htmlFor="fromPort">From Outlet</Label>
+                  <Input
+                    id="fromPort"
+                    type="number"
+                    min="1"
+                    max="48"
+                    value={formData.fromPort}
+                    onChange={(e) => handleInputChange('fromPort', parseInt(e.target.value) || 1)}
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="toPort">To Outlet</Label>
-              <Input
-                id="toPort"
-                type="number"
-                min="1"
-                max="48"
-                value={formData.toPort}
-                onChange={(e) => handleInputChange('toPort', parseInt(e.target.value) || 1)}
-              />
-            </div>
-          </div>
-
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <div className="text-sm text-blue-800">
-              <strong>PDU Label Guidelines:</strong>
-              <ul className="mt-1 ml-4 list-disc space-y-1">
-                <li>Maximum 48 outlets per PDU (typical rack PDU limit)</li>
-                <li>Use clear, consistent SID naming (e.g., PDU-A1, PDU-B2)</li>
-                <li>Consider physical outlet numbering on your PDU</li>
-                <li>Labels help identify power connections for maintenance</li>
-              </ul>
+                <div className="space-y-2">
+                  <Label htmlFor="toPort">To Outlet</Label>
+                  <Input
+                    id="toPort"
+                    type="number"
+                    min="1"
+                    max="48"
+                    value={formData.toPort}
+                    onChange={(e) => handleInputChange('toPort', parseInt(e.target.value) || 1)}
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
