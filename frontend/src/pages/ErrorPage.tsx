@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useRouteError } from 'react-router-dom';
-import { AlertTriangle, Home, RefreshCw } from 'lucide-react';
+import { AlertTriangle, MapPin, RefreshCw } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 
@@ -65,10 +65,10 @@ const ErrorPage: React.FC = () => {
               <RefreshCw className="w-4 h-4 mr-2" />
               Refresh
             </Button>
-            <Link to="/dashboard" className="flex-1">
+            <Link to="/sites" className="flex-1">
               <Button className="w-full flex items-center justify-center">
-                <Home className="w-4 h-4 mr-2" />
-                Dashboard
+                <MapPin className="w-4 h-4 mr-2" />
+                Sites
               </Button>
             </Link>
           </div>

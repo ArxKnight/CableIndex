@@ -36,17 +36,14 @@ describe('Admin Workflow Integration Tests', () => {
     vi.clearAllMocks();
     localStorage.clear();
     // Ensure each test starts from a known route; previous tests may leave the app on /admin.
-    window.history.pushState({}, '', '/dashboard');
+    window.history.pushState({}, '', '/sites');
   });
 
   it('should allow admin to access admin panel', async () => {
     const { apiClient } = await import('../../lib/api');
     setAuthRole('ADMIN');
 
-    // Dashboard dependencies
     vi.mocked(apiClient.getSites).mockResolvedValue({ success: true, data: { sites: [] } } as any);
-    vi.mocked(apiClient.getLabelStats).mockResolvedValue({ success: true, data: { stats: {} } } as any);
-    vi.mocked(apiClient.getRecentLabels).mockResolvedValue({ success: true, data: { labels: [] } } as any);
 
     // Admin page dependencies
     vi.mocked(apiClient.get).mockImplementation(async (endpoint: string) => {
@@ -56,6 +53,19 @@ describe('Admin Workflow Integration Tests', () => {
       if (endpoint === '/admin/invitations') {
         return { success: true, data: { invitations: [] } } as any;
       }
+      if (endpoint === '/admin/overview') {
+        return {
+          success: true,
+          data: {
+            overview: {
+              pending_invites_count: 0,
+              expired_invites_count: 0,
+              users_without_sites_count: 0,
+              smtp_configured: false,
+            },
+          },
+        } as any;
+      }
       if (endpoint === '/admin/settings') {
         return {
           success: true,
@@ -63,6 +73,7 @@ describe('Admin Workflow Integration Tests', () => {
             settings: {
               default_user_role: 'user',
               maintenance_mode: false,
+              smtp_secure: false,
             },
           },
         } as any;
@@ -73,9 +84,9 @@ describe('Admin Workflow Integration Tests', () => {
 
     renderApp();
 
-    // Wait for dashboard to load
+    // Wait for app shell to load
     await waitFor(() => {
-      expect(screen.getAllByRole('link', { name: 'Dashboard' }).length).toBeGreaterThan(0);
+      expect(screen.getByRole('heading', { name: 'Sites' })).toBeInTheDocument();
     });
 
     // Navigate to admin panel
@@ -87,8 +98,12 @@ describe('Admin Workflow Integration Tests', () => {
       expect(screen.getByText('Admin Panel')).toBeInTheDocument();
     });
 
-    // Verify admin sections are visible
-    expect(screen.getByText('User Management')).toBeInTheDocument();
+    // Default tab is Overview
+    expect(await screen.findByRole('heading', { name: 'Overview' })).toBeInTheDocument();
+
+    // Verify Users tab renders User Management
+    await userEvent.click(screen.getByRole('tab', { name: /users/i }));
+    expect(await screen.findByText('User Management')).toBeInTheDocument();
 
     // Application Settings lives under the Settings tab
     await userEvent.click(screen.getByRole('tab', { name: /settings/i }));
@@ -103,13 +118,7 @@ describe('Admin Workflow Integration Tests', () => {
 
     const sites = [{ id: 1, name: 'Site A', code: 'A' }];
 
-    // Dashboard dependencies
     vi.mocked(apiClient.getSites).mockResolvedValue({ success: true, data: { sites } } as any);
-    vi.mocked(apiClient.getLabelStats).mockResolvedValue({
-      success: true,
-      data: { stats: { total_labels: 0, labels_this_month: 0, labels_today: 0 } },
-    } as any);
-    vi.mocked(apiClient.getRecentLabels).mockResolvedValue({ success: true, data: { labels: [] } } as any);
 
     // Admin page dependencies
     vi.mocked(apiClient.get).mockImplementation(async (endpoint: string) => {
@@ -119,6 +128,19 @@ describe('Admin Workflow Integration Tests', () => {
       if (endpoint === '/admin/invitations') {
         return { success: true, data: { invitations: [] } } as any;
       }
+      if (endpoint === '/admin/overview') {
+        return {
+          success: true,
+          data: {
+            overview: {
+              pending_invites_count: 0,
+              expired_invites_count: 0,
+              users_without_sites_count: 0,
+              smtp_configured: false,
+            },
+          },
+        } as any;
+      }
       if (endpoint === '/admin/settings') {
         return {
           success: true,
@@ -126,6 +148,7 @@ describe('Admin Workflow Integration Tests', () => {
             settings: {
               default_user_role: 'user',
               maintenance_mode: false,
+              smtp_secure: false,
             },
           },
         } as any;
@@ -147,7 +170,7 @@ describe('Admin Workflow Integration Tests', () => {
 
     // Navigate to admin panel
     await waitFor(() => {
-      expect(screen.getAllByRole('link', { name: 'Dashboard' }).length).toBeGreaterThan(0);
+      expect(screen.getByRole('heading', { name: 'Sites' })).toBeInTheDocument();
     });
 
     const adminLinks = screen.getAllByRole('link', { name: /admin/i });
@@ -184,7 +207,8 @@ describe('Admin Workflow Integration Tests', () => {
       expect(apiClient.inviteUser).toHaveBeenCalledWith(
         'newuser@example.com',
         [{ site_id: 1, site_role: 'USER' }],
-        'New User'
+        'New User',
+        7
       );
     });
   });
@@ -195,10 +219,7 @@ describe('Admin Workflow Integration Tests', () => {
 
     setAuthRole('ADMIN');
 
-    // Dashboard dependencies
     vi.mocked(apiClient.getSites).mockResolvedValue({ success: true, data: { sites: [] } } as any);
-    vi.mocked(apiClient.getLabelStats).mockResolvedValue({ success: true, data: { stats: {} } } as any);
-    vi.mocked(apiClient.getRecentLabels).mockResolvedValue({ success: true, data: { labels: [] } } as any);
 
     // Settings data
     vi.mocked(apiClient.get).mockImplementation(async (endpoint: string) => {
@@ -209,6 +230,7 @@ describe('Admin Workflow Integration Tests', () => {
             settings: {
               default_user_role: 'user',
               maintenance_mode: false,
+              smtp_secure: false,
             },
           },
         } as any;
@@ -219,6 +241,19 @@ describe('Admin Workflow Integration Tests', () => {
       if (endpoint === '/admin/invitations') {
         return { success: true, data: { invitations: [] } } as any;
       }
+      if (endpoint === '/admin/overview') {
+        return {
+          success: true,
+          data: {
+            overview: {
+              pending_invites_count: 0,
+              expired_invites_count: 0,
+              users_without_sites_count: 0,
+              smtp_configured: false,
+            },
+          },
+        } as any;
+      }
       return { success: true, data: {} } as any;
     });
 
@@ -228,7 +263,7 @@ describe('Admin Workflow Integration Tests', () => {
 
     // Navigate to admin panel
     await waitFor(() => {
-      expect(screen.getAllByRole('link', { name: 'Dashboard' }).length).toBeGreaterThan(0);
+      expect(screen.getByRole('heading', { name: 'Sites' })).toBeInTheDocument();
     });
 
     const adminLinks = screen.getAllByRole('link', { name: /admin/i });
@@ -248,12 +283,15 @@ describe('Admin Workflow Integration Tests', () => {
     });
 
     // Make a change so the Save button becomes enabled
-    const maxLabelsInput = screen.getByLabelText(/max labels per user/i);
-    await user.clear(maxLabelsInput);
-    await user.type(maxLabelsInput, '10');
+    const smtpHostInput = screen.getByLabelText(/smtp host/i);
+    await user.clear(smtpHostInput);
+    await user.type(smtpHostInput, 'smtp.example.com');
 
     // Save settings
     const saveButton = screen.getByRole('button', { name: /save settings/i });
+    await waitFor(() => {
+      expect(saveButton).not.toBeDisabled();
+    });
     await user.click(saveButton);
 
     // Verify API was called
@@ -263,7 +301,7 @@ describe('Admin Workflow Integration Tests', () => {
         expect.objectContaining({
           default_user_role: 'user',
           maintenance_mode: false,
-          max_labels_per_user: 10,
+          smtp_host: 'smtp.example.com',
         })
       );
     });
@@ -273,16 +311,13 @@ describe('Admin Workflow Integration Tests', () => {
     const { apiClient } = await import('../../lib/api');
     setAuthRole('USER');
 
-    // Dashboard dependencies
     vi.mocked(apiClient.getSites).mockResolvedValue({ success: true, data: { sites: [] } } as any);
-    vi.mocked(apiClient.getLabelStats).mockResolvedValue({ success: true, data: { stats: {} } } as any);
-    vi.mocked(apiClient.getRecentLabels).mockResolvedValue({ success: true, data: { labels: [] } } as any);
 
     renderApp();
 
-    // Wait for dashboard to load
+    // Wait for app shell to load
     await waitFor(() => {
-      expect(screen.getAllByRole('link', { name: 'Dashboard' }).length).toBeGreaterThan(0);
+      expect(screen.getByRole('heading', { name: 'Sites' })).toBeInTheDocument();
     });
 
     // Admin link should not be visible for regular users

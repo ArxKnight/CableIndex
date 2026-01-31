@@ -9,9 +9,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import Layout from './components/layout/Layout'
 import AuthPage from './pages/AuthPage'
 import InviteSignupPage from './pages/InviteSignupPage'
-import DashboardPage from './pages/DashboardPage'
 import SitesPage from './pages/SitesPage'
-import LabelsPage from './pages/LabelsPage'
 import ToolsPage from './pages/ToolsPage'
 import ProfilePage from './pages/ProfilePage'
 import AdminPage from './pages/AdminPage'
@@ -97,8 +95,8 @@ function App() {
           <Router>
             <div className="min-h-screen bg-background">
               <Routes>
-                {/* Redirect root to dashboard */}
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                {/* Site-centric app: root lands on sites */}
+                <Route path="/" element={<Navigate to="/sites" replace />} />
                 
                 {/* Auth routes */}
                 <Route path="/auth/login" element={<AuthPage />} />
@@ -109,15 +107,13 @@ function App() {
                 <Route path="/404" element={<NotFoundPage />} />
                 
                 {/* Protected routes with layout */}
-                <Route 
-                  path="/dashboard" 
+                <Route
+                  path="/dashboard"
                   element={
                     <ProtectedRoute>
-                      <Layout>
-                        <DashboardPage />
-                      </Layout>
+                      <Navigate to="/sites" replace />
                     </ProtectedRoute>
-                  } 
+                  }
                 />
                 <Route 
                   path="/sites" 
@@ -129,15 +125,13 @@ function App() {
                     </ProtectedRoute>
                   } 
                 />
-                <Route 
-                  path="/labels" 
+                <Route
+                  path="/labels"
                   element={
                     <ProtectedRoute>
-                      <Layout>
-                        <LabelsPage />
-                      </Layout>
+                      <Navigate to="/sites" replace />
                     </ProtectedRoute>
-                  } 
+                  }
                 />
                 <Route 
                   path="/tools" 

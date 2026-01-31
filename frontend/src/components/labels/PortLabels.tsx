@@ -6,6 +6,7 @@ import { Label } from '../ui/label';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Download, Eye, AlertCircle } from 'lucide-react';
 import { apiClient } from '../../lib/api';
+import { downloadBlobAsTextFile } from '../../lib/download';
 
 interface PortLabelFormData {
   sid: string;
@@ -104,14 +105,8 @@ export function PortLabels() {
         fromPort: formData.fromPort,
         toPort: formData.toPort,
       });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `port-labels-${formData.sid}-${formData.fromPort}-${formData.toPort}.txt`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+
+      await downloadBlobAsTextFile(blob, 'Ports');
 
     } catch (error: any) {
       console.error('Error generating port labels:', error);

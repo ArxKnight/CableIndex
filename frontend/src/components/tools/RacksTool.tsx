@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
-import { makeTimestamp, splitLines } from './utils';
+import { splitLines } from './utils';
 import { ZplOutput } from './ZplOutput';
 
 function rackShortName(full: string): string {
@@ -54,7 +54,7 @@ export function RacksTool() {
         title="Preview / Download"
         description="Updates live as you type."
         zpl={zpl}
-        filename={`racks_${makeTimestamp()}.zpl`}
+        prefix="Racks"
         disabled={racks.length === 0}
       />
     </div>

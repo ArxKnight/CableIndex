@@ -1,21 +1,43 @@
 import React, { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Users, Settings, UserPlus } from 'lucide-react';
+import { Users, Settings, UserPlus, Bell } from 'lucide-react';
 import UserManagement from '../components/admin/UserManagement';
 import AppSettings from '../components/admin/AppSettings';
 import UserInvitations from '../components/admin/UserInvitations';
+import AdminOverview from '@/components/admin/AdminOverview';
 import { usePermissions } from '../hooks/usePermissions';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
+
+type AdminTab = 'overview' | 'users' | 'invitations' | 'settings';
+
+const isAdminTab = (value: string): value is AdminTab =>
+  value === 'overview' || value === 'users' || value === 'invitations' || value === 'settings';
 
 const AdminPage: React.FC = () => {
   const { isAdmin } = usePermissions();
-  const [activeTab, setActiveTab] = useState('users');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const initialTab = (searchParams.get('tab') || '').toLowerCase();
+  const [activeTab, setActiveTab] = useState<AdminTab>(
+    initialTab === 'overview' || initialTab === 'users' || initialTab === 'invitations' || initialTab === 'settings'
+      ? (initialTab as AdminTab)
+      : 'overview'
+  );
 
   // Redirect non-admin users
   if (!isAdmin) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/sites" replace />;
   }
+
+  const handleTabChange = (tab: string) => {
+    if (!isAdminTab(tab)) return;
+
+    setActiveTab(tab);
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', tab);
+    setSearchParams(next, { replace: true });
+  };
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -26,8 +48,12 @@ const AdminPage: React.FC = () => {
         </p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="overview" className="flex items-center gap-2">
+            <Bell className="w-4 h-4" />
+            Overview
+          </TabsTrigger>
           <TabsTrigger value="users" className="flex items-center gap-2">
             <Users className="w-4 h-4" />
             Users
@@ -41,6 +67,10 @@ const AdminPage: React.FC = () => {
             Settings
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="overview" className="space-y-6">
+          <AdminOverview onNavigate={(tab: AdminTab) => handleTabChange(tab)} />
+        </TabsContent>
 
         <TabsContent value="users" className="space-y-6">
           <Card>

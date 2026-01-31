@@ -5,7 +5,7 @@ import UserModel from '../models/User.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireAdmin, requireGlobalRole, resolveSiteAccess } from '../middleware/permissions.js';
 import connection from '../database/connection.js';
-import { buildInviteUrl, sendInviteEmailIfConfigured } from '../services/InvitationEmailService.js';
+import { buildInviteUrl, isSmtpConfigured, sendInviteEmailIfConfigured } from '../services/InvitationEmailService.js';
 
 const router = express.Router();
 const getUserModel = () => new UserModel();
@@ -17,6 +17,96 @@ const dbDateParam = (date: Date): Date | string => {
   if (isMySQL()) return date;
   return date.toISOString();
 };
+
+/**
+ * GET /api/admin/overview - Admin notification counts (admin only)
+ */
+router.get('/overview', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const requesterRole = req.user!.role as string;
+    const now = new Date();
+
+    let siteFilter = '';
+    let siteParams: any[] = [];
+
+    if (requesterRole !== 'GLOBAL_ADMIN') {
+      const siteRows = await getAdapter().query(
+        `SELECT site_id FROM site_memberships WHERE user_id = ?`,
+        [req.user!.userId]
+      );
+      const siteIds = (siteRows as any[]).map(r => Number(r.site_id)).filter(Boolean);
+      if (siteIds.length === 0) {
+        const smtp_configured = await isSmtpConfigured();
+        return res.json({
+          success: true,
+          data: {
+            overview: {
+              pending_invites_count: 0,
+              expired_invites_count: 0,
+              users_without_sites_count: 0,
+              smtp_configured,
+            },
+          },
+        });
+      }
+
+      const placeholders = siteIds.map(() => '?').join(', ');
+      siteFilter = `AND isites.site_id IN (${placeholders})`;
+      siteParams = siteIds;
+    }
+
+    const pendingRows = await getAdapter().query(
+      `SELECT COUNT(DISTINCT i.id) AS count
+       FROM invitations i
+       JOIN invitation_sites isites ON isites.invitation_id = i.id
+       WHERE i.used_at IS NULL
+         AND i.expires_at > ?
+       ${siteFilter}`,
+      [dbDateParam(now), ...siteParams]
+    );
+
+    const expiredRows = await getAdapter().query(
+      `SELECT COUNT(DISTINCT i.id) AS count
+       FROM invitations i
+       JOIN invitation_sites isites ON isites.invitation_id = i.id
+       WHERE i.used_at IS NULL
+         AND i.expires_at <= ?
+       ${siteFilter}`,
+      [dbDateParam(now), ...siteParams]
+    );
+
+    const usersWithoutSitesRows = await getAdapter().query(
+      `SELECT COUNT(*) AS count
+       FROM users u
+       LEFT JOIN site_memberships sm ON sm.user_id = u.id
+       WHERE sm.user_id IS NULL`
+    );
+
+    const smtp_configured = await isSmtpConfigured();
+
+    const pending_invites_count = Number((pendingRows as any[])?.[0]?.count || 0);
+    const expired_invites_count = Number((expiredRows as any[])?.[0]?.count || 0);
+    const users_without_sites_count = Number((usersWithoutSitesRows as any[])?.[0]?.count || 0);
+
+    return res.json({
+      success: true,
+      data: {
+        overview: {
+          pending_invites_count,
+          expired_invites_count,
+          users_without_sites_count,
+          smtp_configured,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Error loading admin overview:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to load admin overview',
+    });
+  }
+});
 
 // Validation schemas
 const inviteUserSchema = z.object({

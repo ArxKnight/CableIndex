@@ -19,6 +19,10 @@ vi.mock('../../components/admin/AppSettings', () => ({
   default: () => <div data-testid="app-settings">App Settings Component</div>
 }));
 
+vi.mock('../../components/admin/AdminOverview', () => ({
+  default: () => <div data-testid="admin-overview">Admin Overview Component</div>
+}));
+
 // Mock usePermissions hook
 let mockIsAdmin = true;
 vi.mock('../../hooks/usePermissions', () => ({
@@ -65,17 +69,18 @@ describe('AdminPage', () => {
     expect(screen.getByText('Manage users, permissions, and application settings')).toBeInTheDocument();
 
     // Check all tabs are present
+    expect(screen.getByRole('tab', { name: /overview/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /users/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /invitations/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /settings/i })).toBeInTheDocument();
   });
 
-  it('shows user management by default', async () => {
+  it('shows overview by default', async () => {
     const Wrapper = createWrapper();
     render(<AdminPage />, { wrapper: Wrapper });
 
     await waitFor(() => {
-      expect(screen.getByTestId('user-management')).toBeInTheDocument();
+      expect(screen.getByTestId('admin-overview')).toBeInTheDocument();
     });
   });
 

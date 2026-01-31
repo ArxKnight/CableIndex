@@ -23,6 +23,8 @@ export interface Label {
   id: number;
   site_id: number;
   created_by: number;
+  created_by_name?: string;
+  created_by_email?: string;
   ref_number: number;
   ref_string: string;
   type: string;

@@ -5,28 +5,7 @@ export function splitLines(text: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-export function makeTimestamp(): string {
-  const now = new Date();
-  const yyyy = now.getFullYear().toString();
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  const hh = String(now.getHours()).padStart(2, '0');
-  const mi = String(now.getMinutes()).padStart(2, '0');
-  const ss = String(now.getSeconds()).padStart(2, '0');
-  return `${yyyy}${mm}${dd}_${hh}${mi}${ss}`;
-}
-
-export function downloadTextFile(content: string, filename: string, mimeType = 'text/plain'): void {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
+// NOTE: download helpers live in src/lib/download.ts
 
 export function formatFutureDateDDMMYY(daysToAdd: number): string {
   const d = new Date();

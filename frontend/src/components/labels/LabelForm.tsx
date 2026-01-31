@@ -10,6 +10,7 @@ import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Loader2, Download } from 'lucide-react';
 import apiClient from '../../lib/api';
+import { downloadTextAsFile } from '../../lib/download';
 
 const labelSchema = z.object({
   source: z.string()
@@ -35,6 +36,8 @@ interface LabelFormProps {
   isLoading?: boolean;
   showPreview?: boolean;
   initialSiteId?: number;
+  lockedSiteId?: number;
+  lockedSiteName?: string;
 }
 
 const LabelForm: React.FC<LabelFormProps> = ({ 
@@ -43,11 +46,14 @@ const LabelForm: React.FC<LabelFormProps> = ({
   onCancel, 
   isLoading = false,
   showPreview = true,
-  initialSiteId
+  initialSiteId,
+  lockedSiteId,
+  lockedSiteName
 }) => {
   const [error, setError] = useState<string | null>(null);
   const [sites, setSites] = useState<Site[]>([]);
-  const [loadingSites, setLoadingSites] = useState(true);
+  const siteLocked = Number.isFinite(lockedSiteId) && (lockedSiteId || 0) > 0;
+  const [loadingSites, setLoadingSites] = useState(!siteLocked);
   const [previewRef, setPreviewRef] = useState<string>('');
 
   const {
@@ -61,7 +67,7 @@ const LabelForm: React.FC<LabelFormProps> = ({
     defaultValues: {
       source: label?.source || '',
       destination: label?.destination || '',
-      site_id: label?.site_id || initialSiteId || 0,
+      site_id: label?.site_id || lockedSiteId || initialSiteId || 0,
       notes: label?.notes || '',
     },
   });
@@ -70,6 +76,9 @@ const LabelForm: React.FC<LabelFormProps> = ({
 
   // Load sites on component mount
   useEffect(() => {
+    if (siteLocked) {
+      return;
+    }
     const loadSites = async () => {
       try {
         const response = await apiClient.getSites();
@@ -85,27 +94,33 @@ const LabelForm: React.FC<LabelFormProps> = ({
     };
 
     loadSites();
-  }, []);
+  }, [siteLocked]);
+
+  // Lock the site context when provided
+  useEffect(() => {
+    if (siteLocked && lockedSiteId) {
+      setValue('site_id', lockedSiteId, { shouldValidate: true });
+      setLoadingSites(false);
+    }
+  }, [lockedSiteId, setValue, siteLocked]);
 
   // Update preview reference number when site or form values change
   useEffect(() => {
     if (watchedValues.site_id && watchedValues.source && watchedValues.destination) {
-      const selectedSite = sites.find(s => s.id === watchedValues.site_id);
-      if (selectedSite) {
-        // For preview, show a placeholder reference number with 4 digits
-        setPreviewRef('XXXX');
-      }
+      // For preview, show a placeholder reference number with 4 digits
+      setPreviewRef('XXXX');
     } else {
       setPreviewRef('');
     }
-  }, [watchedValues.site_id, watchedValues.source, watchedValues.destination, sites]);
+  }, [watchedValues.site_id, watchedValues.source, watchedValues.destination]);
 
   // If we navigated here with a site_id query param, preselect it for create flow.
   useEffect(() => {
+    if (siteLocked) return;
     if (!label && initialSiteId && watchedValues.site_id === 0) {
       setValue('site_id', initialSiteId, { shouldValidate: true });
     }
-  }, [initialSiteId, label, setValue, watchedValues.site_id]);
+  }, [initialSiteId, label, setValue, siteLocked, watchedValues.site_id]);
 
   const handleFormSubmit = async (data: LabelFormData) => {
     try {
@@ -146,15 +161,7 @@ const LabelForm: React.FC<LabelFormProps> = ({
     const zplContent = generateZPLPreview();
     if (!zplContent) return;
 
-    const blob = new Blob([zplContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${previewRef || 'label'}.zpl`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadTextAsFile(zplContent, 'SID');
   };
 
   if (loadingSites) {
@@ -166,7 +173,7 @@ const LabelForm: React.FC<LabelFormProps> = ({
     );
   }
 
-  if (!loadingSites && sites.length === 0) {
+  if (!loadingSites && !siteLocked && sites.length === 0) {
     return (
       <div className="text-center py-8 text-muted-foreground">
         You do not have access to any sites
@@ -185,24 +192,34 @@ const LabelForm: React.FC<LabelFormProps> = ({
       <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="site_id">Site *</Label>
-          <select
-            id="site_id"
-            {...register('site_id', { valueAsNumber: true })}
-            disabled={isLoading}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>option]:py-2"
-          >
-            <option value={0}>Select a site...</option>
-            {sites.map((site) => (
-              <option key={site.id} value={site.id}>
-                {site.name} {site.location && `(${site.location})`}
-              </option>
-            ))}
-          </select>
+          {/* Always register site_id so it is included in submission even when locked */}
+          <input type="hidden" {...register('site_id', { valueAsNumber: true })} />
+
+          {siteLocked ? (
+            <Input
+              value={lockedSiteName || (lockedSiteId ? `Site #${lockedSiteId}` : '')}
+              disabled
+            />
+          ) : (
+            <select
+              id="site_id"
+              {...register('site_id', { valueAsNumber: true })}
+              disabled={isLoading}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>option]:py-2"
+            >
+              <option value={0}>Select a site...</option>
+              {sites.map((site) => (
+                <option key={site.id} value={site.id}>
+                  {site.name} {site.location && `(${site.location})`}
+                </option>
+              ))}
+            </select>
+          )}
           {errors.site_id && (
             <p className="text-sm text-destructive">{errors.site_id.message}</p>
           )}
           <p className="text-xs text-muted-foreground">
-            The site where this cable will be installed
+            {siteLocked ? 'Labels are always created within a site.' : 'The site where this cable will be installed'}
           </p>
         </div>
 

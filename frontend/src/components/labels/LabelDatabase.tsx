@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { LabelWithSiteInfo, Site, LabelSearchParams } from '../../types';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -19,36 +19,45 @@ import {
   Plus
 } from 'lucide-react';
 import apiClient from '../../lib/api';
+import { downloadBlobAsTextFile, downloadTextAsFile, makeDownloadFilename } from '../../lib/download';
 
 interface LabelDatabaseProps {
   onEditLabel?: (label: LabelWithSiteInfo) => void;
   onCreateLabel?: () => void;
   initialSiteId?: number;
+  fixedSiteId?: number;
+  refreshToken?: number;
+  onLabelsChanged?: () => void;
 }
 
 const LabelDatabase: React.FC<LabelDatabaseProps> = ({ 
   onEditLabel, 
   onCreateLabel,
-  initialSiteId
+  initialSiteId,
+  fixedSiteId,
+  refreshToken,
+  onLabelsChanged
 }) => {
   const [labels, setLabels] = useState<LabelWithSiteInfo[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
-  const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
+  const [selectedSiteId, setSelectedSiteId] = useState<number | null>(fixedSiteId ?? null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedLabels, setSelectedLabels] = useState<Set<number>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
+
+  const crossRacksFilenamePreview = useMemo(() => makeDownloadFilename('Cross-Racks'), []);
   
   // Search and filter state
   const [searchParams, setSearchParams] = useState<LabelSearchParams>({
     search: '',
-    site_id: 0,
+    site_id: fixedSiteId || 0,
     source: '',
     destination: '',
     reference_number: '',
-    limit: 20,
+    limit: 25,
     offset: 0,
     sort_by: 'created_at',
     sort_order: 'DESC',
@@ -62,6 +71,9 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
 
   // Load sites for filter dropdown
   useEffect(() => {
+    if (fixedSiteId) {
+      return;
+    }
     const loadSites = async () => {
       try {
         const response = await apiClient.getSites();
@@ -86,7 +98,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     };
 
     loadSites();
-  }, [initialSiteId]);
+  }, [fixedSiteId, initialSiteId]);
 
   // Update search params when selected site changes
   useEffect(() => {
@@ -136,6 +148,12 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
   useEffect(() => {
     loadLabels(searchParams);
   }, [loadLabels, searchParams]);
+
+  // External refresh trigger (e.g., after create/update)
+  useEffect(() => {
+    if (refreshToken === undefined) return;
+    loadLabels(searchParams);
+  }, [loadLabels, refreshToken]);
 
   // Handle search input change
   const handleSearchChange = (value: string) => {
@@ -218,14 +236,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
         end_ref: rangeEnd,
       });
 
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `labels-${start}-${end}-${new Date().toISOString().split('T')[0]}.zpl`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      await downloadBlobAsTextFile(blob, 'Cross-Racks');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to download labels');
     }
@@ -249,6 +260,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
       if (response.success) {
         setSelectedLabels(new Set());
         loadLabels(searchParams); // Reload labels
+        onLabelsChanged?.();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete labels');
@@ -270,31 +282,44 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
       const response = await apiClient.deleteLabel(selectedSiteId, labelId);
       if (response.success) {
         loadLabels(searchParams); // Reload labels
+        onLabelsChanged?.();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete label');
     }
   };
 
+  const formatRefForSiteDetails = (label: LabelWithSiteInfo): string => {
+    if (typeof label.ref_number === 'number' && Number.isFinite(label.ref_number)) {
+      return `#${String(label.ref_number).padStart(4, '0')}`;
+    }
+
+    const raw = label.ref_string || label.reference_number || '';
+    const match = raw.match(/(\d{1,})$/);
+    if (match) return `#${match[1].padStart(4, '0')}`;
+    return raw;
+  };
+
+  const formatCreatedDisplay = (label: LabelWithSiteInfo): string => {
+    const date = new Date(label.created_at);
+    const datePart = date.toLocaleDateString('en-GB');
+    const timePart = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const who = label.created_by_name || label.created_by_email || 'Unknown';
+    return `${datePart} ${timePart} — ${who}`;
+  };
+
   const handleDownloadLabel = (label: LabelWithSiteInfo) => {
+    const refForPrint = fixedSiteId ? formatRefForSiteDetails(label) : (label.reference_number || label.ref_string);
     const zplContent = `^XA
 ^MUm^LH8,19^FS
 ^MUm^FO0,2
 ^A0N,7,5
 ^FB280,1,1,C
-^FD${label.reference_number} ${label.source} > ${label.destination}
+^FD${refForPrint} ${label.source} > ${label.destination}
 ^FS
 ^XZ`;
 
-    const blob = new Blob([zplContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${label.reference_number}.zpl`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadTextAsFile(zplContent, 'SID');
   };
 
   const clearFilters = () => {
@@ -311,6 +336,8 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
 
   const hasActiveFilters = searchParams.search || 
     searchParams.source || searchParams.destination || searchParams.reference_number;
+
+  const showSiteColumn = !fixedSiteId;
 
   return (
     <div className="space-y-6">
@@ -330,7 +357,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
         </div>
         
         <div className="flex gap-2">
-          {sites.length > 1 && (
+          {!fixedSiteId && sites.length > 1 && (
             <select
               value={selectedSiteId || ''}
               onChange={(e) => setSelectedSiteId(e.target.value ? Number(e.target.value) : null)}
@@ -432,33 +459,39 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
           <CardContent className="py-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold mb-1">Bulk Operations</h3>
+                <h3 className="text-sm font-semibold mb-1">Cross Rack References</h3>
                 <p className="text-xs text-muted-foreground">
-                  Download by reference range, or select labels to delete.
+                  Download labels by reference range for this site.
                 </p>
               </div>
               
               <div className="flex gap-2">
-                <div className="flex gap-2 items-center">
+                <div className="flex gap-2 items-end">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Print From Cable ID</Label>
                   <Input
-                    placeholder="From (e.g., 0001)"
+                    placeholder="From #0000"
                     value={rangeStart}
                     onChange={(e) => setRangeStart(e.target.value)}
                     className="w-[140px]"
                   />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Print To Cable ID</Label>
                   <Input
-                    placeholder="To (e.g., 0010)"
+                    placeholder="To #0000"
                     value={rangeEnd}
                     onChange={(e) => setRangeEnd(e.target.value)}
                     className="w-[140px]"
                   />
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleRangeDownload}
                   >
                     <Download className="h-4 w-4 mr-1" />
-                    Download Range
+                    Download {crossRacksFilenamePreview}
                   </Button>
                 </div>
 
@@ -519,15 +552,25 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
             <>
               {/* Table Header */}
               <div className="border-b bg-muted/50 px-4 py-3">
-                <div className="grid grid-cols-12 gap-4 items-center text-sm font-medium">
+                <div className={showSiteColumn ? 'grid grid-cols-12 gap-4 items-center text-sm font-medium' : 'grid grid-cols-12 gap-4 items-center text-sm font-medium'}>
                   <div className="col-span-1">
                     <span className="sr-only">Select</span>
                   </div>
                   <div className="col-span-2">Reference</div>
-                  <div className="col-span-2">Site</div>
-                  <div className="col-span-2">Source</div>
-                  <div className="col-span-2">Destination</div>
-                  <div className="col-span-2">Created</div>
+                  {showSiteColumn ? (
+                    <>
+                      <div className="col-span-2">Site</div>
+                      <div className="col-span-2">Source</div>
+                      <div className="col-span-2">Destination</div>
+                      <div className="col-span-2">Created</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="col-span-3">Source</div>
+                      <div className="col-span-3">Destination</div>
+                      <div className="col-span-3">Created</div>
+                    </>
+                  )}
                   <div className="col-span-1">Actions</div>
                 </div>
               </div>
@@ -552,25 +595,41 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
                         </Button>
                       </div>
                       <div className="col-span-2 font-mono font-medium">
-                        {label.reference_number}
+                        {fixedSiteId ? formatRefForSiteDetails(label) : label.reference_number}
                       </div>
-                      <div className="col-span-2">
-                        <div>{label.site_name}</div>
-                        {label.site_location && (
-                          <div className="text-xs text-muted-foreground">
-                            {label.site_location}
+                      {showSiteColumn ? (
+                        <>
+                          <div className="col-span-2">
+                            <div>{label.site_name}</div>
+                            {label.site_location && (
+                              <div className="text-xs text-muted-foreground">
+                                {label.site_location}
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                      <div className="col-span-2 truncate" title={label.source}>
-                        {label.source}
-                      </div>
-                      <div className="col-span-2 truncate" title={label.destination}>
-                        {label.destination}
-                      </div>
-                      <div className="col-span-2 text-muted-foreground">
-                        {new Date(label.created_at).toLocaleDateString()}
-                      </div>
+                          <div className="col-span-2 truncate" title={label.source}>
+                            {label.source}
+                          </div>
+                          <div className="col-span-2 truncate" title={label.destination}>
+                            {label.destination}
+                          </div>
+                          <div className="col-span-2 text-muted-foreground">
+                            {formatCreatedDisplay(label)}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="col-span-3 truncate" title={label.source}>
+                            {label.source}
+                          </div>
+                          <div className="col-span-3 truncate" title={label.destination}>
+                            {label.destination}
+                          </div>
+                          <div className="col-span-3 text-muted-foreground">
+                            {formatCreatedDisplay(label)}
+                          </div>
+                        </>
+                      )}
                       <div className="col-span-1">
                         <div className="flex items-center gap-1">
                           <Button
@@ -578,7 +637,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
                             size="sm"
                             onClick={() => handleDownloadLabel(label)}
                             className="h-8 w-8 p-0"
-                            title="Download ZPL"
+                            title="Download .txt"
                           >
                             <Download className="h-3 w-3" />
                           </Button>
@@ -627,6 +686,9 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
           </div>
           
           <div className="flex gap-2">
+            <div className="text-sm text-muted-foreground flex items-center px-2">
+              Page {Math.floor((searchParams.offset || 0) / (searchParams.limit || 25)) + 1} of {Math.max(1, Math.ceil(pagination.total / (searchParams.limit || 25)))}
+            </div>
             <Button
               variant="outline"
               size="sm"

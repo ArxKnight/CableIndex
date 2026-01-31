@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -56,7 +56,6 @@ interface AppSettingsData {
 }
 
 const AppSettings: React.FC = () => {
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const queryClient = useQueryClient();
 
   const {
@@ -87,10 +86,13 @@ const AppSettings: React.FC = () => {
   // Update form when data loads
   React.useEffect(() => {
     if (settingsData?.settings) {
-      reset(settingsData.settings);
-
-      // Never hydrate SMTP password into the form
-      setValue('smtp_password', undefined);
+      reset({
+        ...settingsData.settings,
+        // Ensure required boolean is always present even if the API omits it
+        smtp_secure: settingsData.settings.smtp_secure ?? false,
+        // Never hydrate SMTP password into the form; keep it as an empty string for stable dirty-state
+        smtp_password: '',
+      });
     }
   }, [settingsData, reset, setValue]);
 
@@ -102,7 +104,6 @@ const AppSettings: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
       toast.success('Settings updated successfully');
-      setHasUnsavedChanges(false);
     },
     onError: (error: any) => {
       toast.error(error.message || 'Failed to update settings');
@@ -127,18 +128,17 @@ const AppSettings: React.FC = () => {
 
   const handleReset = () => {
     if (settingsData?.settings) {
-      reset(settingsData.settings);
-      setHasUnsavedChanges(false);
+      reset({
+        ...settingsData.settings,
+        smtp_secure: settingsData.settings.smtp_secure ?? false,
+        smtp_password: '',
+      }, {
+        keepDirty: false,
+        keepTouched: false,
+        keepErrors: true,
+      });
     }
   };
-
-  // Watch for form changes
-  React.useEffect(() => {
-    const subscription = watch(() => {
-      setHasUnsavedChanges(isDirty);
-    });
-    return () => subscription.unsubscribe();
-  }, [watch, isDirty]);
 
   if (error) {
     return (
@@ -150,7 +150,7 @@ const AppSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {hasUnsavedChanges && (
+      {isDirty && (
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
@@ -313,14 +313,14 @@ const AppSettings: React.FC = () => {
             type="button"
             variant="outline"
             onClick={handleReset}
-            disabled={!hasUnsavedChanges || isLoading}
+            disabled={!isDirty || isLoading}
           >
             <RefreshCw className="w-4 h-4 mr-2" />
             Reset
           </Button>
           <Button
             type="submit"
-            disabled={!hasUnsavedChanges || updateSettingsMutation.isPending}
+            disabled={!isDirty || updateSettingsMutation.isPending}
           >
             {updateSettingsMutation.isPending ? (
               <>

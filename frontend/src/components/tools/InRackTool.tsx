@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { makeTimestamp } from './utils';
 import { ZplOutput } from './ZplOutput';
 
 function generateInRackZpl(fromSid: string, toSid: string): string {
@@ -40,7 +39,7 @@ export function InRackTool() {
         title="Preview / Download"
         description="Updates live as you type."
         zpl={zpl}
-        filename={`inrack_${makeTimestamp()}.zpl`}
+        prefix="In-rack"
         disabled={disabled}
       />
     </div>

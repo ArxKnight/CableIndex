@@ -100,7 +100,7 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, onSuccess }) => {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>

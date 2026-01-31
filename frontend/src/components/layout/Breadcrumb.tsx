@@ -14,9 +14,7 @@ interface BreadcrumbProps {
 }
 
 const routeLabels: Record<string, string> = {
-  '/dashboard': 'Dashboard',
   '/sites': 'Sites',
-  '/labels': 'Labels',
   '/tools': 'Tools',
   '/port-labels': 'Port Labels',
   '/pdu-labels': 'PDU Labels',
@@ -37,7 +35,7 @@ const Breadcrumb: React.FC<BreadcrumbProps> = ({ items, className }) => {
   return (
     <nav className={cn('flex items-center space-x-1 text-sm text-gray-500', className)}>
       <Link
-        to="/dashboard"
+        to="/sites"
         className="flex items-center hover:text-gray-700 transition-colors"
       >
         <Home className="w-4 h-4" />

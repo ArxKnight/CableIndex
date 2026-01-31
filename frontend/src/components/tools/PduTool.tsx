@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { makeTimestamp, clampInt } from './utils';
+import { clampInt } from './utils';
 import { ZplOutput } from './ZplOutput';
 
 function generatePduZpl(pduSid: string, fromPort: number, toPort: number): string {
@@ -93,7 +93,7 @@ export function PduTool() {
         title="Preview / Download"
         description="Updates live as you type."
         zpl={zpl}
-        filename={`pdulabels_${makeTimestamp()}.zpl`}
+        prefix="PDU"
         disabled={disabled}
       />
     </div>

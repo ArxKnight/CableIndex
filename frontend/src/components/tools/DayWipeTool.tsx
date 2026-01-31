@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { formatFutureDateDDMMYY, makeTimestamp, splitLines } from './utils';
+import { formatFutureDateDDMMYY, splitLines } from './utils';
 import { ZplOutput } from './ZplOutput';
 
 function generateDayWipeZpl(sids: string[], days: number): string {
@@ -74,7 +74,7 @@ export function DayWipeTool() {
         title="Preview / Download"
         description="Updates live as you type."
         zpl={zpl}
-        filename={`wipe_${daysNum}day_${makeTimestamp()}.zpl`}
+        prefix="30Day"
         disabled={sids.length === 0}
       />
     </div>

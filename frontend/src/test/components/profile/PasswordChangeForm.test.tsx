@@ -2,14 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PasswordChangeForm from '../../../components/profile/PasswordChangeForm';
-import { apiClient } from '../../../lib/api';
+import apiClient from '../../../lib/api';
 
 // Mock the API client
 vi.mock('../../../lib/api', () => ({
   default: {
-    changePassword: vi.fn(),
-  },
-  apiClient: {
     changePassword: vi.fn(),
   },
 }));
@@ -26,17 +23,17 @@ describe('PasswordChangeForm', () => {
   it('should render password change form', () => {
     render(<PasswordChangeForm {...mockProps} />);
 
-    expect(screen.getByText('Change Password')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^change password$/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/current password/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/new password/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/confirm new password/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^new password$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^confirm new password$/i)).toBeInTheDocument();
   });
 
   it('should validate required current password', async () => {
     const user = userEvent.setup();
     render(<PasswordChangeForm {...mockProps} />);
 
-    const submitButton = screen.getByText('Change Password');
+    const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);
 
     await waitFor(() => {
@@ -51,12 +48,12 @@ describe('PasswordChangeForm', () => {
     render(<PasswordChangeForm {...mockProps} />);
 
     const currentPasswordInput = screen.getByLabelText(/current password/i);
-    const newPasswordInput = screen.getByLabelText(/new password/i);
+    const newPasswordInput = screen.getByLabelText(/^new password$/i);
 
     await user.type(currentPasswordInput, 'currentpass');
     await user.type(newPasswordInput, 'short');
 
-    const submitButton = screen.getByText('Change Password');
+    const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);
 
     await waitFor(() => {
@@ -69,14 +66,14 @@ describe('PasswordChangeForm', () => {
     render(<PasswordChangeForm {...mockProps} />);
 
     const currentPasswordInput = screen.getByLabelText(/current password/i);
-    const newPasswordInput = screen.getByLabelText(/new password/i);
-    const confirmPasswordInput = screen.getByLabelText(/confirm new password/i);
+    const newPasswordInput = screen.getByLabelText(/^new password$/i);
+    const confirmPasswordInput = screen.getByLabelText(/^confirm new password$/i);
 
     await user.type(currentPasswordInput, 'currentpass');
     await user.type(newPasswordInput, 'newpassword123');
     await user.type(confirmPasswordInput, 'differentpassword');
 
-    const submitButton = screen.getByText('Change Password');
+    const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);
 
     await waitFor(() => {
@@ -93,14 +90,14 @@ describe('PasswordChangeForm', () => {
     render(<PasswordChangeForm {...mockProps} />);
 
     const currentPasswordInput = screen.getByLabelText(/current password/i);
-    const newPasswordInput = screen.getByLabelText(/new password/i);
-    const confirmPasswordInput = screen.getByLabelText(/confirm new password/i);
+    const newPasswordInput = screen.getByLabelText(/^new password$/i);
+    const confirmPasswordInput = screen.getByLabelText(/^confirm new password$/i);
 
     await user.type(currentPasswordInput, 'currentpass');
     await user.type(newPasswordInput, 'newpassword123');
     await user.type(confirmPasswordInput, 'newpassword123');
 
-    const submitButton = screen.getByText('Change Password');
+    const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);
 
     await waitFor(() => {
@@ -120,14 +117,14 @@ describe('PasswordChangeForm', () => {
     render(<PasswordChangeForm {...mockProps} />);
 
     const currentPasswordInput = screen.getByLabelText(/current password/i);
-    const newPasswordInput = screen.getByLabelText(/new password/i);
-    const confirmPasswordInput = screen.getByLabelText(/confirm new password/i);
+    const newPasswordInput = screen.getByLabelText(/^new password$/i);
+    const confirmPasswordInput = screen.getByLabelText(/^confirm new password$/i);
 
     await user.type(currentPasswordInput, 'currentpass');
     await user.type(newPasswordInput, 'newpassword123');
     await user.type(confirmPasswordInput, 'newpassword123');
 
-    const submitButton = screen.getByText('Change Password');
+    const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);
 
     await waitFor(() => {
@@ -147,14 +144,14 @@ describe('PasswordChangeForm', () => {
     render(<PasswordChangeForm {...mockProps} />);
 
     const currentPasswordInput = screen.getByLabelText(/current password/i);
-    const newPasswordInput = screen.getByLabelText(/new password/i);
-    const confirmPasswordInput = screen.getByLabelText(/confirm new password/i);
+    const newPasswordInput = screen.getByLabelText(/^new password$/i);
+    const confirmPasswordInput = screen.getByLabelText(/^confirm new password$/i);
 
     await user.type(currentPasswordInput, 'wrongpass');
     await user.type(newPasswordInput, 'newpassword123');
     await user.type(confirmPasswordInput, 'newpassword123');
 
-    const submitButton = screen.getByText('Change Password');
+    const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);
 
     await waitFor(() => {
@@ -169,14 +166,14 @@ describe('PasswordChangeForm', () => {
     render(<PasswordChangeForm {...mockProps} />);
 
     const currentPasswordInput = screen.getByLabelText(/current password/i);
-    const newPasswordInput = screen.getByLabelText(/new password/i);
-    const confirmPasswordInput = screen.getByLabelText(/confirm new password/i);
+    const newPasswordInput = screen.getByLabelText(/^new password$/i);
+    const confirmPasswordInput = screen.getByLabelText(/^confirm new password$/i);
 
     await user.type(currentPasswordInput, 'currentpass');
     await user.type(newPasswordInput, 'newpassword123');
     await user.type(confirmPasswordInput, 'newpassword123');
 
-    const submitButton = screen.getByText('Change Password');
+    const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);
 
     await waitFor(() => {
@@ -193,14 +190,14 @@ describe('PasswordChangeForm', () => {
     render(<PasswordChangeForm {...mockProps} />);
 
     const currentPasswordInput = screen.getByLabelText(/current password/i);
-    const newPasswordInput = screen.getByLabelText(/new password/i);
-    const confirmPasswordInput = screen.getByLabelText(/confirm new password/i);
+    const newPasswordInput = screen.getByLabelText(/^new password$/i);
+    const confirmPasswordInput = screen.getByLabelText(/^confirm new password$/i);
 
     await user.type(currentPasswordInput, 'currentpass');
     await user.type(newPasswordInput, 'newpassword123');
     await user.type(confirmPasswordInput, 'newpassword123');
 
-    const submitButton = screen.getByText('Change Password');
+    const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);
 
     await waitFor(() => {
@@ -218,7 +215,7 @@ describe('PasswordChangeForm', () => {
     render(<PasswordChangeForm {...mockProps} />);
 
     const currentPasswordInput = screen.getByLabelText(/current password/i);
-    const newPasswordInput = screen.getByLabelText(/new password/i);
+    const newPasswordInput = screen.getByLabelText(/^new password$/i);
 
     await user.type(currentPasswordInput, 'somepassword');
     await user.type(newPasswordInput, 'newpassword');
@@ -257,14 +254,14 @@ describe('PasswordChangeForm', () => {
     render(<PasswordChangeForm {...mockProps} />);
 
     const currentPasswordInput = screen.getByLabelText(/current password/i);
-    const newPasswordInput = screen.getByLabelText(/new password/i);
-    const confirmPasswordInput = screen.getByLabelText(/confirm new password/i);
+    const newPasswordInput = screen.getByLabelText(/^new password$/i);
+    const confirmPasswordInput = screen.getByLabelText(/^confirm new password$/i);
 
     await user.type(currentPasswordInput, 'currentpass');
     await user.type(newPasswordInput, 'newpassword123');
     await user.type(confirmPasswordInput, 'newpassword123');
 
-    const submitButton = screen.getByText('Change Password');
+    const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);
 
     await waitFor(() => {

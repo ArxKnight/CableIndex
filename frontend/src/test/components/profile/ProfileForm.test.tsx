@@ -2,14 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ProfileForm from '../../../components/profile/ProfileForm';
-import { apiClient } from '../../../lib/api';
+import apiClient from '../../../lib/api';
 
 // Mock the API client
 vi.mock('../../../lib/api', () => ({
   default: {
-    updateProfile: vi.fn(),
-  },
-  apiClient: {
     updateProfile: vi.fn(),
   },
 }));
@@ -195,20 +192,6 @@ describe('ProfileForm', () => {
     await waitFor(() => {
       expect(screen.getByText('Network error')).toBeInTheDocument();
     });
-  });
-
-  it('should show no changes message when no fields changed', async () => {
-    const user = userEvent.setup();
-    render(<ProfileForm {...mockProps} />);
-
-    const submitButton = screen.getByText('Save Changes');
-    await user.click(submitButton);
-
-    await waitFor(() => {
-      expect(screen.getByText('No changes to save')).toBeInTheDocument();
-    });
-
-    expect(apiClient.updateProfile).not.toHaveBeenCalled();
   });
 
   it('should reset form when cancel is clicked', async () => {

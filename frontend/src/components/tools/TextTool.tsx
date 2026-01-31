@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { makeTimestamp, splitLines } from './utils';
+import { splitLines } from './utils';
 import { ZplOutput } from './ZplOutput';
 
 function generateTextZpl(lines: string[], fontSize: number): string {
@@ -65,7 +65,7 @@ export function TextTool() {
         title="Preview / Download"
         description="Updates live as you type."
         zpl={zpl}
-        filename={`text_${makeTimestamp()}.zpl`}
+        prefix="Text"
         disabled={lines.length === 0}
       />
     </div>

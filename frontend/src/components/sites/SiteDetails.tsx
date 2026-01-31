@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Site } from '../../types';
 import { apiClient } from '../../lib/api';
-import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
+import { LabelDatabase, LabelForm } from '../labels';
+import type { LabelWithSiteInfo, CreateLabelData } from '../../types';
+import { usePermissions } from '../../hooks/usePermissions';
 import { 
   MapPin, 
   Calendar, 
@@ -33,10 +36,16 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
   onDelete, 
   onBack 
 }) => {
-  const navigate = useNavigate();
+  const { canCreate } = usePermissions();
   const [site, setSite] = useState<SiteWithLabelCount | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [labelMode, setLabelMode] = useState<'list' | 'edit'>('list');
+  const [editingLabel, setEditingLabel] = useState<LabelWithSiteInfo | null>(null);
+  const [labelsRefreshToken, setLabelsRefreshToken] = useState(0);
+  const [createLabelOpen, setCreateLabelOpen] = useState(false);
+
+  const canCreateLabels = canCreate('labels');
 
   useEffect(() => {
     loadSite();
@@ -59,6 +68,34 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCreateLabel = async (data: CreateLabelData) => {
+    if (!site) return;
+    await apiClient.createLabel({
+      source: data.source,
+      destination: data.destination,
+      notes: data.notes,
+      site_id: site.id,
+    });
+    setCreateLabelOpen(false);
+    setEditingLabel(null);
+    setLabelsRefreshToken((t) => t + 1);
+    await loadSite();
+  };
+
+  const handleUpdateLabel = async (data: CreateLabelData) => {
+    if (!site || !editingLabel) return;
+    await apiClient.updateLabel(editingLabel.id, {
+      site_id: site.id,
+      source: data.source,
+      destination: data.destination,
+      notes: data.notes,
+    });
+    setLabelMode('list');
+    setEditingLabel(null);
+    setLabelsRefreshToken((t) => t + 1);
+    await loadSite();
   };
 
 
@@ -205,70 +242,64 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
       {/* Labels Section */}
       <Card>
         <CardHeader>
-          <CardTitle>Associated Labels</CardTitle>
-          <CardDescription>
-            Labels created for this site
-          </CardDescription>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle>Labels</CardTitle>
+              <CardDescription>
+                Create, search, edit, delete, and bulk download labels for this site.
+              </CardDescription>
+            </div>
+
+            {canCreateLabels && labelMode === 'list' && (
+              <Button aria-label="Open label creation dialog" onClick={() => setCreateLabelOpen(true)}>
+                Create Label
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
-          {site.label_count === 0 ? (
-            <div className="text-center py-8">
-              <Tag className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No labels yet</h3>
-              <p className="text-muted-foreground mb-4">
-                Labels created for this site will appear here.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate(`/labels?mode=create&site_id=${site.id}`)}
-              >
-                Create First Label
-              </Button>
-            </div>
-          ) : (
+          <Dialog open={createLabelOpen} onOpenChange={setCreateLabelOpen}>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Create Label</DialogTitle>
+              </DialogHeader>
+              <LabelForm
+                onSubmit={handleCreateLabel}
+                onCancel={() => setCreateLabelOpen(false)}
+                isLoading={false}
+                showPreview={true}
+                lockedSiteId={site.id}
+                lockedSiteName={site.name}
+              />
+            </DialogContent>
+          </Dialog>
+
+          {labelMode === 'edit' && editingLabel && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <div className="text-center flex-1">
-                  <div className="text-2xl font-bold text-primary">{site.label_count}</div>
-                  <p className="text-sm text-muted-foreground">
-                    Total Label{site.label_count !== 1 ? 's' : ''}
-                  </p>
-                </div>
-                <div className="text-center flex-1">
-                  <div className="text-2xl font-bold text-muted-foreground">—</div>
-                  <p className="text-sm text-muted-foreground">
-                    This Month
-                  </p>
-                </div>
-                <div className="text-center flex-1">
-                  <div className="text-2xl font-bold text-muted-foreground">—</div>
-                  <p className="text-sm text-muted-foreground">
-                    Last Used
-                  </p>
-                </div>
+                <h3 className="text-lg font-semibold">Edit Label {editingLabel.reference_number}</h3>
+                <Button variant="outline" onClick={() => { setLabelMode('list'); setEditingLabel(null); }}>Back to Labels</Button>
               </div>
-              <div className="border-t pt-4">
-                <p className="text-sm text-muted-foreground text-center">
-                  Detailed label management will be available in the next update.
-                </p>
-                <div className="flex justify-center mt-3 space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => navigate(`/labels?site_id=${site.id}`)}
-                  >
-                    View All Labels
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => navigate(`/labels?mode=create&site_id=${site.id}`)}
-                  >
-                    Create New Label
-                  </Button>
-                </div>
-              </div>
+              <LabelForm
+                label={editingLabel}
+                onSubmit={handleUpdateLabel}
+                onCancel={() => { setLabelMode('list'); setEditingLabel(null); }}
+                isLoading={false}
+                showPreview={false}
+                lockedSiteId={site.id}
+                lockedSiteName={site.name}
+              />
             </div>
+          )}
+
+          {labelMode === 'list' && (
+            <LabelDatabase
+              fixedSiteId={site.id}
+              refreshToken={labelsRefreshToken}
+              onCreateLabel={canCreateLabels ? () => setCreateLabelOpen(true) : undefined}
+              onEditLabel={(label) => { setEditingLabel(label); setLabelMode('edit'); }}
+              onLabelsChanged={() => { setLabelsRefreshToken((t) => t + 1); loadSite(); }}
+            />
           )}
         </CardContent>
       </Card>

@@ -7,15 +7,31 @@ import App from '../../App';
 
 // Mock the API client
 vi.mock('../../lib/api', () => ({
+  default: {
+    getCurrentUser: vi.fn(),
+    login: vi.fn(),
+    getSites: vi.fn(),
+    createSite: vi.fn(),
+    getSite: vi.fn(),
+    getLabels: vi.fn(),
+    createLabel: vi.fn(),
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+  },
   apiClient: {
     getCurrentUser: vi.fn(),
     login: vi.fn(),
     getSites: vi.fn(),
     createSite: vi.fn(),
+    getSite: vi.fn(),
     getLabels: vi.fn(),
     createLabel: vi.fn(),
-    getRecentLabels: vi.fn(),
-    getLabelStats: vi.fn(),
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -53,24 +69,60 @@ describe('User Workflow Integration Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+
+    // Default to unauthenticated; individual tests can override.
+    const current = (globalThis as any).__TEST_AUTH__;
+    (globalThis as any).__TEST_AUTH__ = {
+      ...current,
+      user: null,
+      tokens: null,
+      isAuthenticated: false,
+      isLoading: false,
+      login: vi.fn(),
+    };
+
+    window.history.pushState({}, '', '/');
   });
 
   it('should redirect unauthenticated users to login', async () => {
-    const { apiClient } = await import('../../lib/api');
-    
-    // Mock no stored tokens
-    vi.mocked(apiClient.getCurrentUser).mockRejectedValue(new Error('Unauthorized'));
-
-    renderApp();
+    const rendered = renderApp();
 
     await waitFor(() => {
-      expect(screen.getByText('Sign In')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
     });
   });
 
-  it('should complete login flow and redirect to dashboard', async () => {
+  it('should complete login flow and land on sites', async () => {
     const { apiClient } = await import('../../lib/api');
     const user = userEvent.setup();
+
+    const loginMock = vi.fn(async () => {
+      const current = (globalThis as any).__TEST_AUTH__;
+      (globalThis as any).__TEST_AUTH__ = {
+        ...current,
+        user: {
+          id: 1,
+          email: 'test@example.com',
+          full_name: 'Test User',
+          role: 'USER',
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+        tokens: {
+          accessToken: 'mock-access-token',
+          refreshToken: 'mock-refresh-token',
+          expiresIn: 3600,
+        },
+        isAuthenticated: true,
+        isLoading: false,
+        login: loginMock,
+      };
+    });
+
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      login: loginMock,
+    };
 
     // Mock successful login
     vi.mocked(apiClient.login).mockResolvedValue({
@@ -90,27 +142,17 @@ describe('User Workflow Integration Tests', () => {
       },
     });
 
-    // Mock dashboard data
+    // Mock sites data
     vi.mocked(apiClient.getSites).mockResolvedValue({
       success: true,
       data: { sites: [], pagination: { total: 0 } },
     });
 
-    vi.mocked(apiClient.getRecentLabels).mockResolvedValue({
-      success: true,
-      data: { labels: [] },
-    });
-
-    vi.mocked(apiClient.getLabelStats).mockResolvedValue({
-      success: true,
-      data: { stats: { total_labels: 0, total_sites: 0, monthly_labels: 0 } },
-    });
-
-    renderApp();
+    const rendered = renderApp();
 
     // Wait for login form
     await waitFor(() => {
-      expect(screen.getByText('Sign In')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
     });
 
     // Fill in login form
@@ -122,15 +164,43 @@ describe('User Workflow Integration Tests', () => {
     await user.type(passwordInput, 'password123');
     await user.click(loginButton);
 
-    // Should redirect to dashboard
+    expect(loginMock).toHaveBeenCalledWith({
+      email: 'test@example.com',
+      password: 'password123',
+    });
+
+    // Re-render so the mocked AuthContext value is re-read.
+    rendered.unmount();
+    renderApp();
+
+    // Should land on sites
     await waitFor(() => {
-      expect(screen.getByText('Dashboard')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Sites' })).toBeInTheDocument();
     });
   });
 
   it('should allow authenticated users to create a site', async () => {
     const { apiClient } = await import('../../lib/api');
     const user = userEvent.setup();
+
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      user: {
+        id: 1,
+        email: 'test@example.com',
+        full_name: 'Test User',
+        role: 'USER',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+      tokens: {
+        accessToken: 'test-access-token',
+        refreshToken: 'test-refresh-token',
+        expiresIn: 3600,
+      },
+      isAuthenticated: true,
+      isLoading: false,
+    };
 
     // Mock authenticated user
     vi.mocked(apiClient.getCurrentUser).mockResolvedValue({
@@ -170,23 +240,16 @@ describe('User Workflow Integration Tests', () => {
 
     renderApp();
 
-    // Wait for dashboard to load
+    // Wait for sites page to load
     await waitFor(() => {
-      expect(screen.getByText('Dashboard')).toBeInTheDocument();
-    });
-
-    // Navigate to sites page
-    const sitesLink = screen.getByRole('link', { name: /sites/i });
-    await user.click(sitesLink);
-
-    // Wait for sites page
-    await waitFor(() => {
-      expect(screen.getByText('Sites')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Sites' })).toBeInTheDocument();
     });
 
     // Click create site button
     const createButton = screen.getByRole('button', { name: /create site/i });
     await user.click(createButton);
+
+    await screen.findByText('Create New Site');
 
     // Fill in site form
     const nameInput = screen.getByLabelText(/site name/i);
@@ -198,7 +261,11 @@ describe('User Workflow Integration Tests', () => {
     await user.type(descriptionInput, 'Test Description');
 
     // Submit form
-    const submitButton = screen.getByRole('button', { name: /create/i });
+    const submitButton = screen
+      .getAllByRole('button', { name: /^create site$/i })
+      .find((btn) => btn.getAttribute('type') === 'submit');
+
+    expect(submitButton).toBeTruthy();
     await user.click(submitButton);
 
     // Verify API was called
@@ -212,6 +279,25 @@ describe('User Workflow Integration Tests', () => {
   it('should allow users to create labels', async () => {
     const { apiClient } = await import('../../lib/api');
     const user = userEvent.setup();
+
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      user: {
+        id: 1,
+        email: 'test@example.com',
+        full_name: 'Test User',
+        role: 'USER',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+      tokens: {
+        accessToken: 'test-access-token',
+        refreshToken: 'test-refresh-token',
+        expiresIn: 3600,
+      },
+      isAuthenticated: true,
+      isLoading: false,
+    };
 
     // Mock authenticated user
     vi.mocked(apiClient.getCurrentUser).mockResolvedValue({
@@ -237,11 +323,22 @@ describe('User Workflow Integration Tests', () => {
       user_id: 1,
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
+      label_count: 0,
     };
 
     vi.mocked(apiClient.getSites).mockResolvedValue({
       success: true,
       data: { sites: [mockSite], pagination: { total: 1 } },
+    });
+
+    vi.mocked(apiClient.getSite).mockResolvedValue({
+      success: true,
+      data: { site: mockSite },
+    });
+
+    vi.mocked(apiClient.getLabels).mockResolvedValue({
+      success: true,
+      data: { labels: [], pagination: { total: 0, has_more: false } },
     });
 
     vi.mocked(apiClient.createLabel).mockResolvedValue({
@@ -262,22 +359,22 @@ describe('User Workflow Integration Tests', () => {
 
     renderApp();
 
-    // Wait for dashboard to load
+    // Wait for sites page to load
     await waitFor(() => {
-      expect(screen.getByText('Dashboard')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Sites' })).toBeInTheDocument();
     });
 
-    // Navigate to labels page
-    const labelsLink = screen.getByRole('link', { name: /labels/i });
-    await user.click(labelsLink);
+    // Open site details
+    const viewDetailsButton = screen.getByRole('button', { name: /view details/i });
+    await user.click(viewDetailsButton);
 
-    // Wait for labels page
+    // Wait for site details
     await waitFor(() => {
-      expect(screen.getByText('Labels')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
     });
 
-    // Click create label button
-    const createButton = screen.getByRole('button', { name: /create label/i });
+    // Click create label button (site-scoped)
+    const createButton = screen.getByRole('button', { name: /create your first label/i });
     await user.click(createButton);
 
     // Fill in label form
@@ -287,15 +384,8 @@ describe('User Workflow Integration Tests', () => {
     await user.type(sourceInput, 'Server A');
     await user.type(destinationInput, 'Switch B');
 
-    // Select site
-    const siteSelect = screen.getByRole('combobox', { name: /site/i });
-    await user.click(siteSelect);
-    
-    const siteOption = screen.getByText('Test Site');
-    await user.click(siteOption);
-
     // Submit form
-    const submitButton = screen.getByRole('button', { name: /create/i });
+    const submitButton = screen.getByRole('button', { name: /create label/i });
     await user.click(submitButton);
 
     // Verify API was called

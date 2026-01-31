@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { BrowserRouter } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import Navigation from '../../../components/layout/Navigation';
 
 // Mock the auth context
@@ -19,11 +19,11 @@ vi.mock('../../../hooks/usePermissions', () => ({
   usePermissions: () => mockUsePermissions(),
 }));
 
-const renderNavigation = () => {
+const renderNavigation = (initialPath = '/') => {
   return render(
-    <BrowserRouter>
+    <MemoryRouter initialEntries={[initialPath]}>
       <Navigation />
-    </BrowserRouter>
+    </MemoryRouter>
   );
 };
 
@@ -50,17 +50,15 @@ describe('Navigation', () => {
   it('should render navigation with logo', () => {
     renderNavigation();
     
-    expect(screen.getByText('Cable Manager')).toBeInTheDocument();
+    expect(screen.getByText('CableIndex')).toBeInTheDocument();
   });
 
   it('should render navigation items for regular user', () => {
     renderNavigation();
-    
-    expect(screen.getByText('Dashboard')).toBeInTheDocument();
-    expect(screen.getByText('Sites')).toBeInTheDocument();
-    expect(screen.getByText('Labels')).toBeInTheDocument();
-    expect(screen.getByText('Port Labels')).toBeInTheDocument();
-    expect(screen.getByText('PDU Labels')).toBeInTheDocument();
+
+    // Both desktop + mobile nav render in jsdom (no CSS), so use *AllBy* queries.
+    expect(screen.getAllByRole('link', { name: /^sites$/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('link', { name: /^tools$/i }).length).toBeGreaterThan(0);
   });
 
   it('should not show admin items for regular user', () => {
@@ -77,8 +75,8 @@ describe('Navigation', () => {
     });
 
     renderNavigation();
-    
-    expect(screen.getByRole('link', { name: /admin/i })).toBeInTheDocument();
+
+    expect(screen.getAllByRole('link', { name: /^admin$/i }).length).toBeGreaterThan(0);
   });
 
   it('should hide items when user lacks permissions', () => {
@@ -88,9 +86,9 @@ describe('Navigation', () => {
     });
 
     renderNavigation();
-    
-    expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /sites/i })).not.toBeInTheDocument();
+
+    expect(screen.queryByRole('link', { name: /^sites$/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /^tools$/i }).length).toBeGreaterThan(0);
   });
 
   it('should display user information in dropdown', async () => {
@@ -135,10 +133,13 @@ describe('Navigation', () => {
   });
 
   it('should highlight active navigation item', () => {
-    renderNavigation();
-    
-    const dashboardLink = screen.getByRole('link', { name: /dashboard/i });
-    expect(dashboardLink).toHaveClass('border-blue-500');
+    renderNavigation('/sites');
+
+    // Prefer the desktop nav link for the border-bottom active style.
+    const sitesLinks = screen.getAllByRole('link', { name: /^sites$/i });
+    const desktopSitesLink = sitesLinks.find((link) => link.className.includes('border-b-2'));
+    expect(desktopSitesLink).toBeDefined();
+    expect(desktopSitesLink!).toHaveClass('border-blue-500');
   });
 
   it('should render mobile navigation on small screens', () => {

@@ -5,16 +5,6 @@ import { MemoryRouter } from 'react-router-dom';
 import SiteDetails from '../../../components/sites/SiteDetails';
 import { apiClient } from '../../../lib/api';
 
-const mockNavigate = vi.fn();
-
-vi.mock('react-router-dom', async () => {
-  const actual = await vi.importActual<any>('react-router-dom');
-  return {
-    ...actual,
-    useNavigate: () => mockNavigate,
-  };
-});
-
 const mockSite = {
   id: 1,
   name: 'Test Site',
@@ -39,6 +29,26 @@ describe('SiteDetails', () => {
     vi.mocked(apiClient.getSite).mockResolvedValue({
       success: true,
       data: { site: mockSite },
+    });
+
+    vi.mocked(apiClient.getLabels).mockResolvedValue({
+      success: true,
+      data: { labels: [], pagination: { total: 0, has_more: false } },
+    });
+
+    vi.mocked(apiClient.createLabel).mockResolvedValue({
+      success: true,
+      data: {
+        label: {
+          id: 1,
+          reference_number: 'TEST-0001',
+          source: 'Server A',
+          destination: 'Switch B',
+          site_id: 1,
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z',
+        },
+      },
     });
   });
 
@@ -219,8 +229,8 @@ describe('SiteDetails', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('No labels yet')).toBeInTheDocument();
-      expect(screen.getByText('Create First Label')).toBeInTheDocument();
+      expect(screen.getByText('Label Database')).toBeInTheDocument();
+      expect(screen.getByText('Create Your First Label')).toBeInTheDocument();
     });
   });
 
@@ -240,8 +250,9 @@ describe('SiteDetails', () => {
     expect(labelCountElements.length).toBeGreaterThan(0);
   });
 
-  it('should navigate to create label with site_id when create buttons are clicked', async () => {
+  it('should allow creating a label inside the site context', async () => {
     const user = userEvent.setup();
+
     const siteWithoutLabels = { ...mockSite, label_count: 0 };
     vi.mocked(apiClient.getSite).mockResolvedValue({
       success: true,
@@ -258,23 +269,19 @@ describe('SiteDetails', () => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
     });
 
-    await user.click(screen.getByText('Create First Label'));
-    expect(mockNavigate).toHaveBeenCalledWith('/labels?mode=create&site_id=1');
-  });
-
-  it('should navigate to labels list filtered by site_id', async () => {
-    const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <SiteDetails {...mockProps} />
-      </MemoryRouter>
-    );
-
+    await user.click(screen.getByText('Create Your First Label'));
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Create Label' })).toBeInTheDocument();
     });
 
-    await user.click(screen.getByText('View All Labels'));
-    expect(mockNavigate).toHaveBeenCalledWith('/labels?site_id=1');
+    await user.type(screen.getByLabelText(/source/i), 'Server A');
+    await user.type(screen.getByLabelText(/destination/i), 'Switch B');
+    await user.click(screen.getByRole('button', { name: /create label/i }));
+
+    expect(apiClient.createLabel).toHaveBeenCalledWith({
+      source: 'Server A',
+      destination: 'Switch B',
+      site_id: 1,
+    });
   });
 });

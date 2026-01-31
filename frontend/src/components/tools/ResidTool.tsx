@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
-import { splitLines, makeTimestamp } from './utils';
+import { splitLines } from './utils';
 import { ZplOutput } from './ZplOutput';
 
 function generateResidZpl(sids: string[]): string {
@@ -59,7 +59,7 @@ export function ResidTool() {
         title="Preview / Download"
         description="Updates live as you type."
         zpl={zpl}
-        filename={`resid_${makeTimestamp()}.zpl`}
+        prefix="SID"
         disabled={sids.length === 0}
       />
     </div>

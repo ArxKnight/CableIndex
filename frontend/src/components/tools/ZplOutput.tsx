@@ -4,19 +4,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Textarea } from '../ui/textarea';
 import { Download, Eye, Copy } from 'lucide-react';
-import { downloadTextFile } from './utils';
+import { downloadTextAsFile, makeDownloadFilename } from '../../lib/download';
 
 interface ZplOutputProps {
   title?: string;
   description?: string;
   zpl: string;
-  filename: string;
+  prefix: string;
   disabled?: boolean;
 }
 
-export function ZplOutput({ title = 'Output', description, zpl, filename, disabled }: ZplOutputProps) {
+export function ZplOutput({ title = 'Output', description, zpl, prefix, disabled }: ZplOutputProps) {
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState(false);
+
+  const filename = useMemo(() => makeDownloadFilename(prefix), [prefix]);
 
   const snippet = useMemo(() => {
     const lines = zpl.split(/\r?\n/);
@@ -43,11 +45,11 @@ export function ZplOutput({ title = 'Output', description, zpl, filename, disabl
         <div className="flex flex-col sm:flex-row gap-2">
           <Button
             type="button"
-            onClick={() => downloadTextFile(zpl, filename, 'text/plain')}
+            onClick={() => downloadTextAsFile(zpl, prefix)}
             disabled={disabled || !zpl.trim()}
           >
             <Download className="h-4 w-4 mr-2" />
-            Download ZPL
+            Download .txt
           </Button>
 
           <Button

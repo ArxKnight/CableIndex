@@ -89,7 +89,7 @@ const InviteSignupPage: React.FC = () => {
   };
 
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/sites" replace />;
   }
 
   if (authLoading) {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import UserManagement from '../../../components/admin/UserManagement';
 import { apiClient } from '../../../lib/api';
@@ -10,6 +11,9 @@ vi.mock('../../../lib/api', () => ({
     get: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),
+    getSites: vi.fn(),
+    getUserSites: vi.fn(),
+    updateUserSites: vi.fn(),
   },
 }));
 
@@ -22,7 +26,7 @@ vi.mock('sonner', () => ({
 }));
 
 // Mock date-fns
-vi.mock('date-fns', () => ({
+vi.mock('date-fns/formatDistanceToNow', () => ({
   formatDistanceToNow: vi.fn(() => '2 days ago'),
 }));
 
@@ -31,7 +35,7 @@ const mockUsers = [
     id: 1,
     email: 'admin@example.com',
     full_name: 'Admin User',
-    role: 'admin',
+    role: 'ADMIN',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
     label_count: 10,
@@ -42,7 +46,7 @@ const mockUsers = [
     id: 2,
     email: 'user@example.com',
     full_name: 'Regular User',
-    role: 'user',
+    role: 'USER',
     created_at: '2024-01-02T00:00:00Z',
     updated_at: '2024-01-02T00:00:00Z',
     label_count: 5,
@@ -73,6 +77,16 @@ describe('UserManagement', () => {
       success: true,
       data: { users: mockUsers },
     });
+
+    vi.mocked(apiClient.getSites).mockResolvedValue({
+      success: true,
+      data: { sites: [] },
+    } as any);
+
+    vi.mocked(apiClient.getUserSites).mockResolvedValue({
+      success: true,
+      data: { sites: [] },
+    } as any);
   });
 
   it('renders users table with data', async () => {
@@ -116,7 +130,7 @@ describe('UserManagement', () => {
     fireEvent.change(searchInput, { target: { value: 'admin' } });
 
     await waitFor(() => {
-      expect(apiClient.get).toHaveBeenCalledWith('/admin/users?search=admin&');
+      expect(apiClient.get).toHaveBeenCalledWith('/admin/users?search=admin');
     });
   });
 
@@ -133,7 +147,7 @@ describe('UserManagement', () => {
     fireEvent.click(adminOption);
 
     await waitFor(() => {
-      expect(apiClient.get).toHaveBeenCalledWith('/admin/users?role=admin');
+      expect(apiClient.get).toHaveBeenCalledWith('/admin/users?role=ADMIN');
     });
   });
 
@@ -143,6 +157,8 @@ describe('UserManagement', () => {
       message: 'Role updated successfully',
     });
 
+    const user = userEvent.setup();
+
     const Wrapper = createWrapper();
     render(<UserManagement />, { wrapper: Wrapper });
 
@@ -150,23 +166,19 @@ describe('UserManagement', () => {
       expect(screen.getByText('Regular User')).toBeInTheDocument();
     });
 
-    // Find and click the actions dropdown for the regular user
-    const actionButtons = screen.getAllByRole('button');
-    const actionsButton = actionButtons.find(button => 
-      button.querySelector('svg')?.classList.contains('lucide-more-horizontal')
-    );
-    
-    if (actionsButton) {
-      fireEvent.click(actionsButton);
+    const row = screen.getByText('Regular User').closest('tr');
+    expect(row).toBeTruthy();
 
-      // Click "Make Admin" option
-      const makeAdminOption = screen.getByText('Make Admin');
-      fireEvent.click(makeAdminOption);
+    const actionsButton = within(row as HTMLElement).getByRole('button');
+    await user.click(actionsButton);
 
-      await waitFor(() => {
-        expect(apiClient.put).toHaveBeenCalledWith('/admin/users/2/role', { role: 'admin' });
-      });
-    }
+    // Click "Make Admin" option
+    const makeAdminOption = await screen.findByRole('menuitem', { name: /make admin/i });
+    await user.click(makeAdminOption);
+
+    await waitFor(() => {
+      expect(apiClient.put).toHaveBeenCalledWith('/admin/users/2/role', { role: 'ADMIN' });
+    });
   });
 
   it('handles user deletion', async () => {
@@ -175,6 +187,8 @@ describe('UserManagement', () => {
       message: 'User deleted successfully',
     });
 
+    const user = userEvent.setup();
+
     const Wrapper = createWrapper();
     render(<UserManagement />, { wrapper: Wrapper });
 
@@ -182,27 +196,23 @@ describe('UserManagement', () => {
       expect(screen.getByText('Regular User')).toBeInTheDocument();
     });
 
-    // Find and click the actions dropdown for the regular user
-    const actionButtons = screen.getAllByRole('button');
-    const actionsButton = actionButtons.find(button => 
-      button.querySelector('svg')?.classList.contains('lucide-more-horizontal')
-    );
-    
-    if (actionsButton) {
-      fireEvent.click(actionsButton);
+    const row = screen.getByText('Regular User').closest('tr');
+    expect(row).toBeTruthy();
 
-      // Click "Delete User" option
-      const deleteOption = screen.getByText('Delete User');
-      fireEvent.click(deleteOption);
+    const actionsButton = within(row as HTMLElement).getByRole('button');
+    await user.click(actionsButton);
 
-      // Confirm deletion in dialog
-      const deleteButton = screen.getByRole('button', { name: /delete/i });
-      fireEvent.click(deleteButton);
+    // Click "Delete User" option
+    const deleteOption = await screen.findByRole('menuitem', { name: /delete user/i });
+    await user.click(deleteOption);
 
-      await waitFor(() => {
-        expect(apiClient.delete).toHaveBeenCalledWith('/admin/users/2');
-      });
-    }
+    // Confirm deletion in dialog
+    const confirmDeleteButton = await screen.findByRole('button', { name: /^delete$/i });
+    await user.click(confirmDeleteButton);
+
+    await waitFor(() => {
+      expect(apiClient.delete).toHaveBeenCalledWith('/admin/users/2');
+    });
   });
 
   it('shows loading state', () => {

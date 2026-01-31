@@ -5,6 +5,8 @@ import { BrowserRouter } from 'react-router-dom';
 import ProfilePage from '../../pages/ProfilePage';
 
 // Mock the auth context
+const mockUseAuth = vi.fn();
+
 const mockUser = {
   id: 1,
   email: 'test@example.com',
@@ -15,10 +17,7 @@ const mockUser = {
 };
 
 vi.mock('../../contexts/AuthContext', () => ({
-  useAuth: () => ({
-    user: mockUser,
-    updateUser: vi.fn(),
-  }),
+  useAuth: () => mockUseAuth(),
 }));
 
 // Mock the API client
@@ -44,6 +43,11 @@ const renderProfilePage = () => {
 describe('ProfilePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    mockUseAuth.mockReturnValue({
+      user: mockUser,
+      updateUser: vi.fn(),
+    });
   });
 
   it('should render profile page with user information', () => {
@@ -107,8 +111,8 @@ describe('ProfilePage', () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText(/current password/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/new password/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/confirm new password/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^new password$/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^confirm new password$/i)).toBeInTheDocument();
     });
   });
 
@@ -122,8 +126,8 @@ describe('ProfilePage', () => {
 
   it('should handle admin role styling', () => {
     const adminUser = { ...mockUser, role: 'admin' as const };
-    
-    vi.mocked(require('../../contexts/AuthContext')).useAuth.mockReturnValue({
+
+    mockUseAuth.mockReturnValue({
       user: adminUser,
       updateUser: vi.fn(),
     });
@@ -136,8 +140,8 @@ describe('ProfilePage', () => {
 
   it('should handle moderator role styling', () => {
     const moderatorUser = { ...mockUser, role: 'moderator' as const };
-    
-    vi.mocked(require('../../contexts/AuthContext')).useAuth.mockReturnValue({
+
+    mockUseAuth.mockReturnValue({
       user: moderatorUser,
       updateUser: vi.fn(),
     });
@@ -149,7 +153,7 @@ describe('ProfilePage', () => {
   });
 
   it('should not render when user is null', () => {
-    vi.mocked(require('../../contexts/AuthContext')).useAuth.mockReturnValue({
+    mockUseAuth.mockReturnValue({
       user: null,
       updateUser: vi.fn(),
     });

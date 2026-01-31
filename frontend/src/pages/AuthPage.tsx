@@ -8,7 +8,7 @@ const AuthPage: React.FC = () => {
 
   // Redirect if already authenticated
   if (isAuthenticated) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/sites" replace />;
   }
 
   // Show loading spinner while checking authentication

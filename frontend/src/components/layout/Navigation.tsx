@@ -1,9 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
-  Home, 
   MapPin, 
-  Database, 
   Wrench,
   Settings, 
   ChevronDown,
@@ -33,21 +31,10 @@ interface NavigationItem {
 
 const navigationItems: NavigationItem[] = [
   {
-    name: 'Dashboard',
-    href: '/dashboard',
-    icon: Home,
-  },
-  {
     name: 'Sites',
     href: '/sites',
     icon: MapPin,
     permission: 'sites',
-  },
-  {
-    name: 'Labels',
-    href: '/labels',
-    icon: Database,
-    permission: 'labels',
   },
   {
     name: 'Tools',
@@ -93,7 +80,7 @@ const Navigation: React.FC = () => {
           {/* Logo and main navigation */}
           <div className="flex">
             <div className="flex-shrink-0 flex items-center">
-              <Link to="/dashboard" className="flex items-center space-x-2">
+              <Link to="/sites" className="flex items-center space-x-2">
                 <img 
                   src={logoIconUrl} 
                   alt="CableIndex" 

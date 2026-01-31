@@ -6,6 +6,18 @@ import App from '../../App';
 
 // Mock the API client
 vi.mock('../../lib/api', () => ({
+  default: {
+    getCurrentUser: vi.fn(),
+    login: vi.fn(),
+    getSites: vi.fn(),
+    createSite: vi.fn(),
+    getLabels: vi.fn(),
+    createLabel: vi.fn(),
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+  },
   apiClient: {
     getCurrentUser: vi.fn(),
     login: vi.fn(),
@@ -13,6 +25,10 @@ vi.mock('../../lib/api', () => ({
     createSite: vi.fn(),
     getLabels: vi.fn(),
     createLabel: vi.fn(),
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -50,20 +66,41 @@ describe('Error Scenarios Integration Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+
+    const current = (globalThis as any).__TEST_AUTH__;
+    (globalThis as any).__TEST_AUTH__ = {
+      ...current,
+      user: null,
+      tokens: null,
+      isAuthenticated: false,
+      isLoading: false,
+      login: vi.fn(),
+    };
+
+    window.history.pushState({}, '', '/');
   });
 
   it('should handle login errors gracefully', async () => {
     const { apiClient } = await import('../../lib/api');
     const user = userEvent.setup();
 
-    // Mock login failure
+    const loginMock = vi.fn(async () => {
+      throw new Error('Invalid credentials');
+    });
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      login: loginMock,
+    };
+
+    // The LoginForm calls AuthContext.login, which is overridden above.
+    // Keep apiClient.login mocked to avoid accidental calls.
     vi.mocked(apiClient.login).mockRejectedValue(new Error('Invalid credentials'));
 
     renderApp();
 
     // Wait for login form
     await waitFor(() => {
-      expect(screen.getByText('Sign In')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
     });
 
     // Fill in login form with invalid credentials
@@ -75,17 +112,36 @@ describe('Error Scenarios Integration Tests', () => {
     await user.type(passwordInput, 'wrongpassword');
     await user.click(loginButton);
 
-    // Should show error message
+    // Should show inline error
     await waitFor(() => {
       expect(screen.getByText('Invalid credentials')).toBeInTheDocument();
     });
 
     // Should remain on login page
-    expect(screen.getByText('Sign In')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
   });
 
   it('should handle network errors during data fetching', async () => {
     const { apiClient } = await import('../../lib/api');
+
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      user: {
+        id: 1,
+        email: 'test@example.com',
+        full_name: 'Test User',
+        role: 'USER',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+      tokens: {
+        accessToken: 'test-access-token',
+        refreshToken: 'test-refresh-token',
+        expiresIn: 3600,
+      },
+      isAuthenticated: true,
+      isLoading: false,
+    };
 
     // Mock authenticated user
     vi.mocked(apiClient.getCurrentUser).mockResolvedValue({
@@ -107,25 +163,36 @@ describe('Error Scenarios Integration Tests', () => {
 
     renderApp();
 
-    // Wait for dashboard to load
+    // Should show error state on the Sites page
     await waitFor(() => {
-      expect(screen.getByText('Dashboard')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Sites' })).toBeInTheDocument();
     });
 
-    // Navigate to sites page
-    const sitesLink = screen.getByRole('link', { name: /sites/i });
-    await userEvent.click(sitesLink);
-
-    // Should show error state or loading state
-    await waitFor(() => {
-      // The component should handle the error gracefully
-      expect(screen.getByText('Sites')).toBeInTheDocument();
-    });
+    expect(screen.getByText('Network error')).toBeInTheDocument();
   });
 
   it('should handle form validation errors', async () => {
     const { apiClient } = await import('../../lib/api');
     const user = userEvent.setup();
+
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      user: {
+        id: 1,
+        email: 'test@example.com',
+        full_name: 'Test User',
+        role: 'USER',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+      tokens: {
+        accessToken: 'test-access-token',
+        refreshToken: 'test-refresh-token',
+        expiresIn: 3600,
+      },
+      isAuthenticated: true,
+      isLoading: false,
+    };
 
     // Mock authenticated user
     vi.mocked(apiClient.getCurrentUser).mockResolvedValue({
@@ -149,25 +216,23 @@ describe('Error Scenarios Integration Tests', () => {
 
     renderApp();
 
-    // Navigate to sites page
-    await waitFor(() => {
-      expect(screen.getByText('Dashboard')).toBeInTheDocument();
-    });
-
-    const sitesLink = screen.getByRole('link', { name: /sites/i });
-    await user.click(sitesLink);
-
     // Wait for sites page
     await waitFor(() => {
-      expect(screen.getByText('Sites')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Sites' })).toBeInTheDocument();
     });
 
     // Click create site button
     const createButton = screen.getByRole('button', { name: /create site/i });
     await user.click(createButton);
 
+    await screen.findByText('Create New Site');
+
     // Try to submit form without filling required fields
-    const submitButton = screen.getByRole('button', { name: /create/i });
+    const submitButton = screen
+      .getAllByRole('button', { name: /^create site$/i })
+      .find((btn) => btn.getAttribute('type') === 'submit');
+
+    expect(submitButton).toBeTruthy();
     await user.click(submitButton);
 
     // Should show validation errors
@@ -179,6 +244,25 @@ describe('Error Scenarios Integration Tests', () => {
   it('should handle API errors during form submission', async () => {
     const { apiClient } = await import('../../lib/api');
     const user = userEvent.setup();
+
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      user: {
+        id: 1,
+        email: 'test@example.com',
+        full_name: 'Test User',
+        role: 'USER',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+      tokens: {
+        accessToken: 'test-access-token',
+        refreshToken: 'test-refresh-token',
+        expiresIn: 3600,
+      },
+      isAuthenticated: true,
+      isLoading: false,
+    };
 
     // Mock authenticated user
     vi.mocked(apiClient.getCurrentUser).mockResolvedValue({
@@ -205,29 +289,27 @@ describe('Error Scenarios Integration Tests', () => {
 
     renderApp();
 
-    // Navigate to sites page
-    await waitFor(() => {
-      expect(screen.getByText('Dashboard')).toBeInTheDocument();
-    });
-
-    const sitesLink = screen.getByRole('link', { name: /sites/i });
-    await user.click(sitesLink);
-
     // Wait for sites page
     await waitFor(() => {
-      expect(screen.getByText('Sites')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Sites' })).toBeInTheDocument();
     });
 
     // Click create site button
     const createButton = screen.getByRole('button', { name: /create site/i });
     await user.click(createButton);
 
+    await screen.findByText('Create New Site');
+
     // Fill in site form
     const nameInput = screen.getByLabelText(/site name/i);
     await user.type(nameInput, 'Duplicate Site');
 
     // Submit form
-    const submitButton = screen.getByRole('button', { name: /create/i });
+    const submitButton = screen
+      .getAllByRole('button', { name: /^create site$/i })
+      .find((btn) => btn.getAttribute('type') === 'submit');
+
+    expect(submitButton).toBeTruthy();
     await user.click(submitButton);
 
     // Should show API error message
@@ -238,6 +320,25 @@ describe('Error Scenarios Integration Tests', () => {
 
   it('should handle session expiration', async () => {
     const { apiClient } = await import('../../lib/api');
+
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      user: {
+        id: 1,
+        email: 'test@example.com',
+        full_name: 'Test User',
+        role: 'USER',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+      tokens: {
+        accessToken: 'test-access-token',
+        refreshToken: 'test-refresh-token',
+        expiresIn: 3600,
+      },
+      isAuthenticated: true,
+      isLoading: false,
+    };
 
     // Mock initial authentication success
     vi.mocked(apiClient.getCurrentUser).mockResolvedValueOnce({
@@ -259,24 +360,35 @@ describe('Error Scenarios Integration Tests', () => {
 
     renderApp();
 
-    // Wait for dashboard to load
+    // Wait for app shell to load
     await waitFor(() => {
-      expect(screen.getByText('Dashboard')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Sites' })).toBeInTheDocument();
     });
 
-    // Navigate to sites page (should trigger session expiration)
-    const sitesLink = screen.getByRole('link', { name: /sites/i });
-    await userEvent.click(sitesLink);
-
-    // Should redirect to login page or show session expired message
-    await waitFor(() => {
-      // The app should handle session expiration gracefully
-      expect(screen.getByText('Sites')).toBeInTheDocument();
-    });
+    expect(screen.getByText('Session expired. Please login again.')).toBeInTheDocument();
   });
 
   it('should handle 404 routes gracefully', async () => {
     const { apiClient } = await import('../../lib/api');
+
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      user: {
+        id: 1,
+        email: 'test@example.com',
+        full_name: 'Test User',
+        role: 'USER',
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+      },
+      tokens: {
+        accessToken: 'test-access-token',
+        refreshToken: 'test-refresh-token',
+        expiresIn: 3600,
+      },
+      isAuthenticated: true,
+      isLoading: false,
+    };
 
     // Mock authenticated user
     vi.mocked(apiClient.getCurrentUser).mockResolvedValue({
@@ -304,6 +416,6 @@ describe('Error Scenarios Integration Tests', () => {
     });
 
     // Should have navigation options
-    expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /^sites$/i }).length).toBeGreaterThan(0);
   });
 });

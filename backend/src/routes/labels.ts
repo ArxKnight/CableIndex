@@ -109,7 +109,12 @@ router.get('/', authenticateToken, resolveSiteAccess(req => Number(req.query.sit
     };
 
     const labels = await labelModel.findBySiteId(site_id, searchOptions);
-    const total = await labelModel.countBySiteId(site_id);
+    const total = await labelModel.countBySiteId(site_id, {
+      ...(search ? { search } : {}),
+      ...(reference_number ? { reference_number } : {}),
+      ...(source ? { source } : {}),
+      ...(destination ? { destination } : {}),
+    });
 
     res.json({
       success: true,
@@ -476,8 +481,8 @@ router.get('/:id/zpl', authenticateToken, resolveSiteAccess(req => Number(req.qu
     const zplContent = zplService.generateFromLabel(label, site);
 
     // Set headers for file download
-    res.setHeader('Content-Type', 'text/plain');
-    res.setHeader('Content-Disposition', `attachment; filename="${label.reference_number}.zpl"`);
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${label.reference_number}.txt"`);
     
     res.send(zplContent);
 
@@ -541,8 +546,8 @@ router.post('/bulk-zpl', authenticateToken, resolveSiteAccess(req => Number(req.
 
     // Set headers for file download
     const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-    res.setHeader('Content-Type', 'text/plain');
-    res.setHeader('Content-Disposition', `attachment; filename="bulk-labels-${timestamp}.zpl"`);
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="bulk-labels-${timestamp}.txt"`);
     
     res.send(zplContent);
 
@@ -609,8 +614,8 @@ router.post('/bulk-zpl-range', authenticateToken, resolveSiteAccess(req => Numbe
     const zplContent = zplService.generateBulkLabels(labels, [site]);
 
     const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-    res.setHeader('Content-Type', 'text/plain');
-    res.setHeader('Content-Disposition', `attachment; filename="labels-${site.code || site.name}-${startNum}-${endNum}-${timestamp}.zpl"`);
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="labels-${site.code || site.name}-${startNum}-${endNum}-${timestamp}.txt"`);
     res.send(zplContent);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -650,7 +655,7 @@ router.post('/port-labels/zpl', authenticateToken, async (req: Request, res: Res
 
     // Set headers for file download
     const filename = `port-labels-${portData.sid}-${portData.fromPort}-${portData.toPort}.txt`;
-    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     
     res.send(zplContent);
@@ -700,7 +705,7 @@ router.post('/pdu-labels/zpl', authenticateToken, async (req: Request, res: Resp
 
     // Set headers for file download
     const filename = `pdu-labels-${pduData.pduSid}-${pduData.fromPort}-${pduData.toPort}.txt`;
-    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     
     res.send(zplContent);

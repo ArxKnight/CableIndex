@@ -7,7 +7,7 @@ import { Checkbox } from '../ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Alert, AlertDescription } from '../ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../ui/alert-dialog';
-import { makeTimestamp, clampInt } from './utils';
+import { clampInt } from './utils';
 import { ZplOutput } from './ZplOutput';
 
 const BANKS = ['Bank1', 'Bank2', 'Bank3', 'Bank4'] as const;
@@ -87,7 +87,6 @@ export function PortsTool() {
   );
 
   const count = isRangeValid ? toPort - fromPort + 1 : 0;
-  const filename = `portlabels_${makeTimestamp()}.zpl`;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -210,7 +209,7 @@ export function PortsTool() {
         title="Preview / Download"
         description="Updates live as you type."
         zpl={zpl}
-        filename={filename}
+        prefix="Ports"
         disabled={disabled}
       />
     </div>

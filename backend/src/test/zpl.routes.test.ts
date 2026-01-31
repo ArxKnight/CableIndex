@@ -61,7 +61,7 @@ describe('ZPL Routes', () => {
 
       expect(response.headers['content-type']).toBe('text/plain; charset=utf-8');
       expect(response.headers['content-disposition']).toContain('attachment');
-      expect(response.headers['content-disposition']).toContain('.zpl');
+      expect(response.headers['content-disposition']).toContain('.txt');
       expect(response.text).toContain('^XA');
       expect(response.text).toContain('^XZ');
       expect(response.text).toContain('TestSite-1 Server-01 > Switch-01');

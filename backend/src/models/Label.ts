@@ -31,6 +31,10 @@ export interface LabelSearchOptions {
   sort_order?: 'ASC' | 'DESC';
 }
 
+function makePayloadContainsPattern(value: string): string {
+  return `%${value}%`;
+}
+
 export class LabelModel {
   private get adapter(): DatabaseAdapter {
     return connection.getAdapter();
@@ -197,25 +201,47 @@ export class LabelModel {
     const isMySQL = config?.type === 'mysql';
 
     let query = `
-      SELECT id, site_id, created_by, ref_number, ref_string, type, payload_json, created_at, updated_at
-      FROM labels
-      WHERE site_id = ?
+      SELECT
+        l.id,
+        l.site_id,
+        l.created_by,
+        l.ref_number,
+        l.ref_string,
+        l.type,
+        l.payload_json,
+        l.created_at,
+        l.updated_at,
+        u.full_name as created_by_name,
+        u.email as created_by_email
+      FROM labels l
+      LEFT JOIN users u ON u.id = l.created_by
+      WHERE l.site_id = ?
     `;
 
     const params: any[] = [siteId];
 
     if (options.reference_number) {
-      query += ` AND ref_string = ?`;
+      query += ` AND l.ref_string = ?`;
       params.push(options.reference_number);
     }
 
     if (options.search) {
-      query += ` AND (ref_string LIKE ? OR payload_json LIKE ?)`;
+      query += ` AND (l.ref_string LIKE ? OR l.payload_json LIKE ?)`;
       const searchPattern = `%${options.search}%`;
       params.push(searchPattern, searchPattern);
     }
 
-    query += ` ORDER BY ${sort_by === 'ref_string' ? 'ref_string' : 'created_at'} ${sort_order}`;
+    if (options.source) {
+      query += ` AND l.payload_json LIKE ?`;
+      params.push(makePayloadContainsPattern(options.source));
+    }
+
+    if (options.destination) {
+      query += ` AND l.payload_json LIKE ?`;
+      params.push(makePayloadContainsPattern(options.destination));
+    }
+
+    query += ` ORDER BY ${sort_by === 'ref_string' ? 'l.ref_string' : 'l.created_at'} ${sort_order}`;
 
     if (isMySQL) {
       query += ` LIMIT ${safeLimit} OFFSET ${safeOffset}`;
@@ -294,11 +320,32 @@ export class LabelModel {
     return result.affectedRows || 0;
   }
 
-  async countBySiteId(siteId: number): Promise<number> {
-    const rows = await this.adapter.query(
-      `SELECT COUNT(*) as count FROM labels WHERE site_id = ?`,
-      [siteId]
-    );
+  async countBySiteId(siteId: number, options: Pick<LabelSearchOptions, 'search' | 'reference_number' | 'source' | 'destination'> = {}): Promise<number> {
+    let query = `SELECT COUNT(*) as count FROM labels WHERE site_id = ?`;
+    const params: any[] = [siteId];
+
+    if (options.reference_number) {
+      query += ` AND ref_string = ?`;
+      params.push(options.reference_number);
+    }
+
+    if (options.search) {
+      query += ` AND (ref_string LIKE ? OR payload_json LIKE ?)`;
+      const searchPattern = `%${options.search}%`;
+      params.push(searchPattern, searchPattern);
+    }
+
+    if (options.source) {
+      query += ` AND payload_json LIKE ?`;
+      params.push(makePayloadContainsPattern(options.source));
+    }
+
+    if (options.destination) {
+      query += ` AND payload_json LIKE ?`;
+      params.push(makePayloadContainsPattern(options.destination));
+    }
+
+    const rows = await this.adapter.query(query, params);
     return rows[0]?.count || 0;
   }
 
