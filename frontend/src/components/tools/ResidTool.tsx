@@ -23,7 +23,7 @@ export function ResidTool() {
   const sids = useMemo(() => splitLines(sidList), [sidList]);
   const firstSid = useMemo(() => sids.find((s) => s.trim()) || '', [sids]);
   const zpl = useMemo(() => generateResidZpl(sids), [sids]);
-  const techDbFriendly = useMemo(() => sids.join(', '), [sids]);
+  const searchFriendly = useMemo(() => sids.join(', '), [sids]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -51,8 +51,8 @@ export function ResidTool() {
           </div>
 
           <div className="rounded-md border p-3 bg-muted/30">
-            <div className="text-xs text-muted-foreground mb-1">TechDB friendly</div>
-            <div className="text-sm break-words">{techDbFriendly || '—'}</div>
+            <div className="text-xs text-muted-foreground mb-1">Search friendly</div>
+            <div className="text-sm break-words">{searchFriendly || '—'}</div>
           </div>
         </CardContent>
       </Card>

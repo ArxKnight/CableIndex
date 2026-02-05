@@ -2,15 +2,16 @@
 
 ## Overview
 
-The CableIndex system is a React-based web application with Express backend that provides professional cable labeling capabilities for Brady printers. The system follows a modern full-stack architecture with role-based access control, real-time data synchronization, and ZPL label generation.
+CableIndex is a React + TypeScript web application with an Express + TypeScript API backend. It generates ZPL for Brady printers, stores label records per site, and provides role-based access controls.
+
+This document describes the current (2026) design and architecture.
 
 ### Key Design Principles
 
-- **Security First**: Row Level Security (RLS) and role-based permissions at every layer
-- **User Experience**: Intuitive interface with real-time feedback and validation
-- **Scalability**: Component-based architecture supporting multiple sites and users
-- **Reliability**: Comprehensive error handling and data validation
-- **Performance**: Optimized queries and efficient state management
+- **Single source of truth**: Authorization and scoping are enforced on the backend.
+- **Site-scoped data**: Labels, locations, and cable types are scoped to a site.
+- **Operator-friendly**: First-run setup wizard avoids manual configuration.
+- **Print correctness**: ZPL output is deterministic and test-validated.
 
 ## Architecture
 
@@ -18,377 +19,130 @@ The CableIndex system is a React-based web application with Express backend that
 
 ```mermaid
 graph TB
-    subgraph "Client Layer"
+    subgraph "Client"
         A[React App] --> B[React Router]
         A --> C[TanStack Query]
         A --> D[Auth Context]
+        A --> E[Theme Context]
     end
-    
-    subgraph "UI Layer"
-        E[shadcn/ui Components] --> F[Tailwind CSS]
-        G[Lucide Icons] --> E
+
+    subgraph "Backend"
+        F[Express API] --> G[Route Handlers]
+        F --> H[JWT Auth + Permission Middleware]
+        F --> I[DB Adapter]
+        I --> J[(SQLite)]
+        I --> K[(MySQL)]
     end
-    
-    subgraph "Backend Layer"
-        H[Express API] --> I[SQLite Database]
-        J[JWT Auth Middleware] --> H
-        K[API Routes] --> H
+
+    subgraph "Setup"
+        L[Setup Wizard API] --> F
     end
-    
-    subgraph "External"
-        L[Brady Printer] --> M[ZPL Files]
+
+    subgraph "Output"
+        M[ZPL Downloads] --> N[Brady/ZPL Printer]
     end
-    
-    A --> H
+
+    A --> F
     A --> M
 ```
 
-### Technology Stack
+### Runtime Modes
 
-- **Frontend**: React 18 + TypeScript + Vite for fast development and type safety
-- **Styling**: Tailwind CSS + shadcn/ui for consistent, accessible components
-- **Backend**: Node.js + Express + SQLite for local database storage
-- **Authentication**: JWT tokens with local session management
-- **State Management**: TanStack React Query for server state and caching
-- **Routing**: React Router DOM for client-side navigation
-- **Validation**: Zod + React Hook Form for type-safe form handling
-- **Database**: SQLite with better-sqlite3 for local file-based storage
+- **Development**
+  - Frontend: Vite dev server
+  - Backend: Express API
+  - API calls go to `/api` (via dev proxy or `VITE_API_URL` override)
 
-## Components and Interfaces
+- **Production (Docker)**
+  - Single container
+  - Express serves the built frontend and the API under the same origin (`/` and `/api`)
 
-### Authentication System
+## Major Subsystems
 
-**AuthProvider Context**
-```typescript
-interface AuthContextType {
-  user: User | null;
-  session: Session | null;
-  signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, fullName: string) => Promise<void>;
-  signOut: () => Promise<void>;
-  resetPassword: (email: string) => Promise<void>;
-  loading: boolean;
-}
-```
+### Setup Wizard
 
-**ProtectedRoute Component**
-- Wraps authenticated routes
-- Redirects to /auth if not authenticated
-- Provides loading states during auth checks
+- Until setup is complete, the backend exposes setup endpoints and blocks normal use.
+- Setup allows selecting SQLite or MySQL, testing connectivity, and creating the initial admin.
+- Setup persists configuration so restarts do not require reconfiguration.
 
-### Permission System
+### Authentication & Invitations
 
-**usePermissions Hook**
-```typescript
-interface PermissionHook {
-  hasRole: (role: UserRole) => boolean;
-  canAccess: (tool: string) => boolean;
-  canCreate: (tool: string) => boolean;
-  canEdit: (tool: string) => boolean;
-  canDelete: (tool: string) => boolean;
-  isAdmin: boolean;
-}
-```
+- Users authenticate with email/password.
+- The backend issues access + refresh JWTs.
+- Registration is invitation-driven:
+  - Admin creates invitation with site assignments.
+  - User accepts invitation via token.
+- SMTP is optional:
+  - SMTP config can come from environment variables or Admin Settings (stored in `app_settings`).
 
-**Role Hierarchy**
-- Admin: Full system access, user management, settings
-- Moderator: Limited admin functions, advanced features
-- User: Basic label creation and site management
+### Authorization Model
 
-### Core Components
+- **Global roles**: Global Admin, Admin, User.
+- **Site roles**: Site Admin, Site User.
+- Backend enforces:
+  - Authentication (JWT)
+  - Site scoping (e.g., requires `site_id` for label operations)
+  - Role checks for admin and site-admin actions
 
-**Layout Structure**
-```
-App
-├── AuthProvider
-├── BrowserRouter
-└── Routes
-    ├── /auth → Auth (public)
-    └── ProtectedRoute → Layout
-        ├── Navigation
-        ├── UserMenu
-        └── Outlet (page content)
-```
+### Data Model (Conceptual)
 
-**Navigation Component**
-- Top navigation bar with logo and user menu
-- Role-based menu items visibility
-- Active route highlighting
-- Responsive mobile menu
+- **Users**: identity, password hash, global role
+- **Sites**: user-visible groupings
+- **Site Memberships**: per-user, per-site role assignments
+- **Locations**: structured locations per site (`label/floor/suite/row/rack`)
+- **Cable Types**: per-site categories
+- **Labels**: cable labels with per-site reference numbering and associated metadata
+- **App Settings**: system configuration (including optional SMTP settings)
+- **Invitations**: invitation tokens and expiry/acceptance status
 
-**Form Components**
-- Standardized form layouts with validation
-- Real-time error display
-- Loading states for submissions
-- Toast notifications for feedback
+## Frontend Design
 
-## API Design
+### Routing & Pages
 
-### Express Server Structure
-```
-server/
-├── routes/
-│   ├── auth.js          # Authentication endpoints
-│   ├── users.js         # User management
-│   ├── sites.js         # Site CRUD operations
-│   ├── labels.js        # Label management
-│   └── admin.js         # Admin functions
-├── middleware/
-│   ├── auth.js          # JWT validation
-│   ├── permissions.js   # Role-based access
-│   └── validation.js    # Request validation
-├── models/
-│   ├── User.js          # User data operations
-│   ├── Site.js          # Site data operations
-│   └── Label.js         # Label data operations
-├── database/
-│   ├── connection.js    # SQLite connection
-│   ├── migrations/      # Database schema updates
-│   └── seeds/           # Initial data
-└── app.js               # Express app setup
-```
+- The primary workflow is **site-centric**:
+  - Users land on Sites, select a site, then create/manage labels for that site.
+- A dedicated Tools page provides generator utilities (RESID, 30DAY, TEXT, RACKS, IN-RACK, PORTS, PDU).
+- Admin pages are restricted based on global role.
 
-### API Endpoints
-- **POST /api/auth/login** - User authentication
-- **POST /api/auth/register** - User registration
-- **POST /api/auth/refresh** - Token refresh
-- **GET /api/sites** - List user sites
-- **POST /api/sites** - Create new site
-- **GET /api/labels** - List user labels
-- **POST /api/labels** - Create new label
-- **GET /api/admin/users** - Admin user management
-- **POST /api/admin/invite** - Invite new user
+### Theme System
 
-## Data Models
+- Tailwind uses `darkMode: ["class"]`.
+- The theme is stored in `localStorage` under `cableindex-theme`.
+- The app toggles the `dark` class on the `<html>` element so all components (including dialogs/menus) inherit the theme.
 
-### Database Schema Design
+## ZPL Generation
 
-**SQLite Database Structure**
-- **users**: Authentication and profile information with password hashing
-- **sites**: Physical locations for cable management
-- **labels**: Cable label records with references
-- **user_roles**: Role assignments (admin, moderator, user)
-- **tool_permissions**: Granular access control per user/tool
-- **app_settings**: Application configuration storage
-- **user_invitations**: Pending user invitations with tokens
+### Cable Label Payload
 
-**Relationships**
-- users → sites (one-to-many via user_id)
-- sites → labels (one-to-many via site_id)
-- users → labels (one-to-many via user_id)
-- users → user_roles (one-to-many via user_id)
-- users → tool_permissions (one-to-many via user_id)
+Printed payload (cross-rack cable label):
 
-### Key Database Features
+`#<REF>\& <SOURCE>\& <DESTINATION>`
 
-**Application-Level Security**
-- Password hashing with bcrypt
-- JWT token-based authentication
-- Middleware-based authorization checks
-- User data isolation through API layer
+### Formatting Rules
 
-**Database Triggers**
-- Automatic timestamp updates
-- Default permission assignment on user creation
-- Reference number auto-increment per site
+- ZPL is produced as a sequence of newline-separated commands.
+- `^FD...` and its terminator `^FS` must be on separate lines.
+- Bulk outputs are concatenated cleanly (labels do not run into each other).
 
-**Reference Number Generation**
-```sql
--- Auto-increment reference numbers per site
-SELECT COALESCE(MAX(CAST(SUBSTR(reference_number, INSTR(reference_number, '-') + 1) AS INTEGER)), 0) + 1
-FROM labels 
-WHERE site_id = ?;
-```
+### Example (Simplified)
 
-## ZPL Generation Logic
-
-### Cable Labels
 ```zpl
 ^XA
-^MUm^LH8,19^FS
-^MUm^FO0,2
-^A0N,7,5
-^FB280,1,1,C
-^FD[SITE]-[REF] [SOURCE] > [DEST]
+...
+^FD#0001\& MDF-A/1/2/A/R01\& IDF-B/2/1/B/R03
 ^FS
+...
 ^XZ
 ```
 
-### Port Labels (3 per page)
-```zpl
-^XA
-^MUm^LH8,19^FS
-^MUm^FO[x_offset],2
-^A0N,7,5
-^FB280,1,1,C
-^FD[SID]/[PORT]
-^FS
-^XZ
-```
+## Testing
 
-**ZPL Generation Service**
-```typescript
-interface ZPLGenerator {
-  generateCableLabel(site: string, ref: string, source: string, dest: string): string;
-  generatePortLabels(sid: string, fromPort: number, toPort: number): string;
-  generatePDULabels(pduSid: string, fromPort: number, toPort: number): string;
-}
-```
+- **Backend**: Vitest unit/integration tests, including strict ZPL structure assertions.
+- **Frontend**: Vitest + Testing Library for component and integration tests.
+- Backend tests use SQLite in-memory mode for speed and isolation.
 
-## Page Architecture
+## Non-Goals
 
-### Dashboard (/dashboard)
-- Welcome message with user context
-- Real-time statistics cards
-- Quick action navigation
-- Recent activity feed
-- Permission-based feature visibility
-
-### Label Creation (/create)
-- Site selection dropdown
-- Source/destination input fields
-- Real-time reference number preview
-- ZPL generation and download
-- Form validation and error handling
-
-### Sites Management (/sites)
-- CRUD operations for sites
-- Search and filter functionality
-- Site details with location info
-- Associated labels count
-- Bulk operations support
-
-### Label Database (/database)
-- Paginated label listing
-- Advanced search and filtering
-- Bulk ZPL export functionality
-- Edit/delete operations
-- Sort by multiple columns
-
-### Port/PDU Label Generators (/port-labels, /pdu-labels)
-- Range input validation
-- Batch ZPL generation
-- Download as .txt files
-- Preview functionality
-- Error handling for invalid ranges
-
-### Admin Panel (/admin)
-- User management interface
-- Role assignment controls
-- Permission matrix management
-- Application settings
-- User statistics and analytics
-
-## Error Handling
-
-### Client-Side Error Handling
-- Form validation with Zod schemas
-- Network error recovery with retry logic
-- User-friendly error messages
-- Loading states for async operations
-- Graceful degradation for offline scenarios
-
-### Server-Side Error Handling
-- Database constraint validation
-- Authentication/authorization errors
-- Edge function error responses
-- Audit logging for security events
-- Rate limiting and abuse prevention
-
-### Error Boundaries
-- React error boundaries for component failures
-- Fallback UI components
-- Error reporting and logging
-- Recovery mechanisms where possible
-
-## Security Design
-
-### Authentication Flow
-1. User submits credentials to Express API
-2. Server validates credentials against SQLite database
-3. JWT token generated and returned to client
-4. Token stored in localStorage with automatic refresh
-5. Token validation on protected API routes
-
-### Authorization Layers
-1. **Route Level**: ProtectedRoute component checks for valid token
-2. **Component Level**: Permission-based rendering using user context
-3. **API Level**: JWT middleware validates tokens on all protected routes
-4. **Database Level**: User ID filtering in all data queries
-
-### Data Protection
-- Password hashing with bcrypt (12 rounds minimum)
-- JWT tokens with expiration and refresh mechanism
-- Input sanitization and validation on all endpoints
-- CORS configuration for frontend-only access
-- Environment variables for JWT secrets
-
-## Testing Strategy
-
-### Unit Testing
-- Component rendering and behavior
-- Hook functionality and state management
-- Utility functions and helpers
-- Form validation logic
-- ZPL generation accuracy
-
-### Integration Testing
-- Authentication flows with JWT tokens
-- Database operations with SQLite
-- Permission system validation
-- API endpoint functionality
-- Local server startup and shutdown
-
-### End-to-End Testing
-- Complete user workflows
-- Cross-browser compatibility
-- Mobile responsiveness
-- Performance benchmarks
-- Security vulnerability scanning
-
-### Testing Tools
-- Vitest for unit testing
-- React Testing Library for component tests
-- Playwright for E2E testing
-- In-memory SQLite for integration tests
-
-## Performance Considerations
-
-### Frontend Optimization
-- Code splitting with React.lazy
-- Image optimization and lazy loading
-- Memoization for expensive calculations
-- Virtual scrolling for large lists
-- Bundle size monitoring
-
-### Backend Optimization
-- Database indexing strategy
-- Query optimization with proper joins
-- Connection pooling
-- Edge function cold start mitigation
-- CDN for static assets
-
-### Caching Strategy
-- TanStack Query for API response caching
-- Browser caching for static resources
-- Database query result caching
-- Edge function response caching
-
-## Deployment Architecture
-
-### Environment Configuration
-- Development: Local Express server + SQLite + Vite dev server
-- Production: Packaged desktop app with embedded database
-- Portable: Single executable with database file
-
-### Local Deployment
-- Express server runs on configurable port (default 3001)
-- SQLite database file stored in user data directory
-- Frontend built and served as static files
-- Database migrations run automatically on startup
-
-### Application Distribution
-- Electron wrapper for desktop distribution
-- Portable executable with embedded Node.js runtime
-- Database backup and restore functionality
-- Configuration file for customization
+- Database-enforced RLS (CableIndex enforces permissions in the API layer).
+- Supabase edge functions.
+- Electron/desktop packaging (not part of current deployment model).

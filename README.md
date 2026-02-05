@@ -8,8 +8,10 @@ A professional cable labeling system for Brady printers with automatic reference
 
 ### Core Functionality
 - 🏷️ **Cable Label Generation**: Automatic ZPL format generation for Brady printers
-- 🔢 **Smart Reference Numbering**: Sequential numbering per site with format [SITE]-[REF]
+- 🔢 **Smart Reference Numbering**: Sequential numbering per site (e.g. `#0001`, `#0002`, ...)
 - 🏢 **Multi-Site Management**: Organize labels across multiple physical locations
+- 📍 **Structured Locations**: Model locations as `label/floor/suite/row/rack` for consistent output
+- 🧵 **Cable Types**: Define per-site cable types for categorization
 - 📊 **Label Database**: Searchable database with filtering and bulk export capabilities
 
 ### Port & Equipment Labeling
@@ -25,11 +27,9 @@ A professional cable labeling system for Brady printers with automatic reference
 - 📧 **User Invitations**: Admin-controlled invitations with site assignments
 - 🛡️ **Data Security**: Password hashing, input validation, and secure sessions
 
-### Dashboard & Analytics
-- 📈 **Real-Time Statistics**: User activity, label counts, and site metrics
-- ⚡ **Quick Actions**: Fast access to common tasks and workflows
-- 📋 **Recent Activity**: Track latest label creations and modifications
-- 🎯 **Permission-Based UI**: Customized interface based on user role
+### Tools
+- 🧰 **Toolbox**: RESID, 30DAY, TEXT, RACKS, IN-RACK, PORTS, and PDU helpers
+- 🌓 **Theme Toggle**: Site-wide Day/Night mode (defaults to Night) with persistence
 
 ### Database & Deployment
 - 🗄️ **Dual Database Support**: Choose between SQLite (simple) or MySQL (scalable)
@@ -155,13 +155,14 @@ cableindex/
 │   │   ├── 📁 components/         # Reusable UI components
 │   │   │   ├── 📁 admin/          # Admin panel components
 │   │   │   ├── 📁 auth/           # Authentication forms
-│   │   │   ├── 📁 dashboard/      # Dashboard widgets
 │   │   │   ├── 📁 labels/         # Label generation components
 │   │   │   ├── 📁 layout/         # Navigation and layout
+│   │   │   ├── 📁 locations/      # Location management UI
 │   │   │   ├── 📁 profile/        # User profile management
 │   │   │   ├── 📁 sites/          # Site management components
+│   │   │   ├── 📁 tools/          # Toolbox label generators
 │   │   │   └── 📁 ui/             # shadcn/ui base components
-│   │   ├── 📁 contexts/           # React contexts (Auth, etc.)
+│   │   ├── 📁 contexts/           # React contexts (Auth, Theme)
 │   │   ├── 📁 hooks/              # Custom React hooks
 │   │   ├── 📁 lib/                # Utility functions and API client
 │   │   ├── 📁 pages/              # Page components and routing
@@ -198,15 +199,15 @@ cableindex/
 
 ### Authentication & User Management
 - `POST /api/auth/login` - User authentication with JWT tokens
-- `POST /api/auth/register` - User registration (currently disabled; use invitations)
+- `POST /api/auth/register` - Public registration is disabled (use invitations)
 - `POST /api/auth/refresh` - Refresh JWT access token
 - `GET /api/auth/me` - Get current user profile
 - `PUT /api/auth/profile` - Update user profile information
 - `PUT /api/auth/password` - Change user password
 - `POST /api/auth/logout` - Logout / invalidate session
 
-### User Administration (Legacy)
-- `GET /api/users` - List users (requires authentication)
+### User Administration (Legacy / Compatibility)
+- `GET /api/users` - List users (admin only)
 - `GET /api/users/stats` - User statistics (admin only)
 - `PUT /api/users/:id` - Update user (admin only)
 - `DELETE /api/users/:id` - Delete user (admin only)
@@ -218,10 +219,24 @@ cableindex/
 - `PUT /api/sites/:id` - Update site information
 - `DELETE /api/sites/:id` - Delete site (if no associated labels)
 
+#### Site Locations
+- `GET /api/sites/:id/locations` - List structured locations for a site
+- `POST /api/sites/:id/locations` - Create a location (site admin)
+- `PUT /api/sites/:id/locations/:locationId` - Update a location (site admin)
+- `GET /api/sites/:id/locations/:locationId/usage` - Usage counts for a location
+- `DELETE /api/sites/:id/locations/:locationId` - Delete a location (site admin; supports strategy)
+- `POST /api/sites/:id/locations/:locationId/reassign-and-delete` - Reassign labels then delete (site admin)
+
+#### Site Cable Types
+- `GET /api/sites/:id/cable-types` - List cable types for a site
+- `POST /api/sites/:id/cable-types` - Create a cable type (site admin)
+- `PUT /api/sites/:id/cable-types/:cableTypeId` - Update a cable type (site admin)
+- `DELETE /api/sites/:id/cable-types/:cableTypeId` - Delete a cable type (site admin)
+
 ### Label Operations
 - `GET /api/labels` - List labels for a site (requires `site_id`)
 - `GET /api/labels/stats` - Label statistics for a site
-- `GET /api/labels/recent` - Recent labels for dashboard (requires `site_id`)
+- `GET /api/labels/recent` - Recent labels (requires `site_id`)
 - `GET /api/labels/:id` - Get label details (requires `site_id`)
 - `POST /api/labels` - Create new label with auto-reference
 - `PUT /api/labels/:id` - Update existing label (requires `site_id`)
@@ -229,12 +244,14 @@ cableindex/
 - `POST /api/labels/bulk-delete` - Bulk delete labels (requires `site_id`)
 - `GET /api/labels/:id/zpl` - Download label as ZPL (requires `site_id`)
 - `POST /api/labels/bulk-zpl` - Bulk export labels as ZPL (requires `site_id`)
+- `POST /api/labels/bulk-zpl-range` - Export labels by reference range (requires `site_id`)
 
 ### Label Generation
 - `POST /api/labels/port-labels/zpl` - Generate port label ZPL
 - `POST /api/labels/pdu-labels/zpl` - Generate PDU label ZPL
 
 ### Admin Panel (Global Admin/Admin)
+- `GET /api/admin/overview` - Admin overview notification counts
 - `POST /api/admin/invite` - Create invitation with site assignments
 - `GET /api/admin/invitations` - List pending invitations
 - `DELETE /api/admin/invitations/:id` - Cancel invitation
@@ -247,6 +264,7 @@ cableindex/
 - `DELETE /api/admin/users/:id` - Deactivate user account
 - `GET /api/admin/settings` - Application configuration
 - `PUT /api/admin/settings` - Update application settings
+- `POST /api/admin/settings/test-email` - Send an SMTP test email
 - `GET /api/admin/stats` - System statistics (site-scoped for Admin)
 
 ### Setup & Health
@@ -264,13 +282,15 @@ cableindex/
 # Server Configuration
 PORT=3001                                    # API server port
 NODE_ENV=development                         # Environment mode
-FRONTEND_URL=http://localhost:3000          # Reserved (currently not used)
 
 # Authentication & Security
 JWT_SECRET=your-super-secret-jwt-key        # JWT signing secret (CHANGE THIS!)
 JWT_EXPIRES_IN=24h                          # Access token expiration
 JWT_REFRESH_EXPIRES_IN=7d                   # Refresh token expiration
 BCRYPT_ROUNDS=12                            # Password hashing rounds
+
+# URLs
+APP_URL=http://localhost:3000               # Base URL for invitation links (optional; falls back to request host)
 
 # Database Configuration
 DB_TYPE=sqlite                              # Database type: 'sqlite' or 'mysql' (defaults to sqlite)
@@ -285,12 +305,24 @@ MYSQL_USER=cableindex                    # MySQL username
 MYSQL_PASSWORD=your_password                # MySQL password
 MYSQL_DATABASE=cableindex                # MySQL database name
 MYSQL_SSL=false                             # Enable SSL connection
+
+# Setup Wizard
+SETUP_COMPLETE=false                        # Set true by setup wizard after initial configuration
+
+# SMTP (optional; invitations can be emailed when configured)
+# You can also configure SMTP from Admin → Settings (stored in app_settings).
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your-smtp-user
+SMTP_PASS=your-smtp-pass
+SMTP_FROM=CableIndex <noreply@example.com>
+SMTP_SECURE=false
 ```
 
 ### Frontend Environment Variables (.env)
 ```bash
 # API Configuration
-VITE_API_URL=http://localhost:3001/api      # Backend API base URL
+VITE_API_URL=http://localhost:3001/api      # Backend API base URL (development only; production uses same-origin /api)
 VITE_BASE_PATH=/                            # Base path when hosted under a sub-path
 ```
 
@@ -316,7 +348,18 @@ VITE_BASE_PATH=/                            # Base path when hosted under a sub-
 # Docker Compose Configuration
 PORT=3000                                   # Host port mapping
 JWT_SECRET=your-production-secret           # Production JWT secret
+APP_URL=https://cableindex.example.com      # Optional; used for invitation links
+
+# Database Configuration
+DB_TYPE=sqlite                              # 'sqlite' or 'mysql'
 DATABASE_PATH=/app/data/cableindex.db    # Container database path
+
+# MySQL Settings (when DB_TYPE=mysql)
+MYSQL_HOST=mysql
+MYSQL_PORT=3306
+MYSQL_USER=cableindex
+MYSQL_PASSWORD=your_password
+MYSQL_DATABASE=cableindex
 ```
 
 ## 🧪 Testing
@@ -470,7 +513,9 @@ Configure JWT settings in backend environment:
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Licensed under the PolyForm Noncommercial License 1.0.0.
+
+See [LICENSE](LICENSE).
 
 ## 🆘 Support & Troubleshooting
 
@@ -508,17 +553,16 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Review memory usage in production
 - Consider MySQL for high-traffic scenarios
 
----
-
-**Built with ❤️ for professional wire and cable management**
-
 ## 🏷️ Label Generation
 
 ### Cable Labels
 Generate professional cable labels with automatic reference numbering:
 
-**Format**: `[SITE]-[REF] [SOURCE] > [DEST]`
-**Example**: `DC1-001 Server-01 > Switch-A-Port-24`
+**Reference**: `#0001` (per-site counter, padded to 4 digits)
+
+**Printed payload** (cross-rack cable label): `#<REF>\& <SOURCE>\& <DESTINATION>`
+
+**Location print format**: `<LocationLabel>/<Floor>/<Suite>/<Row>/<Rack>`
 
 ### Port Labels
 Create consistent port labels for network equipment:
@@ -541,6 +585,7 @@ All labels generate industry-standard ZPL (Zebra Programming Language) code comp
 ### Batch Operations
 - Generate multiple port labels in sequence
 - Bulk export existing labels
+- Export a reference-number range for a single site
 - Download as .zpl or .txt files
 - Print-ready formatting
 
@@ -554,12 +599,12 @@ CableIndex uses **global roles** for system-wide access and **site roles** for p
 - **Full system access** - all features and settings
 - **User management** - invite, modify roles, deactivate users
 - **Site management** - create, edit, delete any site
-- **Analytics** - system-wide statistics and reporting
+- **Stats** - system-wide statistics endpoints
 
 **Admin**
 - **Scoped administration** - manage users and invitations within shared sites
 - **Site management** - create new sites and administer assigned sites
-- **Analytics** - site-scoped statistics and reports
+- **Stats** - site-scoped statistics endpoints
 
 **User**
 - **Standard access** - work within assigned sites
@@ -583,7 +628,7 @@ CableIndex uses **global roles** for system-wide access and **site roles** for p
 | Create sites            | ✅          | ✅    | ❌   |
 | View all sites          | ✅          | 🏢    | 🏢   |
 | System settings         | ✅          | ✅    | ❌   |
-| System-wide analytics   | ✅          | 🏢    | ❌   |
+| System-wide stats       | ✅          | 🏢    | ❌   |
 
 ### Permission Matrix (Site Roles)
 | Capability           | Site Admin | Site User |
