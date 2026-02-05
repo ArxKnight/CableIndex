@@ -81,9 +81,6 @@ export class LabelModel {
   }
 
   async findByRefNumberRange(siteId: number, startRef: number, endRef: number): Promise<Label[]> {
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-
     const safeStart = Math.max(1, Math.floor(Number(startRef)));
     const safeEnd = Math.max(1, Math.floor(Number(endRef)));
 
@@ -91,7 +88,7 @@ export class LabelModel {
       throw new Error('Invalid reference range');
     }
 
-    let query = `
+    const query = `
       SELECT
         l.id,
         l.site_id,
@@ -124,32 +121,20 @@ export class LabelModel {
     // Range-based bulk downloads must be based on BETWEEN semantics,
     // not row counts. Missing reference numbers should simply be absent.
     // Keep ordering stable.
-    void isMySQL; // retained for future query specialization
-
     const rows = await this.adapter.query(query, params);
     return (rows as any[]).map((row) => this.mapRow(row));
   }
 
   private async getNextRef(siteId: number): Promise<{ refNumber: number; refString: string }>{
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-
     await this.getSiteCode(siteId);
 
     await this.adapter.beginTransaction();
     try {
-      if (isMySQL) {
-        await this.adapter.execute(
-          `INSERT INTO site_counters (site_id, next_ref) VALUES (?, 1)
-           ON DUPLICATE KEY UPDATE next_ref = next_ref`,
-          [siteId]
-        );
-      } else {
-        await this.adapter.execute(
-          `INSERT OR IGNORE INTO site_counters (site_id, next_ref) VALUES (?, 1)`,
-          [siteId]
-        );
-      }
+      await this.adapter.execute(
+        `INSERT INTO site_counters (site_id, next_ref) VALUES (?, 1)
+         ON DUPLICATE KEY UPDATE next_ref = next_ref`,
+        [siteId]
+      );
 
       const rows = await this.adapter.query(
         `SELECT next_ref FROM site_counters WHERE site_id = ?`,
@@ -352,9 +337,6 @@ export class LabelModel {
     await this.assertLocationBelongsToSite(site_id, destination_location_id);
     await this.assertCableTypeBelongsToSite(site_id, cable_type_id);
 
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-
     // Ensures site exists and preserves previous error messages.
     await this.getSiteCode(site_id);
 
@@ -368,18 +350,11 @@ export class LabelModel {
 
     await this.adapter.beginTransaction();
     try {
-      if (isMySQL) {
-        await this.adapter.execute(
-          `INSERT INTO site_counters (site_id, next_ref) VALUES (?, 1)
-           ON DUPLICATE KEY UPDATE next_ref = next_ref`,
-          [site_id]
-        );
-      } else {
-        await this.adapter.execute(
-          `INSERT OR IGNORE INTO site_counters (site_id, next_ref) VALUES (?, 1)`,
-          [site_id]
-        );
-      }
+      await this.adapter.execute(
+        `INSERT INTO site_counters (site_id, next_ref) VALUES (?, 1)
+         ON DUPLICATE KEY UPDATE next_ref = next_ref`,
+        [site_id]
+      );
 
       const counterRows = await this.adapter.query(
         `SELECT next_ref FROM site_counters WHERE site_id = ?`,
@@ -467,8 +442,6 @@ export class LabelModel {
     const { limit = 50, offset = 0, sort_by = 'created_at', sort_order = 'DESC' } = options;
     const safeLimit = Math.max(0, parseInt(String(limit), 10) || 50);
     const safeOffset = Math.max(0, parseInt(String(offset), 10) || 0);
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
 
     let query = `
       SELECT
@@ -514,12 +487,7 @@ export class LabelModel {
 
     query += ` ORDER BY ${sort_by === 'ref_string' ? 'l.ref_string' : 'l.created_at'} ${sort_order}`;
 
-    if (isMySQL) {
-      query += ` LIMIT ${safeLimit} OFFSET ${safeOffset}`;
-    } else {
-      query += ` LIMIT ? OFFSET ?`;
-      params.push(safeLimit, safeOffset);
-    }
+    query += ` LIMIT ${safeLimit} OFFSET ${safeOffset}`;
 
     const rows = await this.adapter.query(query, params);
     return (rows as any[]).map((row) => this.mapRow(row));
@@ -571,12 +539,6 @@ export class LabelModel {
 
     if (updates.length === 0) {
       return this.findById(id, siteId);
-    }
-
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-    if (!isMySQL) {
-      updates.push('updated_at = CURRENT_TIMESTAMP');
     }
 
     values.push(id, siteId);
@@ -647,7 +609,7 @@ export class LabelModel {
         COUNT(CASE WHEN created_at >= ? THEN 1 END) as created_today
       FROM labels
       WHERE site_id = ?`,
-      [thirtyDaysAgo.toISOString(), todayStart.toISOString(), siteId]
+      [thirtyDaysAgo, todayStart, siteId]
     );
 
     const result = rows[0] as any;
@@ -660,11 +622,7 @@ export class LabelModel {
 
   async findRecentBySiteId(siteId: number, limit: number = 10): Promise<Label[]> {
     const safeLimit = Math.max(0, parseInt(String(limit), 10) || 10);
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-
-     const query = isMySQL
-      ? `SELECT
+    const query = `SELECT
          l.id,
          l.site_id,
          l.created_by,
@@ -688,35 +646,9 @@ export class LabelModel {
         LEFT JOIN site_locations sld ON sld.id = l.destination_location_id
         WHERE l.site_id = ?
         ORDER BY l.created_at DESC
-        LIMIT ${safeLimit}`
-      : `SELECT
-         l.id,
-         l.site_id,
-         l.created_by,
-         l.ref_number,
-         l.ref_string,
-         l.cable_type_id,
-         l.type,
-         l.payload_json,
-         l.source_location_id,
-         l.destination_location_id,
-         l.created_at,
-         l.updated_at,
-         s.code as site_code,
-         ct.id as ct_id, ct.name as ct_name, ct.description as ct_description, ct.created_at as ct_created_at, ct.updated_at as ct_updated_at,
-         sls.id as sls_id, sls.floor as sls_floor, sls.suite as sls_suite, sls.\`row\` as sls_row, sls.rack as sls_rack, sls.label as sls_label,
-         sld.id as sld_id, sld.floor as sld_floor, sld.suite as sld_suite, sld.\`row\` as sld_row, sld.rack as sld_rack, sld.label as sld_label
-        FROM labels l
-        JOIN sites s ON s.id = l.site_id
-        LEFT JOIN cable_types ct ON ct.id = l.cable_type_id
-        LEFT JOIN site_locations sls ON sls.id = l.source_location_id
-        LEFT JOIN site_locations sld ON sld.id = l.destination_location_id
-        WHERE l.site_id = ?
-        ORDER BY l.created_at DESC
-        LIMIT ?`;
+        LIMIT ${safeLimit}`;
 
-     const params = isMySQL ? [siteId] : [siteId, safeLimit];
-     const rows = await this.adapter.query(query, params);
+     const rows = await this.adapter.query(query, [siteId]);
      return (rows as any[]).map((row) => this.mapRow(row));
   }
 }

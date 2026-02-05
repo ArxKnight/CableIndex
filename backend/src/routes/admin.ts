@@ -11,12 +11,7 @@ const router = express.Router();
 const getUserModel = () => new UserModel();
 const getAdapter = () => connection.getAdapter();
 
-const isMySQL = () => connection.getConfig()?.type === 'mysql';
-const dbDateParam = (date: Date): Date | string => {
-  // mysql2 can safely bind JS Date objects; SQLite expects text
-  if (isMySQL()) return date;
-  return date.toISOString();
-};
+const dbDateParam = (date: Date): Date => date;
 
 /**
  * GET /api/admin/overview - Admin notification counts (admin only)
@@ -818,10 +813,7 @@ router.get('/validate-invite/:token', async (req, res) => {
 router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { search, role } = req.query;
-    const dbConfig = connection.getConfig();
-    const dbType = dbConfig?.type || 'unknown';
-    
-    console.log(`📊 Fetching users [DB: ${dbType.toUpperCase()}] for admin: ${req.user?.email}`);
+    console.log(`📊 Fetching users for admin: ${req.user?.email}`);
     const requesterRole = req.user!.role as string;
 
     let users: any[] = [];
@@ -1419,8 +1411,6 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
 
     // Persist settings in app_settings key/value table
     const adapter = getAdapter();
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
     const nowParam = dbDateParam(new Date());
 
     const settingsToPersist: Array<{ key: string; value: string }> = [];
@@ -1473,13 +1463,9 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
       }
     }
 
-    const upsertSql = isMySQL
-      ? `INSERT INTO app_settings (\`key\`, value, updated_at, created_at)
-         VALUES (?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = VALUES(updated_at)`
-      : `INSERT INTO app_settings (key, value, updated_at, created_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`;
+     const upsertSql = `INSERT INTO app_settings (\`key\`, value, updated_at, created_at)
+        VALUES (?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = VALUES(updated_at)`;
 
     await adapter.beginTransaction();
     try {

@@ -33,15 +33,14 @@ const refreshTokenSchema = z.object({
 router.post('/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
-    const dbType = process.env.DB_TYPE || 'sqlite';
-    console.log(`🔐 Login attempt for email: ${email} [DB: ${dbType.toUpperCase()}]`);
+    console.log(`🔐 Login attempt for email: ${email}`);
 
     // Validate request body
     const validated = loginSchema.parse(req.body);
     console.log(`✓ Login validation passed for: ${email}`);
 
     // Verify credentials
-    console.log(`🔍 Verifying credentials against ${dbType.toUpperCase()} for: ${email}`);
+    console.log(`🔍 Verifying credentials for: ${email}`);
     const user = await userModel.verifyCredentials(validated.email, validated.password);
     
     console.log(`🔍 verifyCredentials returned: ${user ? `user ${user.id}` : 'null'}`);

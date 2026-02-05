@@ -18,15 +18,14 @@ export async function isSetupComplete(): Promise<boolean> {
     return true;
   }
 
-  // Only attempt a DB probe if we have any database configuration hints
-  const hasDbConfig = Boolean(
-    process.env.DB_TYPE ||
-    process.env.MYSQL_HOST ||
-    process.env.MYSQL_DATABASE ||
-    (process.env.DATABASE_PATH && fs.existsSync(process.env.DATABASE_PATH))
+  const hasMySqlEnv = Boolean(
+    process.env.MYSQL_HOST &&
+    process.env.MYSQL_DATABASE &&
+    process.env.MYSQL_USER &&
+    process.env.MYSQL_PASSWORD
   );
 
-  if (!hasDbConfig) {
+  if (!hasMySqlEnv) {
     return false;
   }
 
@@ -70,18 +69,10 @@ async function usersTableExists(): Promise<boolean> {
       return false;
     }
 
-    if (config.type === 'mysql') {
-      const dbName = config.mysql?.database || 'cableindex';
-      const rows = await adapter.query(
-        'SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1',
-        [dbName, 'users']
-      );
-      return rows.length > 0;
-    }
-
-    // sqlite fallback
+    const dbName = config.database;
     const rows = await adapter.query(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+      'SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1',
+      [dbName, 'users']
     );
     return rows.length > 0;
   } catch (err) {

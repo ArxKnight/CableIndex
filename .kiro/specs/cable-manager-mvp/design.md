@@ -30,8 +30,7 @@ graph TB
         F[Express API] --> G[Route Handlers]
         F --> H[JWT Auth + Permission Middleware]
         F --> I[DB Adapter]
-        I --> J[(SQLite)]
-        I --> K[(MySQL)]
+      I --> K[(MySQL)]
     end
 
     subgraph "Setup"
@@ -62,7 +61,7 @@ graph TB
 ### Setup Wizard
 
 - Until setup is complete, the backend exposes setup endpoints and blocks normal use.
-- Setup allows selecting SQLite or MySQL, testing connectivity, and creating the initial admin.
+- Setup allows configuring MySQL connectivity, testing connectivity, and creating the initial admin.
 - Setup persists configuration so restarts do not require reconfiguration.
 
 ### Authentication & Invitations
@@ -139,7 +138,7 @@ Printed payload (cross-rack cable label):
 
 - **Backend**: Vitest unit/integration tests, including strict ZPL structure assertions.
 - **Frontend**: Vitest + Testing Library for component and integration tests.
-- Backend tests use SQLite in-memory mode for speed and isolation.
+- Backend tests run against a MySQL test database.
 
 ## Non-Goals
 

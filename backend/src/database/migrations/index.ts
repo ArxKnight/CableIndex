@@ -51,22 +51,14 @@ const migrations: Migration[] = [
 
 export async function runMigrations(): Promise<void> {
   const adapter = connection.getAdapter();
-  const config = connection.getConfig();
-  const dbType = config?.type || 'sqlite';
   
   try {
     // Create migrations table if it doesn't exist
-    const createMigrationsTable = dbType === 'sqlite' 
-      ? `CREATE TABLE IF NOT EXISTS migrations (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )`
-      : `CREATE TABLE IF NOT EXISTS migrations (
-          id VARCHAR(255) PRIMARY KEY,
-          name VARCHAR(255) NOT NULL,
-          applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )`;
+    const createMigrationsTable = `CREATE TABLE IF NOT EXISTS migrations (
+      id VARCHAR(255) PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      applied_at TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP(3)
+    )`;
     
     await adapter.execute(createMigrationsTable);
     

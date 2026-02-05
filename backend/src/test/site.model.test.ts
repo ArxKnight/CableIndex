@@ -125,6 +125,56 @@ describe('Site Model', () => {
     });
   });
 
+  describe('label counts', () => {
+    it('findByIdWithLabelCount returns label_count and site_role', async () => {
+      const createdSite = await siteModel.create({
+        name: 'Count Site',
+        code: 'CS',
+        created_by: testUserId,
+      });
+
+      await db.execute(
+        `INSERT INTO labels (site_id, ref_number, ref_string, type, created_by)
+         VALUES (?, ?, ?, ?, ?)`
+        , [createdSite.id, 1, 'CS-0001', 'cable', testUserId]
+      );
+
+      await db.execute(
+        `INSERT INTO labels (site_id, ref_number, ref_string, type, created_by)
+         VALUES (?, ?, ?, ?, ?)`
+        , [createdSite.id, 2, 'CS-0002', 'cable', testUserId]
+      );
+
+      const siteWithCount = await siteModel.findByIdWithLabelCount(createdSite.id, testUserId);
+      expect(siteWithCount).toBeDefined();
+      expect(siteWithCount!.id).toBe(createdSite.id);
+      expect(Number(siteWithCount!.label_count)).toBe(2);
+      expect(siteWithCount!.site_role).toBe('ADMIN');
+    });
+
+    it('findByUserIdWithLabelCounts returns correct label_count per site', async () => {
+      const siteA = await siteModel.create({ name: 'Site A', code: 'SA', created_by: testUserId });
+      const siteB = await siteModel.create({ name: 'Site B', code: 'SB', created_by: testUserId });
+
+      await db.execute(
+        `INSERT INTO labels (site_id, ref_number, ref_string, type, created_by)
+         VALUES (?, ?, ?, ?, ?)`
+        , [siteA.id, 1, 'SA-0001', 'cable', testUserId]
+      );
+
+      const sites = await siteModel.findByUserIdWithLabelCounts(testUserId, { limit: 50, offset: 0 });
+      const byId = new Map(sites.map(s => [s.id, s]));
+
+      expect(byId.get(siteA.id)).toBeDefined();
+      expect(Number(byId.get(siteA.id)!.label_count)).toBe(1);
+      expect(byId.get(siteA.id)!.site_role).toBe('ADMIN');
+
+      expect(byId.get(siteB.id)).toBeDefined();
+      expect(Number(byId.get(siteB.id)!.label_count)).toBe(0);
+      expect(byId.get(siteB.id)!.site_role).toBe('ADMIN');
+    });
+  });
+
   describe('update', () => {
     it('updates site data', async () => {
       const site = await siteModel.create({

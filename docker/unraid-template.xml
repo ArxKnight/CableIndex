@@ -9,7 +9,7 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/arxknight/cableindex</Support>
   <Project>https://github.com/arxknight/cableindex</Project>
-  <Overview>CableIndex - A professional cable labeling system for Brady printers with automatic reference numbering, comprehensive user management, and role-based permissions. Features modern React frontend with Express backend supporting both SQLite and MySQL databases.</Overview>
+  <Overview>CableIndex - A professional cable labeling system for Brady printers with automatic reference numbering, comprehensive user management, and role-based permissions. Features modern React frontend with Express backend optimized for MySQL.</Overview>
   <Category>Tools:</Category>
   <WebUI>http://[IP]:[PORT:3000]/</WebUI>
   <TemplateURL/>
@@ -20,7 +20,7 @@
   <DateInstalled>1640995200</DateInstalled>
   <DonateText/>
   <DonateLink/>
-  <Description>CableIndex - A professional cable labeling system for Brady printers with automatic reference numbering, comprehensive user management, and role-based permissions. Features modern React frontend with Express backend supporting both SQLite and MySQL databases.</Description>
+  <Description>CableIndex - A professional cable labeling system for Brady printers with automatic reference numbering, comprehensive user management, and role-based permissions. Features modern React frontend with Express backend optimized for MySQL.</Description>
   <Networking>
     <Mode>bridge</Mode>
     <Publish>
@@ -67,8 +67,8 @@
   </Environment>
   <Labels/>
   <Config Name="WebUI Port" Target="3000" Default="3000" Mode="tcp" Description="Port to access CableIndex on your host (container always uses 3000 internally)" Type="Port" Display="always" Required="true" Mask="false">3000</Config>
-  <Config Name="Data Directory" Target="/app/data" Default="/mnt/user/appdata/cableindex/data" Mode="rw" Description="Directory for database and application data" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/cableindex/data</Config>
-  <Config Name="Uploads Directory" Target="/app/uploads" Default="/mnt/user/appdata/cableindex/uploads" Mode="rw" Description="Directory for uploaded files" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/cableindex/uploads</Config>
+  <Config Name="Data Directory" Target="/app/data" Default="/mnt/user/appdata/cableindex/data" Mode="rw" Description="Optional directory for app marker files (setup completion)" Type="Path" Display="advanced" Required="false" Mask="false">/mnt/user/appdata/cableindex/data</Config>
+  <Config Name="Uploads Directory" Target="/app/uploads" Default="/mnt/user/appdata/cableindex/uploads" Mode="rw" Description="Optional directory for uploaded/generated files (if used)" Type="Path" Display="advanced" Required="false" Mask="false">/mnt/user/appdata/cableindex/uploads</Config>
   <Config Name="Environment" Target="NODE_ENV" Default="production" Mode="" Description="Node.js environment" Type="Variable" Display="advanced" Required="false" Mask="false">production</Config>
   <Config Name="JWT Secret" Target="JWT_SECRET" Default="" Mode="" Description="Secret key for JWT tokens (leave empty to auto-generate on first start, but recommended to set a persistent value for production)" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
 </Container>

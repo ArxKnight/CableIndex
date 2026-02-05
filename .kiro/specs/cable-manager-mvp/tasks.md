@@ -19,8 +19,8 @@ This file tracks what is implemented in CableIndex today and the next logical ro
 
 - [x] React + TypeScript + Vite frontend with Tailwind + shadcn/ui
 - [x] Express + TypeScript backend with JWT auth and request validation
-- [x] Dual DB support via adapters (SQLite and MySQL)
-- [x] First-run setup wizard (DB selection, test connection, create initial admin)
+- [x] MySQL database support
+- [x] First-run setup wizard (MySQL config, test connection, create initial admin)
 - [x] Invitation-driven registration with optional SMTP delivery
 - [x] Role/permission model (global roles + per-site roles)
 - [x] Site CRUD
@@ -40,7 +40,7 @@ This file tracks what is implemented in CableIndex today and the next logical ro
 ## Next (High Value)
 
 - [x] Decide and add repository license (`LICENSE`) and update root README accordingly (PolyForm Noncommercial 1.0.0)
-- [ ] Add backup/restore UX (SQLite file backup and/or export tools)
+- [ ] Add backup/restore UX (database backup/export tools)
 - [ ] Add admin-level “reassign then delete” flows for more entities (e.g., cable types) if needed
 - [ ] Add audit log for admin actions (invites, role changes, settings)
 - [ ] Add printer profiles / templates (label size, offsets, font sizes)
@@ -50,7 +50,7 @@ This file tracks what is implemented in CableIndex today and the next logical ro
 
 - [ ] Password reset flow (email-based) if SMTP is configured
 - [ ] More comprehensive E2E coverage (Playwright)
-- [ ] Multi-instance guidance (SQLite is single-writer; recommend MySQL for multi-instance)
+- [ ] Multi-instance guidance (replication / HA patterns)
 
 ## Validation Checklist
 

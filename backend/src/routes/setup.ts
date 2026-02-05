@@ -4,7 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
 import connection from '../database/connection.js';
-import { DatabaseConfig } from '../database/adapters/base.js';
+import { MySQLConfig } from '../database/adapters/base.js';
+import { MySQLAdapter } from '../database/adapters/mysql.js';
 import { initializeDatabase } from '../database/init.js';
 import UserModel from '../models/User.js';
 import { isSetupComplete, setupMarkerPath } from '../utils/setup.js';
@@ -14,18 +15,12 @@ const router = express.Router();
 // Setup configuration schema
 const setupSchema = z.object({
   database: z.object({
-    type: z.enum(['sqlite', 'mysql']),
-    sqlite: z.object({
-      filename: z.string().optional(),
-    }).optional(),
-    mysql: z.object({
-      host: z.string(),
-      port: z.number().min(1).max(65535),
-      user: z.string(),
-      password: z.string(),
-      database: z.string(),
-      ssl: z.boolean().optional(),
-    }).optional(),
+    host: z.string(),
+    port: z.number().min(1).max(65535),
+    user: z.string(),
+    password: z.string(),
+    database: z.string(),
+    ssl: z.boolean().optional(),
   }),
   admin: z.object({
     email: z.string().email(),
@@ -47,7 +42,7 @@ router.get('/status', async (req, res) => {
       success: true,
       setupRequired: !setupComplete,
       currentConfig: setupComplete ? {
-        database: connection.getConfig()?.type || 'unknown'
+        database: connection.getConfig() ? 'mysql' : 'unknown'
       } : null
     });
   } catch (error) {
@@ -69,41 +64,17 @@ router.post('/test-connection', async (req, res) => {
     const { database } = setupSchema.pick({ database: true }).parse(req.body);
     
     // Create temporary connection to test
-    const testConfig: DatabaseConfig = {
-      type: database.type,
+    const testConfig: MySQLConfig = {
+      host: database.host,
+      port: database.port,
+      user: database.user,
+      password: database.password,
+      database: database.database,
+      ...(database.ssl ? { ssl: {} } : {}),
     };
 
-    if (database.type === 'sqlite') {
-      testConfig.sqlite = {
-        filename: database.sqlite?.filename || '/app/data/cableindex.db'
-      };
-    } else if (database.type === 'mysql') {
-      testConfig.mysql = {
-        host: database.mysql!.host,
-        port: database.mysql!.port,
-        user: database.mysql!.user,
-        password: database.mysql!.password,
-        database: database.mysql!.database,
-        ssl: database.mysql?.ssl || false
-      };
-    }
-
     // Test connection without affecting main connection
-    let testAdapter;
-    if (database.type === 'sqlite') {
-      const { SQLiteAdapter } = await import('../database/adapters/sqlite.js');
-      testAdapter = new SQLiteAdapter(testConfig);
-    } else if (database.type === 'mysql') {
-      const { MySQLAdapter } = await import('../database/adapters/mysql.js');
-      testAdapter = new MySQLAdapter(testConfig);
-    } else {
-      res.status(400).json({
-        success: false,
-        connected: false,
-        error: 'Invalid database type'
-      });
-      return;
-    }
+    const testAdapter = new MySQLAdapter(testConfig);
 
     await testAdapter.connect();
     const isConnected = testAdapter.testConnection();
@@ -142,24 +113,14 @@ router.post('/complete', async (req, res) => {
     const setupData = setupSchema.parse(req.body);
     
     // Create database configuration
-    const dbConfig: DatabaseConfig = {
-      type: setupData.database.type,
+    const dbConfig: MySQLConfig = {
+      host: setupData.database.host,
+      port: setupData.database.port,
+      user: setupData.database.user,
+      password: setupData.database.password,
+      database: setupData.database.database,
+      ...(setupData.database.ssl ? { ssl: {} } : {}),
     };
-
-    if (setupData.database.type === 'sqlite') {
-      dbConfig.sqlite = {
-        filename: setupData.database.sqlite?.filename || '/app/data/cableindex.db'
-      };
-    } else if (setupData.database.type === 'mysql') {
-      dbConfig.mysql = {
-        host: setupData.database.mysql!.host,
-        port: setupData.database.mysql!.port,
-        user: setupData.database.mysql!.user,
-        password: setupData.database.mysql!.password,
-        database: setupData.database.mysql!.database,
-        ssl: setupData.database.mysql?.ssl || false
-      };
-    }
 
     // Connect to database
     await connection.connect(dbConfig);
@@ -216,39 +177,24 @@ router.post('/complete', async (req, res) => {
 
     // Update or add database configuration
     const dbEnvVars: string[] = [];
-    const dbType = setupData.database.type;
-    
-    if (dbType === 'mysql') {
-      dbEnvVars.push(
-        `DB_TYPE=mysql`,
-        `MYSQL_HOST=${setupData.database.mysql!.host}`,
-        `MYSQL_PORT=${setupData.database.mysql!.port}`,
-        `MYSQL_USER=${setupData.database.mysql!.user}`,
-        `MYSQL_PASSWORD=${setupData.database.mysql!.password}`,
-        `MYSQL_DATABASE=${setupData.database.mysql!.database}`,
-        `MYSQL_SSL=${setupData.database.mysql!.ssl || false}`
-      );
-    } else if (dbType === 'sqlite') {
-      dbEnvVars.push(
-        `DB_TYPE=sqlite`,
-        `DATABASE_PATH=${setupData.database.sqlite?.filename || path.join('/app', 'data', 'cableindex.db')}`
-      );
-    } else {
-      // This should never happen due to zod validation, but TypeScript requires it
-      throw new Error(`Invalid database type: ${dbType}`);
-    }
+    dbEnvVars.push(
+      `MYSQL_HOST=${setupData.database.host}`,
+      `MYSQL_PORT=${setupData.database.port}`,
+      `MYSQL_USER=${setupData.database.user}`,
+      `MYSQL_PASSWORD=${setupData.database.password}`,
+      `MYSQL_DATABASE=${setupData.database.database}`,
+      `MYSQL_SSL=${setupData.database.ssl || false}`
+    );
 
     // Remove ALL existing DB config lines (including those from Unraid) and add new ones
     const lines = envContent.split('\n').filter(line => {
       const trimmed = line.trim();
-      return !trimmed.startsWith('DB_TYPE=') &&
-             !trimmed.startsWith('MYSQL_HOST=') &&
+      return !trimmed.startsWith('MYSQL_HOST=') &&
              !trimmed.startsWith('MYSQL_PORT=') &&
              !trimmed.startsWith('MYSQL_USER=') &&
              !trimmed.startsWith('MYSQL_PASSWORD=') &&
              !trimmed.startsWith('MYSQL_DATABASE=') &&
              !trimmed.startsWith('MYSQL_SSL=') &&
-             !trimmed.startsWith('DATABASE_PATH=') &&
              !trimmed.startsWith('SETUP_COMPLETE=');
     });
     
@@ -259,14 +205,12 @@ router.post('/complete', async (req, res) => {
     console.log(`💾 Configuration saved to ${envPath}`);
     
     // Clear all database-related env vars to remove Unraid/Docker defaults
-    delete process.env.DB_TYPE;
     delete process.env.MYSQL_HOST;
     delete process.env.MYSQL_PORT;
     delete process.env.MYSQL_USER;
     delete process.env.MYSQL_PASSWORD;
     delete process.env.MYSQL_DATABASE;
     delete process.env.MYSQL_SSL;
-    delete process.env.DATABASE_PATH;
     
     // Mark setup complete in current process env
     process.env.SETUP_COMPLETE = 'true';
@@ -277,13 +221,8 @@ router.post('/complete', async (req, res) => {
     console.log('🔄 Environment variables reloaded from .env (Unraid defaults cleared)');
     
     // Log what database is now configured
-    const finalDbType = (process.env.DB_TYPE || 'sqlite') as 'sqlite' | 'mysql';
-    console.log(`✅ Database configured for setup: ${finalDbType}`);
-    if (finalDbType === 'mysql') {
-      console.log(`   Host: ${process.env.MYSQL_HOST}`);
-    } else if (finalDbType === 'sqlite') {
-      console.log(`   Path: ${process.env.DATABASE_PATH}`);
-    }
+    console.log('✅ Database configured for setup: mysql');
+    console.log(`   Host: ${process.env.MYSQL_HOST}`);
     
     // Reset database connection to force reconnection with new configuration
     await connection.reset();
@@ -298,7 +237,7 @@ router.post('/complete', async (req, res) => {
       
       fs.writeFileSync(setupMarkerPath, JSON.stringify({
         completedAt: new Date().toISOString(),
-        databaseType: setupData.database.type,
+        databaseType: 'mysql',
         adminEmail: setupData.admin.email
       }, null, 2));
       

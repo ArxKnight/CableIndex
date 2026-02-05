@@ -60,23 +60,15 @@ export class RoleService {
   }>> {
     const safeLimit = parseInt(String(limit), 10) || 50;
     const safeOffset = parseInt(String(offset), 10) || 0;
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
     const finalLimit = Math.max(0, safeLimit);
     const finalOffset = Math.max(0, safeOffset);
 
-    const query = isMySQL
-      ? `SELECT id, email, username, role, is_active, created_at, updated_at
+    const query = `SELECT id, email, username, role, is_active, created_at, updated_at
          FROM users 
          ORDER BY created_at DESC
-         LIMIT ${finalLimit} OFFSET ${finalOffset}`
-      : `SELECT id, email, username, role, is_active, created_at, updated_at
-         FROM users 
-         ORDER BY created_at DESC
-         LIMIT ? OFFSET ?`;
+         LIMIT ${finalLimit} OFFSET ${finalOffset}`;
 
-    const params = isMySQL ? [] : [finalLimit, finalOffset];
-    const rows = await this.adapter.query(query, params);
+    const rows = await this.adapter.query(query);
     
     return rows as Array<{
       id: number;

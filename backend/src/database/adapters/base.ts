@@ -1,4 +1,6 @@
-// Database adapter interface for supporting multiple database types
+// Database adapter interface (MySQL-only)
+
+import type { SslOptions } from 'mysql2';
 
 export interface DatabaseAdapter {
   connect(): Promise<void>;
@@ -13,26 +15,22 @@ export interface DatabaseAdapter {
   getLastInsertId(): number | string;
 }
 
-export interface DatabaseConfig {
-  type: 'sqlite' | 'mysql';
-  sqlite?: {
-    filename: string;
-  };
-  mysql?: {
-    host: string;
-    port: number;
-    user: string;
-    password: string;
-    database: string;
-    ssl?: boolean;
-  };
+export interface MySQLConfig {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
+  ssl?: string | SslOptions;
+  connectionLimit?: number;
+  queueLimit?: number;
 }
 
 export abstract class BaseDatabaseAdapter implements DatabaseAdapter {
-  protected config: DatabaseConfig;
+  protected config: MySQLConfig;
   protected connected: boolean = false;
 
-  constructor(config: DatabaseConfig) {
+  constructor(config: MySQLConfig) {
     this.config = config;
   }
 

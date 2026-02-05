@@ -8,7 +8,7 @@ CableIndex is a professional cable labeling system designed for Brady (and other
 - A searchable label database with export tools
 - Role-based permissions (global and per-site)
 - First-run setup wizard
-- Dual database support (SQLite or MySQL)
+- MySQL-backed persistence
 
 This document describes the requirements as the application exists today (early 2026).
 
@@ -33,7 +33,7 @@ This document describes the requirements as the application exists today (early 
 #### Acceptance Criteria
 
 1. WHEN the app has not been configured, THE system SHALL gate normal API routes and prompt users to complete setup.
-2. THE setup flow SHALL allow selecting a database type (SQLite or MySQL) and testing the connection.
+2. THE setup flow SHALL allow configuring a MySQL connection and testing the connection.
 3. WHEN setup completes, THE system SHALL persist the configuration for subsequent restarts.
 4. THE setup flow SHALL create the initial admin user.
 
@@ -138,5 +138,5 @@ This document describes the requirements as the application exists today (early 
 #### Acceptance Criteria
 
 1. THE system SHALL support Docker deployment.
-2. THE system SHALL support SQLite for single-instance deployments and MySQL for more advanced deployments.
+2. THE system SHALL require MySQL for deployments.
 3. THE system SHALL document environment variables required for operation.

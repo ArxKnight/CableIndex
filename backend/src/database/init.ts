@@ -48,7 +48,6 @@ async function seedDatabase(): Promise<void> {
   
   try {
     await adapter.beginTransaction();
-    const nowIso = new Date().toISOString();
 
     // Create default admin user if none exists
     const userCountRows = await adapter.query('SELECT COUNT(*) as count FROM users');
@@ -59,9 +58,9 @@ async function seedDatabase(): Promise<void> {
       
       // Insert default admin user (password will be hashed by the User model)
       const insertUser = await adapter.execute(
-        `INSERT INTO users (email, password_hash, username, role, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        ['admin@example.com', 'temp_hash', 'System Administrator', 'GLOBAL_ADMIN', nowIso, nowIso]
+        `INSERT INTO users (email, password_hash, username, role)
+         VALUES (?, ?, ?, ?)`,
+        ['admin@example.com', 'temp_hash', 'System Administrator', 'GLOBAL_ADMIN']
       );
       
       // Note: This is a placeholder - actual password hashing should be done by the User model
@@ -80,12 +79,12 @@ async function seedDatabase(): Promise<void> {
       console.log('Creating default application settings...');
       
       const insertSettingSql = `
-        INSERT INTO app_settings (key, value, created_at, updated_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO app_settings (\`key\`, value)
+        VALUES (?, ?)
       `;
       
-      await adapter.execute(insertSettingSql, ['app_name', 'Cable Manager MVP', nowIso, nowIso]);
-      await adapter.execute(insertSettingSql, ['app_version', '1.0.0', nowIso, nowIso]);
+      await adapter.execute(insertSettingSql, ['app_name', 'Cable Manager MVP']);
+      await adapter.execute(insertSettingSql, ['app_version', '1.0.0']);
       
       console.log('✅ Default application settings created');
     }

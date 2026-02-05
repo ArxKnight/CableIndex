@@ -79,8 +79,6 @@ export class SiteModel {
     const { search, limit = 50, offset = 0 } = options;
     const safeLimit = parseInt(String(limit), 10) || 50;
     const safeOffset = parseInt(String(offset), 10) || 0;
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
     const finalLimit = Math.max(0, safeLimit);
     const finalOffset = Math.max(0, safeOffset);
     
@@ -100,12 +98,7 @@ export class SiteModel {
       params.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
     
-    if (isMySQL) {
-      query += ` ORDER BY name ASC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
-    } else {
-      query += ` ORDER BY name ASC LIMIT ? OFFSET ?`;
-      params.push(finalLimit, finalOffset);
-    }
+    query += ` ORDER BY name ASC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
     
     const rows = await this.adapter.query(query, params);
     return rows as Site[];
@@ -122,8 +115,6 @@ export class SiteModel {
     const { search, limit = 50, offset = 0 } = options;
     const safeLimit = parseInt(String(limit), 10) || 50;
     const safeOffset = parseInt(String(offset), 10) || 0;
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
     const finalLimit = Math.max(0, safeLimit);
     const finalOffset = Math.max(0, safeOffset);
 
@@ -141,12 +132,7 @@ export class SiteModel {
       params.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
 
-    if (isMySQL) {
-      query += ` ORDER BY name ASC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
-    } else {
-      query += ` ORDER BY name ASC LIMIT ? OFFSET ?`;
-      params.push(finalLimit, finalOffset);
-    }
+    query += ` ORDER BY name ASC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
 
     const rows = await this.adapter.query(query, params);
     return rows as Site[];
@@ -163,8 +149,6 @@ export class SiteModel {
     const { search, limit = 50, offset = 0 } = options;
     const safeLimit = parseInt(String(limit), 10) || 50;
     const safeOffset = parseInt(String(offset), 10) || 0;
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
     const finalLimit = Math.max(0, safeLimit);
     const finalOffset = Math.max(0, safeOffset);
 
@@ -185,12 +169,7 @@ export class SiteModel {
       params.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
 
-    if (isMySQL) {
-      query += ` GROUP BY s.id ORDER BY s.name ASC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
-    } else {
-      query += ` GROUP BY s.id ORDER BY s.name ASC LIMIT ? OFFSET ?`;
-      params.push(finalLimit, finalOffset);
-    }
+    query += ` GROUP BY s.id ORDER BY s.name ASC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
 
     const rows = await this.adapter.query(query, params);
     return rows as (Site & { label_count: number })[];
@@ -227,13 +206,6 @@ export class SiteModel {
       return this.findById(id);
     }
 
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-    
-    if (!isMySQL) {
-      updates.push('updated_at = CURRENT_TIMESTAMP');
-    }
-    
     values.push(id);
 
     const result = await this.adapter.execute(
@@ -344,13 +316,17 @@ export class SiteModel {
     const rows = await this.adapter.query(
       `SELECT 
         s.id, s.name, s.code, s.created_by, s.location, s.description, s.is_active, s.created_at, s.updated_at,
-        COUNT(l.id) as label_count,
+        COALESCE(lc.label_count, 0) as label_count,
         sm.site_role as site_role
       FROM sites s
       LEFT JOIN site_memberships sm ON sm.site_id = s.id AND sm.user_id = ?
-      LEFT JOIN labels l ON s.id = l.site_id
+      LEFT JOIN (
+        SELECT site_id, COUNT(*) as label_count
+        FROM labels
+        GROUP BY site_id
+      ) lc ON lc.site_id = s.id
       WHERE s.id = ? AND s.is_active = 1
-      GROUP BY s.id`,
+      `,
       [userId, id]
     );
     
@@ -370,19 +346,21 @@ export class SiteModel {
     // Ensure limit and offset are integers for MySQL prepared statements
     const safeLimit = parseInt(String(limit), 10) || 50;
     const safeOffset = parseInt(String(offset), 10) || 0;
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
     const finalLimit = Math.max(0, safeLimit);
     const finalOffset = Math.max(0, safeOffset);
     
     let query = `
       SELECT 
         s.id, s.name, s.code, s.created_by, s.location, s.description, s.is_active, s.created_at, s.updated_at,
-        COUNT(l.id) as label_count,
+        COALESCE(lc.label_count, 0) as label_count,
         sm.site_role as site_role
       FROM sites s
       JOIN site_memberships sm ON sm.site_id = s.id
-      LEFT JOIN labels l ON s.id = l.site_id
+      LEFT JOIN (
+        SELECT site_id, COUNT(*) as label_count
+        FROM labels
+        GROUP BY site_id
+      ) lc ON lc.site_id = s.id
       WHERE sm.user_id = ? AND s.is_active = 1
     `;
     
@@ -394,12 +372,7 @@ export class SiteModel {
       params.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
     
-    if (isMySQL) {
-      query += ` GROUP BY s.id ORDER BY s.name ASC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
-    } else {
-      query += ` GROUP BY s.id ORDER BY s.name ASC LIMIT ? OFFSET ?`;
-      params.push(finalLimit, finalOffset);
-    }
+    query += ` ORDER BY s.name ASC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
     
     const rows = await this.adapter.query(query, params);
     return rows as (Site & { label_count: number })[];

@@ -80,12 +80,6 @@ export class CableTypeModel {
 
     if (!updates.length) return this.findById(id, siteId);
 
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-    if (!isMySQL) {
-      updates.push('updated_at = CURRENT_TIMESTAMP');
-    }
-
     values.push(id, siteId);
 
     const result = await this.adapter.execute(

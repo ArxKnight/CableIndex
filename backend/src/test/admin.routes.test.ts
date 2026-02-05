@@ -164,7 +164,7 @@ describe('Admin Routes', () => {
     beforeEach(async () => {
       const insertInvitation = async (opts: { email: string; token: string; username: string; siteId: number; siteRole: 'ADMIN' | 'USER' }) => {
         const tokenHash = crypto.createHash('sha256').update(opts.token).digest('hex');
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+          const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
         const result = await db.execute(
           `INSERT INTO invitations (email, username, token_hash, invited_by, expires_at)
            VALUES (?, ?, ?, ?, ?)`,
@@ -217,7 +217,7 @@ describe('Admin Routes', () => {
     beforeEach(async () => {
       const token = 'token123';
       const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
       const result = await db.execute(
         `INSERT INTO invitations (email, username, token_hash, invited_by, expires_at)
          VALUES (?, ?, ?, ?, ?)`,
@@ -271,7 +271,7 @@ describe('Admin Routes', () => {
     beforeEach(async () => {
       validToken = 'valid-token-123';
       const tokenHash = crypto.createHash('sha256').update(validToken).digest('hex');
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
       const result = await db.execute(
         `INSERT INTO invitations (email, username, token_hash, invited_by, expires_at)
          VALUES (?, ?, ?, ?, ?)`,
@@ -310,7 +310,7 @@ describe('Admin Routes', () => {
       // Create expired invitation
       const expiredToken = 'expired-token-123';
       const tokenHash = crypto.createHash('sha256').update(expiredToken).digest('hex');
-      const expiredAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const expiredAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
       const result = await db.execute(
         `INSERT INTO invitations (email, username, token_hash, invited_by, expires_at)
          VALUES (?, ?, ?, ?, ?)`,
@@ -338,7 +338,7 @@ describe('Admin Routes', () => {
     beforeEach(async () => {
       validToken = 'valid-token-123';
       const tokenHash = crypto.createHash('sha256').update(validToken).digest('hex');
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
       const result = await db.execute(
         `INSERT INTO invitations (email, username, token_hash, invited_by, expires_at)
          VALUES (?, ?, ?, ?, ?)`,
@@ -420,7 +420,7 @@ describe('Admin Routes', () => {
       // Create another invitation for the same email
       const newToken = 'new-token-123';
       const tokenHash = crypto.createHash('sha256').update(newToken).digest('hex');
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
       const result = await db.execute(
         `INSERT INTO invitations (email, username, token_hash, invited_by, expires_at)
          VALUES (?, ?, ?, ?, ?)`,

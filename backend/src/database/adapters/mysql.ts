@@ -1,42 +1,33 @@
-// MySQL adapter with safe dynamic import
-import { BaseDatabaseAdapter, DatabaseConfig } from './base.js';
+import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import mysql from 'mysql2/promise';
+import { BaseDatabaseAdapter, MySQLConfig } from './base.js';
 
 export class MySQLAdapter extends BaseDatabaseAdapter {
-  private connection: any = null;
-  private pool: any = null;
-  private mysql: any = null;
+  private connection: PoolConnection | null = null;
+  private pool: Pool | null = null;
 
-  constructor(config: DatabaseConfig) {
+  constructor(config: MySQLConfig) {
     super(config);
-    if (!config.mysql) {
-      throw new Error('MySQL configuration is required');
-    }
   }
 
   async connect(): Promise<void> {
     try {
-      // Dynamic import with error handling
-      try {
-        this.mysql = await import('mysql2/promise');
-      } catch (importError) {
-        throw new Error('MySQL driver (mysql2) is not installed. Please install mysql2 package.');
-      }
-
-      const mysqlConfig = this.config.mysql!;
+      const mysqlConfig = this.config;
       
       // First, try to connect to the database
       try {
         // Create connection pool for better performance
-        this.pool = this.mysql.createPool({
+        this.pool = mysql.createPool({
           host: mysqlConfig.host,
           port: mysqlConfig.port,
           user: mysqlConfig.user,
           password: mysqlConfig.password,
           database: mysqlConfig.database,
-          ssl: mysqlConfig.ssl,
+          ...(mysqlConfig.ssl ? { ssl: mysqlConfig.ssl } : {}),
           waitForConnections: true,
-          connectionLimit: 10,
-          queueLimit: 0,
+          connectionLimit: mysqlConfig.connectionLimit ?? 10,
+          queueLimit: mysqlConfig.queueLimit ?? 0,
+          timezone: 'Z',
         });
 
         // Test the connection
@@ -52,37 +43,41 @@ export class MySQLAdapter extends BaseDatabaseAdapter {
           console.log(`📦 Database '${mysqlConfig.database}' does not exist. Creating...`);
           
           // Connect without specifying a database
-          const tempPool = this.mysql.createPool({
+          const tempPool = mysql.createPool({
             host: mysqlConfig.host,
             port: mysqlConfig.port,
             user: mysqlConfig.user,
             password: mysqlConfig.password,
-            ssl: mysqlConfig.ssl,
+            ...(mysqlConfig.ssl ? { ssl: mysqlConfig.ssl } : {}),
             waitForConnections: true,
-            connectionLimit: 10,
-            queueLimit: 0,
+            connectionLimit: mysqlConfig.connectionLimit ?? 10,
+            queueLimit: mysqlConfig.queueLimit ?? 0,
+            timezone: 'Z',
           });
 
           try {
             const tempConn = await tempPool.getConnection();
             // Create the database
-            await tempConn.query(`CREATE DATABASE IF NOT EXISTS \`${mysqlConfig.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+            await tempConn.query(
+              `CREATE DATABASE IF NOT EXISTS \`${mysqlConfig.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+            );
             tempConn.release();
             await tempPool.end();
             
             console.log(`✅ Database '${mysqlConfig.database}' created successfully`);
 
             // Now connect to the newly created database
-            this.pool = this.mysql.createPool({
+            this.pool = mysql.createPool({
               host: mysqlConfig.host,
               port: mysqlConfig.port,
               user: mysqlConfig.user,
               password: mysqlConfig.password,
               database: mysqlConfig.database,
-              ssl: mysqlConfig.ssl,
+              ...(mysqlConfig.ssl ? { ssl: mysqlConfig.ssl } : {}),
               waitForConnections: true,
-              connectionLimit: 10,
-              queueLimit: 0,
+              connectionLimit: mysqlConfig.connectionLimit ?? 10,
+              queueLimit: mysqlConfig.queueLimit ?? 0,
+              timezone: 'Z',
             });
 
             this.connection = await this.pool.getConnection();
@@ -123,8 +118,8 @@ export class MySQLAdapter extends BaseDatabaseAdapter {
     if (!this.pool) throw new Error('Database not connected');
     
     try {
-      const [rows] = await this.pool.execute(sql, params);
-      return Array.isArray(rows) ? rows : [rows];
+      const [rows] = await this.pool.execute<RowDataPacket[]>(sql, params);
+      return Array.isArray(rows) ? rows : [rows as any];
     } catch (error) {
       console.error('MySQL query error:', error);
       throw error;
@@ -135,8 +130,8 @@ export class MySQLAdapter extends BaseDatabaseAdapter {
     if (!this.pool) throw new Error('Database not connected');
     
     try {
-      const [result] = await this.pool.execute(sql, params);
-      const mysqlResult = result as any;
+      const [result] = await this.pool.execute<ResultSetHeader>(sql, params);
+      const mysqlResult = result as ResultSetHeader;
       return {
         insertId: mysqlResult.insertId,
         affectedRows: mysqlResult.affectedRows

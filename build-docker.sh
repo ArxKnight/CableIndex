@@ -25,7 +25,7 @@ fi
 echo "✅ Docker image built successfully!"
 echo ""
 echo "🚀 To run the container:"
-echo "   docker run -d -p 3000:3000 -v cable-data:/app/data -v cable-uploads:/app/uploads cable-manager:latest"
+echo "   docker run -d -p 3000:3000 -v cable-uploads:/app/uploads cable-manager:latest"
 echo ""
 echo "📋 Or use docker-compose:"
 echo "   docker-compose up -d"

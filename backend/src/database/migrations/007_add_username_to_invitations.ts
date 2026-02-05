@@ -1,29 +1,12 @@
 import type { DatabaseAdapter } from '../adapters/base.js';
-import connection from '../connection.js';
+import { columnExists as columnExistsHelper } from './schemaChecks.js';
 
 export const up = async (adapter: DatabaseAdapter): Promise<void> => {
   console.log('Running migration: 007_add_username_to_invitations');
 
-  const config = connection.getConfig();
-  const isMySQL = config?.type === 'mysql';
-
-  const columnExists = async (tableName: string, columnName: string): Promise<boolean> => {
-    if (isMySQL) {
-      const rows = await adapter.query(`SHOW COLUMNS FROM ${tableName} LIKE ?`, [columnName]);
-      return rows.length > 0;
-    }
-
-    const rows = await adapter.query(`PRAGMA table_info(${tableName})`);
-    return rows.some((r: any) => String(r.name) === columnName);
-  };
-
   // Add username column
-  if (!(await columnExists('invitations', 'username'))) {
-    await adapter.execute(
-      isMySQL
-        ? `ALTER TABLE invitations ADD COLUMN username VARCHAR(100)`
-        : `ALTER TABLE invitations ADD COLUMN username TEXT`
-    );
+  if (!(await columnExistsHelper(adapter, 'invitations', 'username'))) {
+    await adapter.execute(`ALTER TABLE invitations ADD COLUMN username VARCHAR(100)`);
   }
 
   // Ensure legacy rows have a non-empty username.
@@ -42,7 +25,7 @@ export const down = async (adapter: DatabaseAdapter): Promise<void> => {
   try {
     await adapter.execute(`ALTER TABLE invitations DROP COLUMN username`);
   } catch {
-    // Ignore rollback failures for older SQLite versions.
+    // Best-effort rollback.
   }
   console.log('Rollback 007_add_username_to_invitations completed');
 };

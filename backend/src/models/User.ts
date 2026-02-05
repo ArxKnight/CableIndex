@@ -61,16 +61,9 @@ export class UserModel {
    * Find user by email
    */
   async findByEmail(email: string): Promise<User | null> {
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-    
-    // MySQL is case-insensitive by default for VARCHAR, SQLite needs COLLATE NOCASE
     const rows = await this.adapter.query(
-      isMySQL
-        ? `SELECT id, email, username, password_hash, role, is_active, created_at, updated_at
-           FROM users WHERE email = ?`
-        : `SELECT id, email, username, password_hash, role, is_active, created_at, updated_at
-           FROM users WHERE email = ? COLLATE NOCASE`,
+      `SELECT id, email, username, password_hash, role, is_active, created_at, updated_at
+       FROM users WHERE email = ?`,
       [email]
     );
     
@@ -133,14 +126,6 @@ export class UserModel {
       return this.findById(id);
     }
 
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-    
-    // MySQL handles updated_at automatically with ON UPDATE CURRENT_TIMESTAMP
-    if (!isMySQL) {
-      updates.push('updated_at = CURRENT_TIMESTAMP');
-    }
-    
     values.push(id);
 
     const result = await this.adapter.execute(
@@ -162,14 +147,9 @@ export class UserModel {
    */
   async updatePassword(id: number, newPassword: string): Promise<boolean> {
     const password_hash = await hashPassword(newPassword);
-    
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-    
+
     const result = await this.adapter.execute(
-      isMySQL
-        ? `UPDATE users SET password_hash = ? WHERE id = ?`
-        : `UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      `UPDATE users SET password_hash = ? WHERE id = ?`,
       [password_hash, id]
     );
 
@@ -190,23 +170,15 @@ export class UserModel {
   async findAll(limit: number = 50, offset: number = 0): Promise<User[]> {
     const safeLimit = parseInt(String(limit), 10) || 50;
     const safeOffset = parseInt(String(offset), 10) || 0;
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
     const finalLimit = Math.max(0, safeLimit);
     const finalOffset = Math.max(0, safeOffset);
 
-    const query = isMySQL
-      ? `SELECT id, email, username, password_hash, role, is_active, created_at, updated_at
-         FROM users 
-         ORDER BY created_at DESC
-         LIMIT ${finalLimit} OFFSET ${finalOffset}`
-      : `SELECT id, email, username, password_hash, role, is_active, created_at, updated_at
-         FROM users 
-         ORDER BY created_at DESC
-         LIMIT ? OFFSET ?`;
-
-    const params = isMySQL ? [] : [finalLimit, finalOffset];
-    const rows = await this.adapter.query(query, params);
+    const rows = await this.adapter.query(
+      `SELECT id, email, username, password_hash, role, is_active, created_at, updated_at
+       FROM users 
+       ORDER BY created_at DESC
+       LIMIT ${finalLimit} OFFSET ${finalOffset}`
+    );
     
     return rows as User[];
   }
@@ -223,22 +195,15 @@ export class UserModel {
    * Check if email exists
    */
   async emailExists(email: string, excludeId?: number): Promise<boolean> {
-    const config = connection.getConfig();
-    const isMySQL = config?.type === 'mysql';
-    
     let rows;
     if (excludeId) {
       rows = await this.adapter.query(
-        isMySQL
-          ? 'SELECT 1 FROM users WHERE email = ? AND id != ?'
-          : 'SELECT 1 FROM users WHERE email = ? COLLATE NOCASE AND id != ?',
+        'SELECT 1 FROM users WHERE email = ? AND id != ?',
         [email, excludeId]
       );
     } else {
       rows = await this.adapter.query(
-        isMySQL
-          ? 'SELECT 1 FROM users WHERE email = ?'
-          : 'SELECT 1 FROM users WHERE email = ? COLLATE NOCASE',
+        'SELECT 1 FROM users WHERE email = ?',
         [email]
       );
     }

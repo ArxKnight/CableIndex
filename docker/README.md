@@ -37,23 +37,21 @@ This guide will help you deploy cableindex on Unraid using Docker.
 - **Container Port**: Keep this as 3000 (internal application port)
 
 #### Volume Mappings
-- **Data Directory**: `/mnt/user/appdata/cableindex/data` → `/app/data`
-  - Contains the SQLite database and application data
-- **Uploads Directory**: `/mnt/user/appdata/cableindex/uploads` → `/app/uploads`
-  - Contains uploaded files and generated labels
+- **Data Directory**: `/mnt/user/appdata/cableindex/data` → `/app/data` (optional)
+  - Contains small app marker files (e.g., setup completion marker)
+- **Uploads Directory**: `/mnt/user/appdata/cableindex/uploads` → `/app/uploads` (optional)
+  - Optional persistence location if you add/use uploaded or generated files
 
 #### Environment Variables
 - **PORT**: Internal application port (default: 3000)
 - **NODE_ENV**: Environment mode (default: production)
 - **JWT_SECRET**: Secret key for authentication (auto-generated if empty)
-- **DATABASE_PATH**: Path to SQLite database file (SQLite only)
-- **DB_TYPE**: Database type - 'sqlite' or 'mysql' (default: sqlite)
-- **MYSQL_HOST**: MySQL server hostname (MySQL only)
-- **MYSQL_PORT**: MySQL server port (MySQL only, default: 3306)
-- **MYSQL_USER**: MySQL username (MySQL only)
-- **MYSQL_PASSWORD**: MySQL password (MySQL only)
-- **MYSQL_DATABASE**: MySQL database name (MySQL only, default: cableindex)
-- **MYSQL_SSL**: Enable SSL for MySQL connection (MySQL only, default: false)
+- **MYSQL_HOST**: MySQL server hostname
+- **MYSQL_PORT**: MySQL server port (default: 3306)
+- **MYSQL_USER**: MySQL username
+- **MYSQL_PASSWORD**: MySQL password
+- **MYSQL_DATABASE**: MySQL database name (default: cableindex)
+- **MYSQL_SSL**: Enable SSL for MySQL connection (default: false)
 
 ### Example Unraid Docker Run Command
 
@@ -80,33 +78,13 @@ After deployment, access cableindex at:
 
 When you first access cableindex, you'll be presented with a setup wizard that allows you to:
 
-1. **Choose Database Type**:
-   - **SQLite** (Recommended): Simple, file-based database perfect for most users
-   - **MySQL**: For advanced users who want to use an external MySQL server
-
-2. **Configure Database Connection**:
-   - For SQLite: Specify the database file location
-   - For MySQL: Enter connection details (host, port, username, password, database name)
-
-3. **Create Admin Account**: Set up the initial administrator user
-
-4. **Complete Setup**: The system will initialize the database and create your admin account
-
-### Database Options
-
-#### SQLite (Default)
-- **Pros**: Zero configuration, easy backup, perfect for single-server deployments
-- **Cons**: Not suitable for multiple application instances
-- **Best for**: Most Unraid users, home labs, small businesses
-
-#### MySQL
-- **Pros**: Supports multiple application instances, better for high-traffic scenarios
-- **Cons**: Requires separate MySQL server, more complex setup
-- **Best for**: Advanced users, multiple cableindex instances, existing MySQL infrastructure
+1. **Configure MySQL Connection**: Enter connection details (host, port, username, password, database name)
+2. **Create Admin Account**: Set up the initial administrator user
+3. **Complete Setup**: The system will initialize the database and create your admin account
 
 ### External MySQL Setup
 
-If you choose MySQL during setup, you can:
+CableIndex requires MySQL. You can:
 1. Use an existing MySQL server on your network
 2. Run a separate MySQL container on Unraid
 3. Use a cloud MySQL service
@@ -124,8 +102,10 @@ docker run -d \
 
 ### Data Persistence
 
-All data is stored in the mounted volumes:
-- Database: `/mnt/user/appdata/cableindex/data/cableindex.db`
+CableIndex is MySQL-only. Persist your database by persisting your MySQL server/container data.
+
+Optional mounts:
+- Marker files: `/mnt/user/appdata/cableindex/data/`
 - Uploads: `/mnt/user/appdata/cableindex/uploads/`
 
 ### Backup

@@ -6,30 +6,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CheckCircle, Database, User, Settings, AlertCircle, Loader2 } from 'lucide-react';
 
 const setupSchema = z.object({
   database: z.object({
-    type: z.enum(['sqlite', 'mysql']),
-    sqlite: z.object({
-      filename: z.string().optional(),
-    }).optional(),
-    mysql: z.object({
-      host: z.string().min(1, 'Host is required'),
-      port: z.number().min(1).max(65535),
-      user: z.string().min(1, 'Username is required'),
-      password: z.string(),
-      database: z.string().min(1, 'Database name is required'),
-      ssl: z.boolean().optional(),
-    }).optional(),
+    host: z.string().min(1, 'Host is required'),
+    port: z.number().min(1).max(65535),
+    user: z.string().min(1, 'Username is required'),
+    password: z.string(),
+    database: z.string().min(1, 'Database name is required'),
+    ssl: z.boolean().optional(),
   }),
   admin: z.object({
     email: z.string().email('Invalid email address'),
     password: z.string().min(8, 'Password must be at least 8 characters'),
-    fullName: z.string().min(1, 'Full name is required'),
+    username: z.string().min(1, 'Username is required'),
   }),
 });
 
@@ -46,35 +39,26 @@ const SetupPage: React.FC = () => {
     register,
     handleSubmit,
     watch,
-    setValue,
     formState: { errors },
     trigger,
   } = useForm<SetupFormData>({
     resolver: zodResolver(setupSchema),
     defaultValues: {
       database: {
-        type: 'sqlite',
-        sqlite: {
-          filename: '/app/data/cableindex.db',
-        },
-        mysql: {
-          host: 'localhost',
-          port: 3306,
-          user: 'root',
-          password: '',
-          database: 'cableindex',
-          ssl: false,
-        },
+        host: 'localhost',
+        port: 3306,
+        user: 'root',
+        password: '',
+        database: 'cableindex',
+        ssl: false,
       },
       admin: {
         email: '',
         password: '',
-        fullName: '',
+        username: '',
       },
     },
   });
-
-  const databaseType = watch('database.type');
 
   // Test database connection
   const testConnection = async () => {
@@ -208,98 +192,66 @@ const SetupPage: React.FC = () => {
             <form onSubmit={handleSubmit(onSubmit)}>
               <TabsContent value="1" className="space-y-4">
                 <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="database-type">Database Type</Label>
-                    <Select
-                      value={databaseType}
-                      onValueChange={(value) => setValue('database.type', value as 'sqlite' | 'mysql')}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="sqlite">SQLite (Recommended)</SelectItem>
-                        <SelectItem value="mysql">MySQL</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {databaseType === 'sqlite' && (
-                    <div>
-                      <Label htmlFor="sqlite-filename">Database File Path</Label>
-                      <Input
-                        id="sqlite-filename"
-                        {...register('database.sqlite.filename')}
-                        placeholder="/app/data/cableindex.db"
-                      />
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Path where the SQLite database file will be stored
-                      </p>
-                    </div>
-                  )}
-
-                  {databaseType === 'mysql' && (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="mysql-host">Host</Label>
-                          <Input
-                            id="mysql-host"
-                            {...register('database.mysql.host')}
-                            placeholder="localhost"
-                          />
-                          {errors.database?.mysql?.host && (
-                            <p className="text-sm text-destructive">{errors.database.mysql.host.message}</p>
-                          )}
-                        </div>
-                        <div>
-                          <Label htmlFor="mysql-port">Port</Label>
-                          <Input
-                            id="mysql-port"
-                            type="number"
-                            {...register('database.mysql.port', { valueAsNumber: true })}
-                            placeholder="3306"
-                          />
-                          {errors.database?.mysql?.port && (
-                            <p className="text-sm text-destructive">{errors.database.mysql.port.message}</p>
-                          )}
-                        </div>
-                      </div>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <Label htmlFor="mysql-database">Database Name</Label>
+                        <Label htmlFor="mysql-host">Host</Label>
                         <Input
-                          id="mysql-database"
-                          {...register('database.mysql.database')}
-                          placeholder="cableindex"
+                          id="mysql-host"
+                          {...register('database.host')}
+                          placeholder="localhost"
                         />
-                        {errors.database?.mysql?.database && (
-                          <p className="text-sm text-destructive">{errors.database.mysql.database.message}</p>
+                        {errors.database?.host && (
+                          <p className="text-sm text-destructive">{errors.database.host.message}</p>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="mysql-user">Username</Label>
-                          <Input
-                            id="mysql-user"
-                            {...register('database.mysql.user')}
-                            placeholder="root"
-                          />
-                          {errors.database?.mysql?.user && (
-                            <p className="text-sm text-destructive">{errors.database.mysql.user.message}</p>
-                          )}
-                        </div>
-                        <div>
-                          <Label htmlFor="mysql-password">Password</Label>
-                          <Input
-                            id="mysql-password"
-                            type="password"
-                            {...register('database.mysql.password')}
-                            placeholder="Password"
-                          />
-                        </div>
+                      <div>
+                        <Label htmlFor="mysql-port">Port</Label>
+                        <Input
+                          id="mysql-port"
+                          type="number"
+                          {...register('database.port', { valueAsNumber: true })}
+                          placeholder="3306"
+                        />
+                        {errors.database?.port && (
+                          <p className="text-sm text-destructive">{errors.database.port.message}</p>
+                        )}
                       </div>
                     </div>
-                  )}
+                    <div>
+                      <Label htmlFor="mysql-database">Database Name</Label>
+                      <Input
+                        id="mysql-database"
+                        {...register('database.database')}
+                        placeholder="cableindex"
+                      />
+                      {errors.database?.database && (
+                        <p className="text-sm text-destructive">{errors.database.database.message}</p>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="mysql-user">Username</Label>
+                        <Input
+                          id="mysql-user"
+                          {...register('database.user')}
+                          placeholder="root"
+                        />
+                        {errors.database?.user && (
+                          <p className="text-sm text-destructive">{errors.database.user.message}</p>
+                        )}
+                      </div>
+                      <div>
+                        <Label htmlFor="mysql-password">Password</Label>
+                        <Input
+                          id="mysql-password"
+                          type="password"
+                          {...register('database.password')}
+                          placeholder="Password"
+                        />
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="flex gap-2">
                     <Button type="button" onClick={testConnection} disabled={connectionStatus === 'testing'}>
@@ -348,14 +300,14 @@ const SetupPage: React.FC = () => {
                     )}
                   </div>
                   <div>
-                    <Label htmlFor="admin-fullName">Global Admin Full Name</Label>
+                    <Label htmlFor="admin-username">Global Admin Username</Label>
                     <Input
-                      id="admin-fullName"
-                      {...register('admin.fullName')}
-                      placeholder="Administrator"
+                      id="admin-username"
+                      {...register('admin.username')}
+                      placeholder="admin"
                     />
-                    {errors.admin?.fullName && (
-                      <p className="text-sm text-destructive">{errors.admin.fullName.message}</p>
+                    {errors.admin?.username && (
+                      <p className="text-sm text-destructive">{errors.admin.username.message}</p>
                     )}
                   </div>
                   <div>
@@ -389,13 +341,9 @@ const SetupPage: React.FC = () => {
                   <div className="space-y-2">
                     <h4 className="font-medium">Database</h4>
                     <p className="text-sm text-muted-foreground">
-                      Type: {databaseType.toUpperCase()}
-                      {databaseType === 'mysql' && (
-                        <>
-                          <br />Host: {watch('database.mysql.host')}:{watch('database.mysql.port')}
-                          <br />Database: {watch('database.mysql.database')}
-                        </>
-                      )}
+                      Type: MYSQL
+                      <br />Host: {watch('database.host')}:{watch('database.port')}
+                      <br />Database: {watch('database.database')}
                     </p>
                   </div>
 
@@ -403,7 +351,7 @@ const SetupPage: React.FC = () => {
                     <h4 className="font-medium">Global Admin User</h4>
                     <p className="text-sm text-muted-foreground">
                       Email: {watch('admin.email')}
-                      <br />Name: {watch('admin.fullName')}
+                      <br />Username: {watch('admin.username')}
                     </p>
                   </div>
                 </div>

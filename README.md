@@ -2,7 +2,7 @@
 
 ![CableIndex Logo](frontend/public/cableindex-logo.png)
 
-A professional cable labeling system for Brady printers with automatic reference numbering, comprehensive user management, role-based permissions, and multi-database support. Features a modern React frontend with Express backend, supporting both SQLite and MySQL databases with Docker deployment options.
+A professional cable labeling system for Brady printers with automatic reference numbering, comprehensive user management, role-based permissions, and MySQL-backed persistence. Features a modern React frontend with Express backend and Docker deployment options.
 
 ## ✨ Features
 
@@ -32,10 +32,10 @@ A professional cable labeling system for Brady printers with automatic reference
 - 🌓 **Theme Toggle**: Site-wide Day/Night mode (defaults to Night) with persistence
 
 ### Database & Deployment
-- 🗄️ **Dual Database Support**: Choose between SQLite (simple) or MySQL (scalable)
+- 🗄️ **MySQL Only**: Optimized for MySQL deployments
 - 🐳 **Docker Ready**: Complete containerization with Docker Compose
 - 📦 **Unraid Support**: Pre-configured template for Unraid deployment
-- 🔧 **Setup Wizard**: First-time configuration with database selection
+- 🔧 **Setup Wizard**: First-time configuration (MySQL connection + admin)
 
 ## 🛠️ Tech Stack
 
@@ -50,7 +50,7 @@ A professional cable labeling system for Brady printers with automatic reference
 
 ### Backend
 - **Node.js** + **Express** + TypeScript for robust API development
-- **SQLite** (better-sqlite3) or **MySQL** (mysql2) database support
+- **MySQL** (mysql2) database support
 - **JWT** authentication with automatic token refresh
 - **bcryptjs** for secure password hashing
 - **Zod** for API request/response validation
@@ -69,7 +69,7 @@ A professional cable labeling system for Brady printers with automatic reference
 - **Node.js 18+** and npm
 - **Git** for version control
 - **Docker** (optional, for containerized deployment)
-- **MySQL Server** (optional, if using MySQL instead of SQLite)
+- **MySQL Server** (required)
 
 ### Quick Installation
 
@@ -105,7 +105,7 @@ A professional cable labeling system for Brady printers with automatic reference
 
 5. **Complete setup wizard:**
    - Navigate to http://localhost:3000
-   - Choose database type (SQLite recommended for development)
+   - Enter MySQL connection details
    - Create your admin account
    - Start creating sites and labels!
 
@@ -173,7 +173,7 @@ cableindex/
 ├── 📁 backend/                     # Express backend API
 │   ├── 📁 src/
 │   │   ├── 📁 database/           # Database connection and migrations
-│   │   │   ├── 📁 adapters/       # SQLite and MySQL adapters
+│   │   │   ├── 📁 adapters/       # MySQL adapter
 │   │   │   └── 📁 migrations/     # Database schema migrations
 │   │   ├── 📁 middleware/         # Express middleware (auth, permissions)
 │   │   ├── 📁 models/             # Database models and operations
@@ -292,18 +292,12 @@ BCRYPT_ROUNDS=12                            # Password hashing rounds
 # URLs
 APP_URL=http://localhost:3000               # Base URL for invitation links (optional; falls back to request host)
 
-# Database Configuration
-DB_TYPE=sqlite                              # Database type: 'sqlite' or 'mysql' (defaults to sqlite)
-
-# SQLite Settings (when DB_TYPE=sqlite)
-DATABASE_PATH=./data/cableindex.db       # SQLite database file path (adjust as needed)
-
-# MySQL Settings (when DB_TYPE=mysql)
+# Database Configuration (MySQL only)
 MYSQL_HOST=localhost                        # MySQL server host
 MYSQL_PORT=3306                             # MySQL server port
-MYSQL_USER=cableindex                    # MySQL username
+MYSQL_USER=cableindex                       # MySQL username
 MYSQL_PASSWORD=your_password                # MySQL password
-MYSQL_DATABASE=cableindex                # MySQL database name
+MYSQL_DATABASE=cableindex                   # MySQL database name
 MYSQL_SSL=false                             # Enable SSL connection
 
 # Setup Wizard
@@ -328,20 +322,7 @@ VITE_BASE_PATH=/                            # Base path when hosted under a sub-
 
 ### Database Selection Guide
 
-#### SQLite (Recommended for most users)
-- ✅ **Zero configuration** - works out of the box
-- ✅ **Easy backup** - single file database
-- ✅ **Perfect for single server** deployments
-- ✅ **No external dependencies**
-- ❌ Not suitable for multiple app instances
-
-#### MySQL (For advanced deployments)
-- ✅ **Scalable** - supports multiple app instances
-- ✅ **High performance** for large datasets
-- ✅ **Advanced features** - replication, clustering
-- ✅ **Industry standard** database
-- ❌ Requires separate MySQL server
-- ❌ More complex setup and maintenance
+CableIndex requires MySQL.
 
 ### Docker Environment Variables
 ```bash
@@ -350,11 +331,7 @@ PORT=3000                                   # Host port mapping
 JWT_SECRET=your-production-secret           # Production JWT secret
 APP_URL=https://cableindex.example.com      # Optional; used for invitation links
 
-# Database Configuration
-DB_TYPE=sqlite                              # 'sqlite' or 'mysql'
-DATABASE_PATH=/app/data/cableindex.db    # Container database path
-
-# MySQL Settings (when DB_TYPE=mysql)
+# Database Configuration (MySQL only)
 MYSQL_HOST=mysql
 MYSQL_PORT=3306
 MYSQL_USER=cableindex
@@ -391,11 +368,10 @@ cd backend && npm run test
 ```
 
 ### Test Database
-Backend tests use an in-memory SQLite database to ensure:
-- Fast test execution
-- Isolated test environment
-- No interference with development data
-- Consistent test results
+Backend tests run against a MySQL test database.
+
+Set the required MySQL env vars before running backend tests:
+- `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD` (and optional `MYSQL_SSL`)
 
 ## 🚀 Deployment Options
 
@@ -459,8 +435,7 @@ npm run dev
 
 ### Database Migration
 The system automatically handles database migrations on startup:
-- SQLite: Creates tables and applies schema updates
-- MySQL: Connects and applies migrations to existing database
+- MySQL: Connects and applies migrations to the configured database
 
 ### Custom ZPL Templates
 Modify ZPL generation in `backend/src/services/ZPLService.ts`:
@@ -523,7 +498,6 @@ See [LICENSE](LICENSE).
 
 **Database Connection Errors:**
 - Verify database configuration in `.env`
-- Check file permissions for SQLite database
 - Ensure MySQL server is running and accessible
 
 **Authentication Problems:**
@@ -549,9 +523,7 @@ See [LICENSE](LICENSE).
 
 ### Performance Issues
 - Monitor database query performance
-- Check available disk space for SQLite
 - Review memory usage in production
-- Consider MySQL for high-traffic scenarios
 
 ## 🏷️ Label Generation
 

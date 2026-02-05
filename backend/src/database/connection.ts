@@ -1,11 +1,10 @@
-import { DatabaseAdapter, DatabaseConfig } from './adapters/base.js';
-import { SQLiteAdapter } from './adapters/sqlite.js';
-import path from 'path';
+import { DatabaseAdapter, MySQLConfig } from './adapters/base.js';
+import { MySQLAdapter } from './adapters/mysql.js';
 
 class DatabaseConnection {
   private static instance: DatabaseConnection;
   private adapter: DatabaseAdapter | null = null;
-  private config: DatabaseConfig | null = null;
+  private config: MySQLConfig | null = null;
 
   private constructor() { }
 
@@ -16,39 +15,18 @@ class DatabaseConnection {
     return DatabaseConnection.instance;
   }
 
-  public async connect(config?: DatabaseConfig): Promise<void> {
+  public async connect(config?: MySQLConfig): Promise<void> {
     try {
       if (!config) {
         console.log('🔄 Using default database configuration...');
-        config = this.getDefaultConfig();
+        config = this.getEnvConfig();
       }
 
-      console.log(`🔄 Connecting to ${config.type} database...`);
+      console.log(`🔄 Connecting to MySQL database...`);
       this.config = config;
 
-      // Create appropriate adapter based on database type
-      switch (config.type) {
-        case 'sqlite':
-          console.log(`📂 SQLite database path: ${config.sqlite?.filename}`);
-          this.adapter = new SQLiteAdapter(config);
-          break;
-        case 'mysql':
-          try {
-            console.log(`🔗 MySQL connection: ${config.mysql?.host}:${config.mysql?.port}/${config.mysql?.database}`);
-            // Try to import the real MySQL adapter
-            const { MySQLAdapter } = await import('./adapters/mysql.js');
-            this.adapter = new MySQLAdapter(config);
-          } catch (error) {
-            // Fall back to stub if mysql2 is not available
-            console.error('❌ MySQL driver not available:', error);
-            console.warn('⚠️  Falling back to stub. Install mysql2 for MySQL support.');
-            const { MySQLAdapter: MySQLStub } = await import('./adapters/mysql-stub.js');
-            this.adapter = new MySQLStub(config);
-          }
-          break;
-        default:
-          throw new Error(`Unsupported database type: ${(config as any).type}`);
-      }
+      console.log(`🔗 MySQL connection: ${config.host}:${config.port}/${config.database}`);
+      this.adapter = new MySQLAdapter(config);
 
       await this.adapter.connect();
       console.log('✅ Database adapter connected successfully');
@@ -92,7 +70,7 @@ class DatabaseConnection {
     return this.adapter ? this.adapter.testConnection() : false;
   }
 
-  public getConfig(): DatabaseConfig | null {
+  public getConfig(): MySQLConfig | null {
     return this.config;
   }
 
@@ -100,46 +78,47 @@ class DatabaseConnection {
     return this.adapter ? this.adapter.isConnected() : false;
   }
 
-  // Legacy method for backward compatibility with SQLite-specific code
-  public getConnection(): any {
-    if (!this.adapter) {
-      throw new Error('Database not connected. Call connect() first.');
+  private getEnvConfig(): MySQLConfig {
+    const requiredVars = ['MYSQL_HOST', 'MYSQL_DATABASE', 'MYSQL_USER', 'MYSQL_PASSWORD'] as const;
+    const missing = requiredVars.filter((key) => process.env[key] === undefined);
+
+    if (missing.length > 0) {
+      const message =
+        `Missing required MySQL environment variables: ${missing.join(', ')}. ` +
+        `CableIndex now supports MySQL only.`;
+      throw new Error(message);
     }
 
-    // For SQLite, return the direct database instance
-    if (this.config?.type === 'sqlite') {
-      const sqliteAdapter = this.adapter as any;
-      if (sqliteAdapter.getDatabase) {
-        return sqliteAdapter.getDatabase();
-      }
+    const host = String(process.env.MYSQL_HOST);
+    const database = String(process.env.MYSQL_DATABASE);
+    const user = String(process.env.MYSQL_USER);
+    const password = String(process.env.MYSQL_PASSWORD);
+
+    const port = Number.parseInt(process.env.MYSQL_PORT || '3306', 10);
+    if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+      throw new Error(`Invalid MYSQL_PORT: ${process.env.MYSQL_PORT}`);
     }
 
-    // For MySQL, return the adapter itself
-    return this.adapter;
-  }
+    const sslEnabled = (process.env.MYSQL_SSL || '').toLowerCase() === 'true';
 
-  private getDefaultConfig(): DatabaseConfig {
-    // Check if MySQL config is provided via environment variables
-    if (process.env.DB_TYPE === 'mysql' || process.env.MYSQL_HOST) {
-      return {
-        type: 'mysql',
-        mysql: {
-          host: process.env.MYSQL_HOST || 'localhost',
-          port: parseInt(process.env.MYSQL_PORT || '3306'),
-          user: process.env.MYSQL_USER || 'root',
-          password: process.env.MYSQL_PASSWORD || '',
-          database: process.env.MYSQL_DATABASE || 'cableindex',
-          ssl: process.env.MYSQL_SSL === 'true',
-        }
-      };
-    }
+    const connectionLimitRaw = process.env.MYSQL_CONN_LIMIT;
+    const queueLimitRaw = process.env.MYSQL_QUEUE_LIMIT;
 
-    // Default to SQLite
+    const parsedConnectionLimit = connectionLimitRaw ? Number.parseInt(connectionLimitRaw, 10) : undefined;
+    const parsedQueueLimit = queueLimitRaw ? Number.parseInt(queueLimitRaw, 10) : undefined;
+
+    const connectionLimit = Number.isFinite(parsedConnectionLimit) ? parsedConnectionLimit : undefined;
+    const queueLimit = Number.isFinite(parsedQueueLimit) ? parsedQueueLimit : undefined;
+
     return {
-      type: 'sqlite',
-      sqlite: {
-        filename: process.env.DATABASE_PATH || path.join('/app', 'data', 'cableindex.db'),
-      }
+      host,
+      port,
+      user,
+      password,
+      database,
+      ...(sslEnabled ? { ssl: {} } : {}),
+      ...(connectionLimit !== undefined ? { connectionLimit } : {}),
+      ...(queueLimit !== undefined ? { queueLimit } : {}),
     };
   }
 }

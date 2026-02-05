@@ -43,9 +43,7 @@ const loadSmtpConfig = async (): Promise<SmtpConfig | null> => {
   }
 
   // 2) Fall back to DB settings (Admin Settings UI)
-  const config = connection.getConfig();
-  const isMySQL = config?.type === 'mysql';
-  const keyCol = isMySQL ? '`key`' : 'key';
+  const keyCol = '`key`';
 
   const keys = ['smtp_host', 'smtp_port', 'smtp_username', 'smtp_password', 'smtp_from', 'smtp_secure'] as const;
   const placeholders = keys.map(() => '?').join(', ');

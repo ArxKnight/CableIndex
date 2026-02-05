@@ -3,7 +3,7 @@ FROM node:22-slim AS base
 
 # Install dependencies only when needed
 FROM base AS deps
-# Native build prerequisites for node-gyp (e.g., better-sqlite3)
+# Native build prerequisites for node-gyp
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
