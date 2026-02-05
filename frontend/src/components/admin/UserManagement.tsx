@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
-  TableRow
+  TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,24 +37,20 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  Pencil,
   Search,
-  Trash2,
   Shield,
   ShieldCheck,
+  Trash2,
   User as UserIcon,
   Users,
-  MoreHorizontal
 } from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
-import { apiClient } from '../../lib/api';
-import { User, UserRole } from '../../types';
 import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
+
+import { apiClient } from '../../lib/api';
+import { useAuth } from '../../contexts/AuthContext';
+import { User, UserRole } from '../../types';
 
 interface UserWithStats extends User {
   label_count: number;
@@ -63,26 +59,29 @@ interface UserWithStats extends User {
 }
 
 const UserManagement: React.FC = () => {
+  const { user: currentUser } = useAuth();
+  const isGlobalAdmin = currentUser?.role === 'GLOBAL_ADMIN';
+  const isSiteAdmin = currentUser?.role === 'ADMIN';
+
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
-  const [siteDialogOpen, setSiteDialogOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserWithStats | null>(null);
   const [siteSelections, setSiteSelections] = useState<Record<number, 'ADMIN' | 'USER'>>({});
+  const [selectedUserSites, setSelectedUserSites] = useState<Array<{ site_id: number; site_name: string; site_code: string; site_role: 'ADMIN' | 'USER' }>>([]);
   const queryClient = useQueryClient();
 
-  const resetSiteDialogState = () => {
+  const resetDialogState = () => {
     setSelectedUser(null);
     setSiteSelections({});
+    setSelectedUserSites([]);
   };
 
-  const handleSiteDialogOpenChange = (open: boolean) => {
-    setSiteDialogOpen(open);
-    if (!open) {
-      resetSiteDialogState();
-    }
+  const handleDetailsOpenChange = (open: boolean) => {
+    setDetailsOpen(open);
+    if (!open) resetDialogState();
   };
 
-  // Fetch users with statistics
   const { data: usersData, isLoading, error } = useQuery({
     queryKey: ['admin', 'users', searchTerm, roleFilter],
     queryFn: async () => {
@@ -105,13 +104,15 @@ const UserManagement: React.FC = () => {
     },
   });
 
-  // Update user role mutation
   const updateUserRoleMutation = useMutation({
     mutationFn: async ({ userId, role }: { userId: number; role: UserRole }) => {
       return apiClient.put(`/admin/users/${userId}/role`, { role });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      setSelectedUser((prev) =>
+        prev && prev.id === variables.userId ? { ...prev, role: variables.role } : prev
+      );
       toast.success('User role updated successfully');
     },
     onError: (error: any) => {
@@ -119,14 +120,12 @@ const UserManagement: React.FC = () => {
     },
   });
 
-  // Delete user mutation
   const deleteUserMutation = useMutation({
-    mutationFn: async (userId: number) => {
-      return apiClient.delete(`/admin/users/${userId}`);
-    },
+    mutationFn: async (userId: number) => apiClient.delete(`/admin/users/${userId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
       toast.success('User deleted successfully');
+      handleDetailsOpenChange(false);
     },
     onError: (error: any) => {
       toast.error(error.message || 'Failed to delete user');
@@ -134,13 +133,14 @@ const UserManagement: React.FC = () => {
   });
 
   const updateUserSitesMutation = useMutation({
-    mutationFn: async (data: { userId: number; sites: Array<{ site_id: number; site_role: 'ADMIN' | 'USER' }> }) => {
-      return apiClient.updateUserSites(data.userId, data.sites);
-    },
+    mutationFn: async (data: {
+      userId: number;
+      sites: Array<{ site_id: number; site_role: 'ADMIN' | 'USER' }>;
+    }) => apiClient.updateUserSites(data.userId, data.sites),
     onSuccess: () => {
       toast.success('User site access updated');
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
-      handleSiteDialogOpenChange(false);
+      handleDetailsOpenChange(false);
     },
     onError: (error: any) => {
       toast.error(error.message || 'Failed to update site access');
@@ -155,10 +155,11 @@ const UserManagement: React.FC = () => {
     deleteUserMutation.mutate(userId);
   };
 
-  const handleManageSites = async (user: UserWithStats) => {
-    resetSiteDialogState();
+  const openUserDetails = async (user: UserWithStats) => {
+    resetDialogState();
     setSelectedUser(user);
-    handleSiteDialogOpenChange(true);
+    handleDetailsOpenChange(true);
+
     try {
       const response = await apiClient.getUserSites(user.id);
       if (response.success && response.data?.sites) {
@@ -167,11 +168,10 @@ const UserManagement: React.FC = () => {
           selections[site.site_id] = site.site_role;
         });
         setSiteSelections(selections);
-      } else {
-        setSiteSelections({});
+        setSelectedUserSites(response.data.sites as any);
       }
-    } catch (error) {
-      setSiteSelections({});
+    } catch {
+      // Ignore; show empty selections
     }
   };
 
@@ -183,6 +183,8 @@ const UserManagement: React.FC = () => {
     }));
     updateUserSitesMutation.mutate({ userId: selectedUser.id, sites });
   };
+
+  const cannotEditSelectedUser = !!selectedUser && !isGlobalAdmin && selectedUser.role === 'GLOBAL_ADMIN';
 
   const getRoleIcon = (role: UserRole) => {
     switch (role) {
@@ -216,10 +218,9 @@ const UserManagement: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Search and Filter Controls */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
           <Input
             placeholder="Search users by name or email..."
             value={searchTerm}
@@ -240,7 +241,6 @@ const UserManagement: React.FC = () => {
         </Select>
       </div>
 
-      {/* Users Table */}
       <div className="border rounded-lg">
         <Table>
           <TableHeader>
@@ -251,7 +251,7 @@ const UserManagement: React.FC = () => {
               <TableHead>Labels</TableHead>
               <TableHead>Sites</TableHead>
               <TableHead>Joined</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="text-right">Edit</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -269,29 +269,38 @@ const UserManagement: React.FC = () => {
               </TableRow>
             ) : (
               usersData.users.map((user) => (
-                <TableRow key={user.id}>
+                <TableRow
+                  key={user.id}
+                  role="button"
+                  tabIndex={0}
+                  className="cursor-pointer"
+                  onClick={() => openUserDetails(user)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openUserDetails(user);
+                    }
+                  }}
+                >
                   <TableCell>
                     <div className="flex flex-col">
                       <span className="font-medium">{user.full_name}</span>
-                      <span className="text-sm text-gray-500">{user.email}</span>
+                      <span className="text-sm text-muted-foreground">{user.email}</span>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant={getRoleBadgeVariant(user.role)}
-                      className="flex items-center gap-1 w-fit"
-                    >
+                    <Badge variant={getRoleBadgeVariant(user.role)} className="flex items-center gap-1 w-fit">
                       {getRoleIcon(user.role)}
                       {user.role}
                     </Badge>
                   </TableCell>
                   <TableCell>
                     {user.last_activity ? (
-                      <span className="text-sm text-gray-600">
+                      <span className="text-sm text-muted-foreground">
                         {formatDistanceToNow(new Date(user.last_activity), { addSuffix: true })}
                       </span>
                     ) : (
-                      <span className="text-sm text-gray-400">Never</span>
+                      <span className="text-sm text-muted-foreground">Never</span>
                     )}
                   </TableCell>
                   <TableCell>
@@ -301,74 +310,22 @@ const UserManagement: React.FC = () => {
                     <span className="font-medium">{user.site_count}</span>
                   </TableCell>
                   <TableCell>
-                    <span className="text-sm text-gray-600">
+                    <span className="text-sm text-muted-foreground">
                       {formatDistanceToNow(new Date(user.created_at), { addSuffix: true })}
                     </span>
                   </TableCell>
                   <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm">
-                          <MoreHorizontal className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => handleRoleChange(user.id, 'GLOBAL_ADMIN')}
-                          disabled={user.role === 'GLOBAL_ADMIN'}
-                        >
-                          <ShieldCheck className="w-4 h-4 mr-2" />
-                          Make Global Admin
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleRoleChange(user.id, 'ADMIN')}
-                          disabled={user.role === 'ADMIN'}
-                        >
-                          <Shield className="w-4 h-4 mr-2" />
-                          Make Admin
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleRoleChange(user.id, 'USER')}
-                          disabled={user.role === 'USER'}
-                        >
-                          <UserIcon className="w-4 h-4 mr-2" />
-                          Make User
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleManageSites(user)}>
-                          <Users className="w-4 h-4 mr-2" />
-                          Manage Sites
-                        </DropdownMenuItem>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <DropdownMenuItem
-                              onSelect={(e) => e.preventDefault()}
-                              className="text-red-600"
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete User
-                            </DropdownMenuItem>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete User</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Are you sure you want to delete {user.full_name}? This action cannot be undone.
-                                All their labels and sites will also be deleted.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDeleteUser(user.id)}
-                                className="bg-red-600 hover:bg-red-700"
-                              >
-                                Delete
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Edit ${user.full_name}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openUserDetails(user);
+                      }}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))
@@ -377,71 +334,179 @@ const UserManagement: React.FC = () => {
         </Table>
       </div>
 
-      <Dialog open={siteDialogOpen} onOpenChange={handleSiteDialogOpenChange}>
-        <DialogContent onOpenChange={handleSiteDialogOpenChange}>
+      <Dialog open={detailsOpen} onOpenChange={handleDetailsOpenChange}>
+        <DialogContent onOpenChange={handleDetailsOpenChange}>
           <DialogHeader>
-            <DialogTitle>Manage Site Access</DialogTitle>
+            <DialogTitle>User Details</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              {selectedUser ? `Editing access for ${selectedUser.full_name}` : 'Select a user'}
-            </p>
-            <div className="space-y-2 max-h-64 overflow-y-auto border rounded-md p-3">
-              {sitesData?.sites?.length ? (
-                sitesData.sites.map((site: any) => (
-                  <div key={site.id} className="flex items-center justify-between gap-2">
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(siteSelections[site.id])}
-                        onChange={(event) => {
-                          const checked = event.target.checked;
-                          setSiteSelections((prev) => {
-                            if (!checked) {
-                              const updated = { ...prev };
-                              delete updated[site.id];
-                              return updated;
-                            }
-                            return { ...prev, [site.id]: 'USER' };
-                          });
-                        }}
-                      />
-                      <span>{site.name} ({site.code})</span>
-                    </label>
-                    {siteSelections[site.id] && (
-                      <Select
-                        value={siteSelections[site.id]}
-                        onValueChange={(value) =>
-                          setSiteSelections((prev) => ({
-                            ...prev,
-                            [site.id]: value as 'ADMIN' | 'USER',
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="w-32">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="USER">User</SelectItem>
-                          <SelectItem value="ADMIN">Admin</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
-                ))
+
+          {selectedUser ? (
+            <div className="space-y-4">
+              <div>
+                <div className="font-medium">{selectedUser.full_name}</div>
+                <div className="text-sm text-muted-foreground">{selectedUser.email}</div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Badge
+                  variant={getRoleBadgeVariant(selectedUser.role)}
+                  className="flex items-center gap-1 w-fit"
+                >
+                  {getRoleIcon(selectedUser.role)}
+                  {selectedUser.role}
+                </Badge>
+                <span className="text-sm text-muted-foreground">
+                  {selectedUser.site_count} site{selectedUser.site_count === 1 ? '' : 's'} · {selectedUser.label_count} label{selectedUser.label_count === 1 ? '' : 's'}
+                </span>
+              </div>
+
+              {isGlobalAdmin ? (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Global Role</div>
+                  <Select
+                    value={selectedUser.role}
+                    onValueChange={(value) => handleRoleChange(selectedUser.id, value as UserRole)}
+                    disabled={updateUserRoleMutation.isPending}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="USER">User</SelectItem>
+                      <SelectItem value="ADMIN">Admin</SelectItem>
+                      <SelectItem value="GLOBAL_ADMIN">Global Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : isSiteAdmin ? (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Global Role</div>
+                  <Select
+                    value={selectedUser.role}
+                    onValueChange={(value) => handleRoleChange(selectedUser.id, value as UserRole)}
+                    disabled={updateUserRoleMutation.isPending || cannotEditSelectedUser}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="USER">User</SelectItem>
+                      <SelectItem value="ADMIN">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {cannotEditSelectedUser && (
+                    <div className="text-sm text-muted-foreground">
+                      Site Admin cannot modify Global Admin users.
+                    </div>
+                  )}
+                </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No sites available</p>
+                <div className="text-sm text-muted-foreground">
+                  You do not have permission to change global roles.
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  Site Access
+                </div>
+                <div className="space-y-2 max-h-64 overflow-y-auto border rounded-md p-3">
+                  {(isGlobalAdmin ? sitesData?.sites : selectedUserSites)?.length ? (
+                    (isGlobalAdmin ? (sitesData as any).sites : selectedUserSites).map((site: any) => {
+                      const siteId = isGlobalAdmin ? site.id : site.site_id;
+                      const siteName = isGlobalAdmin ? site.name : site.site_name;
+                      const siteCode = isGlobalAdmin ? site.code : site.site_code;
+                      return (
+                      <div key={siteId} className="flex items-center justify-between gap-2">
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(siteSelections[siteId])}
+                            onChange={(event) => {
+                              const checked = event.target.checked;
+                              setSiteSelections((prev) => {
+                                if (!checked) {
+                                  const updated = { ...prev };
+                                  delete updated[siteId];
+                                  return updated;
+                                }
+                                return { ...prev, [siteId]: 'USER' };
+                              });
+                            }}
+                            disabled={cannotEditSelectedUser}
+                          />
+                          <span>
+                            {siteName} ({siteCode})
+                          </span>
+                        </label>
+                        {siteSelections[siteId] && (
+                          <Select
+                            value={siteSelections[siteId]}
+                            onValueChange={(value) =>
+                              setSiteSelections((prev) => ({
+                                ...prev,
+                                [siteId]: value as 'ADMIN' | 'USER',
+                              }))
+                            }
+                            disabled={cannotEditSelectedUser}
+                          >
+                            <SelectTrigger className="w-32">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="USER">User</SelectItem>
+                              <SelectItem value="ADMIN">Admin</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No sites available</p>
+                  )}
+                </div>
+              </div>
+
+              {isGlobalAdmin && selectedUser.id !== currentUser?.id && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" className="w-full" disabled={deleteUserMutation.isPending}>
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete User
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete User</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure you want to delete {selectedUser.full_name}? This action cannot be undone.
+                        All their labels and sites will also be deleted.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleDeleteUser(selectedUser.id)}
+                        className="bg-red-600 hover:bg-red-700"
+                      >
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
             </div>
-          </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Select a user</p>
+          )}
+
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => handleSiteDialogOpenChange(false)}
-            >
+            <Button variant="outline" onClick={() => handleDetailsOpenChange(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSaveSites} disabled={!selectedUser || updateUserSitesMutation.isPending}>
+            <Button onClick={handleSaveSites} disabled={!selectedUser || updateUserSitesMutation.isPending || cannotEditSelectedUser}>
               {updateUserSitesMutation.isPending ? 'Saving...' : 'Save'}
             </Button>
           </DialogFooter>

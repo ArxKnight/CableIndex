@@ -14,7 +14,12 @@ const siteSchema = z.object({
   name: z.string()
     .min(1, 'Site name is required')
     .max(100, 'Site name must be less than 100 characters')
-    .regex(/^[a-zA-Z0-9\s\-_\.]+$/, 'Site name can only contain letters, numbers, spaces, hyphens, underscores, and periods'),
+    .regex(/^[a-zA-Z0-9\s\-_.]+$/, 'Site name can only contain letters, numbers, spaces, hyphens, underscores, and periods'),
+  code: z.string()
+    .min(1, 'Abbreviation is required')
+    .max(20, 'Abbreviation must be less than 20 characters')
+    .regex(/^[A-Za-z0-9\-_]+$/, 'Abbreviation can only contain letters, numbers, hyphens, and underscores')
+    .transform((v) => v.trim().toUpperCase()),
   location: z.string()
     .max(200, 'Location must be less than 200 characters')
     .optional()
@@ -50,6 +55,7 @@ const SiteForm: React.FC<SiteFormProps> = ({
     resolver: zodResolver(siteSchema),
     defaultValues: {
       name: site?.name || '',
+      code: site?.code || '',
       location: site?.location || '',
       description: site?.description || '',
     },
@@ -84,8 +90,23 @@ const SiteForm: React.FC<SiteFormProps> = ({
           {errors.name && (
             <p className="text-sm text-destructive">{errors.name.message}</p>
           )}
+          <p className="text-xs text-muted-foreground">Internal display name only (never printed on labels).</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="code">Abbreviation *</Label>
+          <Input
+            id="code"
+            placeholder="e.g., MAIN"
+            {...register('code')}
+            disabled={isLoading}
+            autoCapitalize="characters"
+          />
+          {errors.code && (
+            <p className="text-sm text-destructive">{errors.code.message}</p>
+          )}
           <p className="text-xs text-muted-foreground">
-            Used in label reference numbers (e.g., MAIN-001)
+            This is what appears on cable labels (e.g., MAIN/1/A/R1/R42).
           </p>
         </div>
 

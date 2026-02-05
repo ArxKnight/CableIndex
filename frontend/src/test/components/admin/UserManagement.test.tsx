@@ -5,6 +5,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import UserManagement from '../../../components/admin/UserManagement';
 import { apiClient } from '../../../lib/api';
 
+vi.mock('../../../contexts/AuthContext', () => ({
+  useAuth: () => ({
+    user: {
+      id: 999,
+      role: 'GLOBAL_ADMIN',
+    },
+  }),
+}));
+
 // Mock the API client
 vi.mock('../../../lib/api', () => ({
   apiClient: {
@@ -107,7 +116,7 @@ describe('UserManagement', () => {
     expect(screen.getByText('Labels')).toBeInTheDocument();
     expect(screen.getByText('Sites')).toBeInTheDocument();
     expect(screen.getByText('Joined')).toBeInTheDocument();
-    expect(screen.getByText('Actions')).toBeInTheDocument();
+    expect(screen.getByText('Edit')).toBeInTheDocument();
   });
 
   it('displays user statistics correctly', async () => {
@@ -168,13 +177,14 @@ describe('UserManagement', () => {
 
     const row = screen.getByText('Regular User').closest('tr');
     expect(row).toBeTruthy();
+    await user.click(within(row as HTMLElement).getByRole('button', { name: /edit regular user/i }));
 
-    const actionsButton = within(row as HTMLElement).getByRole('button');
-    await user.click(actionsButton);
+    await screen.findByText('User Details');
 
-    // Click "Make Admin" option
-    const makeAdminOption = await screen.findByRole('menuitem', { name: /make admin/i });
-    await user.click(makeAdminOption);
+    const globalRoleLabel = screen.getByText('Global Role');
+    const roleSelect = within(globalRoleLabel.parentElement as HTMLElement).getByRole('combobox');
+    await user.click(roleSelect);
+    await user.click(await screen.findByText('Admin'));
 
     await waitFor(() => {
       expect(apiClient.put).toHaveBeenCalledWith('/admin/users/2/role', { role: 'ADMIN' });
@@ -198,13 +208,12 @@ describe('UserManagement', () => {
 
     const row = screen.getByText('Regular User').closest('tr');
     expect(row).toBeTruthy();
+    await user.click(within(row as HTMLElement).getByRole('button', { name: /edit regular user/i }));
 
-    const actionsButton = within(row as HTMLElement).getByRole('button');
-    await user.click(actionsButton);
+    await screen.findByText('User Details');
 
-    // Click "Delete User" option
-    const deleteOption = await screen.findByRole('menuitem', { name: /delete user/i });
-    await user.click(deleteOption);
+    const deleteButton = await screen.findByRole('button', { name: /delete user/i });
+    await user.click(deleteButton);
 
     // Confirm deletion in dialog
     const confirmDeleteButton = await screen.findByRole('button', { name: /^delete$/i });

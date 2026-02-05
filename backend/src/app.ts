@@ -8,6 +8,8 @@ import { fileURLToPath } from 'url';
 import { initializeDatabase, setupDatabaseShutdown } from './database/init.js';
 import connection from './database/connection.js';
 import { isSetupComplete } from './utils/setup.js';
+import { authRoutes, userRoutes, adminRoutes, siteRoutes, labelRoutes } from './routes/index.js';
+import setupRoutes from './routes/setup.js';
 
 // Get __dirname equivalent for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -51,6 +53,50 @@ app.get('/api', (req, res) => {
   });
 });
 
+// Routes
+// In test mode, we register routes immediately and bypass setup gating.
+// In non-test modes, we keep the setup middleware that blocks until setup completes.
+app.use('/api/setup', setupRoutes);
+
+if (process.env.NODE_ENV !== 'test') {
+  // Shared middleware to ensure setup is complete and database is ready
+  app.use('/api', async (req, res, next) => {
+    const setupComplete = await isSetupComplete();
+    if (!setupComplete) {
+      return res.status(503).json({ success: false, error: 'Setup required', setupRequired: true });
+    }
+
+    if (!connection.isConnected()) {
+      try {
+        console.log('🔄 Lazy initializing database after setup completion...');
+        await connection.connect();
+        await initializeDatabase({
+          runMigrations: true,
+          seedData: process.env.NODE_ENV === 'development'
+        });
+        console.log('✅ Database lazily initialized');
+      } catch (err) {
+        console.error('Failed to lazy initialize database:', err);
+        return res.status(500).json({ success: false, error: 'Database initialization failed' });
+      }
+    }
+
+    next();
+  });
+}
+
+// Always register API routes; middleware above blocks if setup incomplete
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/sites', siteRoutes);
+app.use('/api/labels', labelRoutes);
+
+// 404 handler for API routes (must be after route registration)
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ error: 'API route not found' });
+});
+
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('❌ Unhandled error in request:', req.method, req.path);
@@ -87,52 +133,7 @@ async function startServer() {
     // Setup graceful shutdown
     setupDatabaseShutdown();
 
-    // Import and setup routes
-    console.log('🔄 Loading application routes...');
-    const { authRoutes, userRoutes, adminRoutes, siteRoutes, labelRoutes } = await import('./routes/index.js');
-    const setupRoutes = (await import('./routes/setup.js')).default;
-    
-    // Setup routes (available before authentication)
-    console.log('🔄 Registering /api/setup routes...');
-    app.use('/api/setup', setupRoutes);
-    console.log('✅ Setup routes registered');
-
-    // Shared middleware to ensure setup is complete and database is ready
-    app.use('/api', async (req, res, next) => {
-      const setupComplete = await isSetupComplete();
-      if (!setupComplete) {
-        return res.status(503).json({ success: false, error: 'Setup required', setupRequired: true });
-      }
-
-      if (!connection.isConnected()) {
-        try {
-          console.log('🔄 Lazy initializing database after setup completion...');
-          await connection.connect();
-          await initializeDatabase({
-            runMigrations: true,
-            seedData: process.env.NODE_ENV === 'development'
-          });
-          console.log('✅ Database lazily initialized');
-        } catch (err) {
-          console.error('Failed to lazy initialize database:', err);
-          return res.status(500).json({ success: false, error: 'Database initialization failed' });
-        }
-      }
-
-      next();
-    });
-
-    // Always register API routes; middleware above blocks if setup incomplete
-    app.use('/api/auth', authRoutes);
-    app.use('/api/users', userRoutes);
-    app.use('/api/admin', adminRoutes);
-    app.use('/api/sites', siteRoutes);
-    app.use('/api/labels', labelRoutes);
-
-    // 404 handler for API routes (must be after route registration)
-    app.use('/api/*', (req, res) => {
-      res.status(404).json({ error: 'API route not found' });
-    });
+    console.log('✅ Routes registered');
 
     // Serve static files from frontend build in production
     if (process.env.NODE_ENV === 'production') {

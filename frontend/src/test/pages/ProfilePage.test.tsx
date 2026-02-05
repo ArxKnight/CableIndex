@@ -86,7 +86,7 @@ describe('ProfilePage', () => {
     renderProfilePage();
 
     const roleElement = screen.getByText('user');
-    expect(roleElement).toHaveClass('text-blue-600', 'bg-blue-100');
+    expect(roleElement).toHaveClass('text-primary', 'bg-primary/10');
   });
 
   it('should switch to edit profile tab when clicked', async () => {
@@ -135,7 +135,7 @@ describe('ProfilePage', () => {
     renderProfilePage();
 
     const roleElement = screen.getByText('admin');
-    expect(roleElement).toHaveClass('text-red-600', 'bg-red-100');
+    expect(roleElement).toHaveClass('text-destructive', 'bg-destructive/10');
   });
 
   it('should handle moderator role styling', () => {
@@ -149,7 +149,7 @@ describe('ProfilePage', () => {
     renderProfilePage();
 
     const roleElement = screen.getByText('moderator');
-    expect(roleElement).toHaveClass('text-yellow-600', 'bg-yellow-100');
+    expect(roleElement).toHaveClass('text-amber-600', 'bg-amber-100');
   });
 
   it('should not render when user is null', () => {

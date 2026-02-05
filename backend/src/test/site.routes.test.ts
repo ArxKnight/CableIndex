@@ -1,60 +1,53 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
-import Database from 'better-sqlite3';
 import app from '../app.js';
 import UserModel from '../models/User.js';
 import SiteModel from '../models/Site.js';
-import connection from '../database/connection.js';
-import { initializeDatabase } from '../database/init.js';
+import SiteLocationModel from '../models/SiteLocation.js';
+import LabelModel from '../models/Label.js';
+import CableTypeModel from '../models/CableType.js';
 import { generateTokens } from '../utils/jwt.js';
+import { setupTestDatabase, cleanupTestDatabase } from './setup.js';
 
 describe('Site Routes', () => {
   let userModel: UserModel;
   let siteModel: SiteModel;
-  let db: Database.Database;
+  let siteLocationModel: SiteLocationModel;
+  let labelModel: LabelModel;
+  let cableTypeModel: CableTypeModel;
+  let db: any;
   let testUser: any;
   let authToken: string;
 
   beforeEach(async () => {
-    // Initialize in-memory database for testing
-    await initializeDatabase({ runMigrations: true, seedData: false });
-    db = connection.getConnection();
+    db = await setupTestDatabase({ runMigrations: true, seedData: false });
     userModel = new UserModel();
     siteModel = new SiteModel();
+    siteLocationModel = new SiteLocationModel();
+    labelModel = new LabelModel();
+    cableTypeModel = new CableTypeModel();
 
     // Create test user and get auth token
     testUser = await userModel.create({
       email: 'test@example.com',
       full_name: 'Test User',
       password: 'TestPassword123!',
+      role: 'ADMIN',
     });
 
     const tokens = generateTokens(testUser);
     authToken = tokens.accessToken;
   });
 
-  afterEach(() => {
-    // Clean up database
-    if (db) {
-      db.exec('DELETE FROM labels');
-      db.exec('DELETE FROM sites');
-      db.exec('DELETE FROM users');
-    }
+  afterEach(async () => {
+    await cleanupTestDatabase();
   });
 
   describe('GET /api/sites', () => {
     it('should get user sites', async () => {
       // Create test sites
-      siteModel.create({
-        name: 'Site 1',
-        location: 'Location 1',
-        user_id: testUser.id,
-      });
-      siteModel.create({
-        name: 'Site 2',
-        location: 'Location 2',
-        user_id: testUser.id,
-      });
+      await siteModel.create({ name: 'Site 1', code: 'S1', location: 'Location 1', created_by: testUser.id });
+      await siteModel.create({ name: 'Site 2', code: 'S2', location: 'Location 2', created_by: testUser.id });
 
       const response = await request(app)
         .get('/api/sites')
@@ -68,16 +61,37 @@ describe('Site Routes', () => {
     });
 
     it('should get sites with label counts', async () => {
-      const site = siteModel.create({
+      const site = await siteModel.create({
         name: 'Test Site',
-        user_id: testUser.id,
+        code: 'TS',
+        created_by: testUser.id,
       });
 
-      // Create a label for this site
-      db.exec(`
-        INSERT INTO labels (reference_number, site_id, user_id, source, destination)
-        VALUES ('TEST-001', ${site.id}, ${testUser.id}, 'Source', 'Dest')
-      `);
+      const cableType = await cableTypeModel.create({ site_id: site.id, name: 'CAT6' });
+
+      const locA = await siteLocationModel.create({
+        site_id: site.id,
+        floor: '1',
+        suite: 'A',
+        row: 'R1',
+        rack: '01',
+      });
+      const locB = await siteLocationModel.create({
+        site_id: site.id,
+        floor: '1',
+        suite: 'A',
+        row: 'R1',
+        rack: '02',
+      });
+
+      await labelModel.create({
+        site_id: site.id,
+        created_by: testUser.id,
+        source_location_id: locA.id,
+        destination_location_id: locB.id,
+        cable_type_id: cableType.id,
+        notes: 'Test label',
+      });
 
       const response = await request(app)
         .get('/api/sites?include_counts=true')
@@ -90,16 +104,8 @@ describe('Site Routes', () => {
     });
 
     it('should filter sites by search term', async () => {
-      siteModel.create({
-        name: 'Office Site',
-        location: 'New York',
-        user_id: testUser.id,
-      });
-      siteModel.create({
-        name: 'Warehouse Site',
-        location: 'California',
-        user_id: testUser.id,
-      });
+      await siteModel.create({ name: 'Office Site', code: 'OFF', location: 'New York', created_by: testUser.id });
+      await siteModel.create({ name: 'Warehouse Site', code: 'WH', location: 'California', created_by: testUser.id });
 
       const response = await request(app)
         .get('/api/sites?search=Office')
@@ -120,10 +126,7 @@ describe('Site Routes', () => {
     it('should handle pagination parameters', async () => {
       // Create multiple sites
       for (let i = 1; i <= 5; i++) {
-        siteModel.create({
-          name: `Site ${i}`,
-          user_id: testUser.id,
-        });
+        await siteModel.create({ name: `Site ${i}`, code: `S${i}`, created_by: testUser.id });
       }
 
       const response = await request(app)
@@ -141,11 +144,12 @@ describe('Site Routes', () => {
 
   describe('GET /api/sites/:id', () => {
     it('should get specific site', async () => {
-      const site = siteModel.create({
+      const site = await siteModel.create({
         name: 'Test Site',
+        code: 'TS',
         location: 'Test Location',
         description: 'Test Description',
-        user_id: testUser.id,
+        created_by: testUser.id,
       });
 
       const response = await request(app)
@@ -179,17 +183,15 @@ describe('Site Routes', () => {
         email: 'other@example.com',
         full_name: 'Other User',
         password: 'TestPassword123!',
+        role: 'USER',
       });
 
-      const site = siteModel.create({
-        name: 'Other User Site',
-        user_id: otherUser.id,
-      });
+      const site = await siteModel.create({ name: 'Other User Site', code: 'O1', created_by: otherUser.id });
 
       await request(app)
         .get(`/api/sites/${site.id}`)
         .set('Authorization', `Bearer ${authToken}`)
-        .expect(404);
+        .expect(403);
     });
   });
 
@@ -197,6 +199,7 @@ describe('Site Routes', () => {
     it('should create new site', async () => {
       const siteData = {
         name: 'New Site',
+        code: 'NS',
         location: 'New Location',
         description: 'New Description',
       };
@@ -209,14 +212,16 @@ describe('Site Routes', () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.site.name).toBe(siteData.name);
+      expect(response.body.data.site.code).toBe('NS');
       expect(response.body.data.site.location).toBe(siteData.location);
       expect(response.body.data.site.description).toBe(siteData.description);
-      expect(response.body.data.site.user_id).toBe(testUser.id);
+      expect(response.body.data.site.created_by).toBe(testUser.id);
     });
 
     it('should create site with minimal data', async () => {
       const siteData = {
         name: 'Minimal Site',
+        code: 'MS',
       };
 
       const response = await request(app)
@@ -227,6 +232,7 @@ describe('Site Routes', () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.site.name).toBe(siteData.name);
+      expect(response.body.data.site.code).toBe('MS');
       expect(response.body.data.site.location).toBeNull();
       expect(response.body.data.site.description).toBeNull();
     });
@@ -245,6 +251,7 @@ describe('Site Routes', () => {
     it('should validate field lengths', async () => {
       const siteData = {
         name: 'x'.repeat(101), // Exceeds 100 character limit
+        code: 'TS',
         location: 'x'.repeat(201), // Exceeds 200 character limit
         description: 'x'.repeat(501), // Exceeds 500 character limit
       };
@@ -269,11 +276,7 @@ describe('Site Routes', () => {
 
   describe('PUT /api/sites/:id', () => {
     it('should update existing site', async () => {
-      const site = siteModel.create({
-        name: 'Original Site',
-        location: 'Original Location',
-        user_id: testUser.id,
-      });
+      const site = await siteModel.create({ name: 'Original Site', code: 'OS', location: 'Original Location', created_by: testUser.id });
 
       const updateData = {
         name: 'Updated Site',
@@ -294,11 +297,12 @@ describe('Site Routes', () => {
     });
 
     it('should update partial site data', async () => {
-      const site = siteModel.create({
+      const site = await siteModel.create({
         name: 'Original Site',
+        code: 'OS',
         location: 'Original Location',
         description: 'Original Description',
-        user_id: testUser.id,
+        created_by: testUser.id,
       });
 
       const updateData = {
@@ -331,18 +335,16 @@ describe('Site Routes', () => {
         email: 'other@example.com',
         full_name: 'Other User',
         password: 'TestPassword123!',
+        role: 'USER',
       });
 
-      const site = siteModel.create({
-        name: 'Other User Site',
-        user_id: otherUser.id,
-      });
+      const site = await siteModel.create({ name: 'Other User Site', code: 'OU', created_by: otherUser.id });
 
       await request(app)
         .put(`/api/sites/${site.id}`)
         .set('Authorization', `Bearer ${authToken}`)
         .send({ name: 'Updated Site' })
-        .expect(404);
+        .expect(403);
     });
 
     it('should require authentication', async () => {
@@ -355,10 +357,7 @@ describe('Site Routes', () => {
 
   describe('DELETE /api/sites/:id', () => {
     it('should delete site', async () => {
-      const site = siteModel.create({
-        name: 'Test Site',
-        user_id: testUser.id,
-      });
+      const site = await siteModel.create({ name: 'Test Site', code: 'TS', created_by: testUser.id });
 
       const response = await request(app)
         .delete(`/api/sites/${site.id}`)
@@ -369,21 +368,17 @@ describe('Site Routes', () => {
       expect(response.body.message).toBe('Site deleted successfully');
 
       // Verify site is deleted
-      const deletedSite = siteModel.findById(site.id);
+      const deletedSite = await siteModel.findById(site.id);
       expect(deletedSite).toBeNull();
     });
 
     it('should prevent deletion when site has labels', async () => {
-      const site = siteModel.create({
-        name: 'Test Site',
-        user_id: testUser.id,
-      });
+      const site = await siteModel.create({ name: 'Test Site', code: 'TS', created_by: testUser.id });
 
-      // Create a label for this site
-      db.exec(`
-        INSERT INTO labels (reference_number, site_id, user_id, source, destination)
-        VALUES ('TEST-001', ${site.id}, ${testUser.id}, 'Source', 'Dest')
-      `);
+      const locA = await siteLocationModel.create({ site_id: site.id, floor: '1', suite: 'A', row: 'R1', rack: '01' });
+      const locB = await siteLocationModel.create({ site_id: site.id, floor: '1', suite: 'A', row: 'R1', rack: '02' });
+      const cableType = await cableTypeModel.create({ site_id: site.id, name: 'CAT6' });
+      await labelModel.create({ site_id: site.id, created_by: testUser.id, source_location_id: locA.id, destination_location_id: locB.id, cable_type_id: cableType.id });
 
       const response = await request(app)
         .delete(`/api/sites/${site.id}`)
@@ -407,17 +402,15 @@ describe('Site Routes', () => {
         email: 'other@example.com',
         full_name: 'Other User',
         password: 'TestPassword123!',
+        role: 'USER',
       });
 
-      const site = siteModel.create({
-        name: 'Other User Site',
-        user_id: otherUser.id,
-      });
+      const site = await siteModel.create({ name: 'Other User Site', code: 'OU', created_by: otherUser.id });
 
       await request(app)
         .delete(`/api/sites/${site.id}`)
         .set('Authorization', `Bearer ${authToken}`)
-        .expect(404);
+        .expect(403);
     });
 
     it('should require authentication', async () => {

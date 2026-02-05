@@ -4,6 +4,8 @@ import { Migration001_InitialSchema } from './001_initial_schema.js';
 import { Migration002_AddRoleToUsers } from './002_add_role_to_users.js';
 import { Migration003_RbacSiteScoping } from './003_rbac_site_scoping.js';
 import * as migration004 from './004_add_fullname_to_invitations.js';
+import { Migration005_SiteLocations } from './005_site_locations.js';
+import { Migration006_CableTypes } from './006_cable_types.js';
 
 export interface Migration {
   id: string;
@@ -25,6 +27,8 @@ const migrations: Migration[] = [
   Migration002_AddRoleToUsers,
   Migration003_RbacSiteScoping,
   Migration004_AddFullnameToInvitations,
+  Migration005_SiteLocations,
+  Migration006_CableTypes,
 ];
 
 export async function runMigrations(): Promise<void> {

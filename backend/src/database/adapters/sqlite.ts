@@ -1,11 +1,100 @@
-import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { BaseDatabaseAdapter, DatabaseConfig } from './base.js';
 
+type SqliteRunResult = {
+  changes: number;
+  lastInsertRowid?: number;
+};
+
+type SqliteStatementLike = {
+  all: (...params: any[]) => any[];
+  get: (...params: any[]) => any;
+  run: (...params: any[]) => SqliteRunResult;
+};
+
+type SqliteDatabaseLike = {
+  prepare: (sql: string) => SqliteStatementLike;
+  exec: (sql: string) => void;
+  pragma: (pragma: string) => any;
+  close: () => void;
+};
+
+class SqlJsStatement implements SqliteStatementLike {
+  constructor(
+    private readonly stmt: any,
+    private readonly db: any
+  ) {}
+
+  all(...params: any[]): any[] {
+    this.stmt.bind(params);
+    const rows: any[] = [];
+    while (this.stmt.step()) {
+      rows.push(this.stmt.getAsObject());
+    }
+    this.stmt.reset();
+    return rows;
+  }
+
+  get(...params: any[]): any {
+    this.stmt.bind(params);
+    const hasRow = this.stmt.step();
+    const row = hasRow ? this.stmt.getAsObject() : undefined;
+    this.stmt.reset();
+    return row;
+  }
+
+  run(...params: any[]): SqliteRunResult {
+    this.stmt.bind(params);
+    // For non-SELECT statements, step() executes once.
+    this.stmt.step();
+    this.stmt.reset();
+
+    const changes = typeof this.db.getRowsModified === 'function' ? this.db.getRowsModified() : 0;
+    let lastInsertRowid: number | undefined;
+
+    try {
+      const result = this.db.exec('SELECT last_insert_rowid() AS id');
+      const value = result?.[0]?.values?.[0]?.[0];
+      if (typeof value === 'number') {
+        lastInsertRowid = value;
+      }
+    } catch {
+      // ignore
+    }
+
+    return {
+      changes,
+      ...(lastInsertRowid !== undefined ? { lastInsertRowid } : {}),
+    };
+  }
+}
+
+class SqlJsDatabase implements SqliteDatabaseLike {
+  constructor(private readonly db: any) {}
+
+  prepare(sql: string): SqliteStatementLike {
+    const stmt = this.db.prepare(sql);
+    return new SqlJsStatement(stmt, this.db);
+  }
+
+  exec(sql: string): void {
+    this.db.exec(sql);
+  }
+
+  pragma(pragma: string): any {
+    this.db.exec(`PRAGMA ${pragma}`);
+    return undefined;
+  }
+
+  close(): void {
+    this.db.close();
+  }
+}
+
 export class SQLiteAdapter extends BaseDatabaseAdapter {
-  private db: Database.Database | null = null;
-  private transaction: Database.Transaction | null = null;
+  private db: SqliteDatabaseLike | null = null;
+  private inTransaction = false;
 
   constructor(config: DatabaseConfig) {
     super(config);
@@ -37,13 +126,32 @@ export class SQLiteAdapter extends BaseDatabaseAdapter {
         throw new Error(`Database directory ${dir} is not writable. Please check permissions.`);
       }
 
-      this.db = new Database(filename, {
-        verbose: process.env.NODE_ENV === 'development' ? console.log : undefined,
-        fileMustExist: false,
-      });
+      // Prefer better-sqlite3 when available, but fall back to sql.js when
+      // native bindings aren't present (common on Windows without build tools).
+      try {
+        const { default: BetterSqlite3 } = await import('better-sqlite3');
+        const nativeDb = new BetterSqlite3(filename, {
+          verbose: process.env.NODE_ENV === 'development' ? console.log : undefined,
+          fileMustExist: false,
+        });
 
-      // Enable foreign keys
-      this.db.pragma('foreign_keys = ON');
+        // Enable foreign keys
+        nativeDb.pragma('foreign_keys = ON');
+        this.db = nativeDb as unknown as SqliteDatabaseLike;
+      } catch (nativeError) {
+        const message = nativeError instanceof Error ? nativeError.message : String(nativeError);
+        console.warn('⚠️  better-sqlite3 unavailable, falling back to sql.js:', message);
+
+        const initSqlJs = (await import('sql.js')).default;
+        const SQL = await initSqlJs({
+          // sql.js will resolve its wasm internally in Node
+        } as any);
+
+        const sqljsDb = filename === ':memory:' ? new SQL.Database() : new SQL.Database();
+        // Enable foreign keys
+        sqljsDb.exec('PRAGMA foreign_keys = ON');
+        this.db = new SqlJsDatabase(sqljsDb);
+      }
       
       this.connected = true;
       console.log(`✅ SQLite connected: ${filename}`);
@@ -58,6 +166,7 @@ export class SQLiteAdapter extends BaseDatabaseAdapter {
       this.db.close();
       this.db = null;
       this.connected = false;
+      this.inTransaction = false;
       console.log('✅ SQLite disconnected');
     }
   }
@@ -91,9 +200,11 @@ export class SQLiteAdapter extends BaseDatabaseAdapter {
     try {
       const stmt = this.db.prepare(sql);
       const result = stmt.run(...params);
+      const insertId = typeof result.lastInsertRowid === 'number' ? result.lastInsertRowid : undefined;
+
       return {
-        insertId: result.lastInsertRowid as number,
-        affectedRows: result.changes
+        affectedRows: result.changes,
+        ...(insertId !== undefined ? { insertId } : {}),
       };
     } catch (error) {
       console.error('SQLite execute error:', error);
@@ -103,25 +214,33 @@ export class SQLiteAdapter extends BaseDatabaseAdapter {
 
   async beginTransaction(): Promise<void> {
     if (!this.db) throw new Error('Database not connected');
-    this.transaction = this.db.transaction(() => {});
+    if (this.inTransaction) return;
+    this.db.prepare('BEGIN').run();
+    this.inTransaction = true;
   }
 
   async commit(): Promise<void> {
-    // SQLite transactions are handled differently - this is a no-op for compatibility
+    if (!this.db) throw new Error('Database not connected');
+    if (!this.inTransaction) return;
+    this.db.prepare('COMMIT').run();
+    this.inTransaction = false;
   }
 
   async rollback(): Promise<void> {
-    // SQLite transactions are handled differently - this is a no-op for compatibility
+    if (!this.db) throw new Error('Database not connected');
+    if (!this.inTransaction) return;
+    this.db.prepare('ROLLBACK').run();
+    this.inTransaction = false;
   }
 
   getLastInsertId(): number {
     if (!this.db) throw new Error('Database not connected');
-    const result = this.db.prepare('SELECT last_insert_rowid() as id').get() as { id: number };
-    return result.id;
+    const result = this.db.prepare('SELECT last_insert_rowid() as id').get() as { id: number } | undefined;
+    return result?.id ?? 0;
   }
 
   // SQLite-specific method for direct access
-  getDatabase(): Database.Database {
+  getDatabase(): SqliteDatabaseLike {
     if (!this.db) throw new Error('Database not connected');
     return this.db;
   }

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { Toaster } from 'sonner'
 import { AuthProvider } from './contexts/AuthContext'
+import { ThemeProvider } from './contexts/ThemeContext'
 import ProtectedRoute from './components/auth/ProtectedRoute'
 import ErrorBoundary from './components/ErrorBoundary'
 import Layout from './components/layout/Layout'
@@ -76,25 +77,21 @@ function App() {
     };
   }, []);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-
-  if (setupRequired) {
-    return <SetupPage />;
-  }
-
   return (
-    <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <Router>
-            <div className="min-h-screen bg-background">
-              <Routes>
+    <ThemeProvider>
+      {isLoading ? (
+        <div className="min-h-screen flex items-center justify-center bg-background text-foreground">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
+        </div>
+      ) : setupRequired ? (
+        <SetupPage />
+      ) : (
+        <ErrorBoundary>
+          <QueryClientProvider client={queryClient}>
+            <AuthProvider>
+              <Router>
+                <div className="min-h-screen bg-background text-foreground">
+                  <Routes>
                 {/* Site-centric app: root lands on sites */}
                 <Route path="/" element={<Navigate to="/sites" replace />} />
                 
@@ -182,21 +179,18 @@ function App() {
                 
                 {/* Catch all - 404 */}
                 <Route path="*" element={<NotFoundPage />} />
-              </Routes>
-            </div>
-            
-            {/* Toast notifications */}
-            <Toaster 
-              position="top-right"
-              expand={false}
-              richColors
-              closeButton
-            />
-          </Router>
-        </AuthProvider>
-        <ReactQueryDevtools initialIsOpen={false} />
-      </QueryClientProvider>
-    </ErrorBoundary>
+                  </Routes>
+                </div>
+
+                {/* Toast notifications */}
+                <Toaster position="top-right" expand={false} richColors closeButton />
+              </Router>
+            </AuthProvider>
+            <ReactQueryDevtools initialIsOpen={false} />
+          </QueryClientProvider>
+        </ErrorBoundary>
+      )}
+    </ThemeProvider>
   )
 }
 

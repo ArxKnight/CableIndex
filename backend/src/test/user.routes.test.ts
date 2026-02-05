@@ -1,26 +1,22 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
-import Database from 'better-sqlite3';
 import app from '../app.js';
 import UserModel from '../models/User.js';
 import RoleService from '../services/RoleService.js';
-import connection from '../database/connection.js';
-import { initializeDatabase } from '../database/init.js';
 import { generateToken } from '../utils/jwt.js';
+import { setupTestDatabase, cleanupTestDatabase } from './setup.js';
 
 describe('User Routes', () => {
   let userModel: UserModel;
   let roleService: RoleService;
-  let db: Database.Database;
+  let db: any;
   let adminUser: any;
   let regularUser: any;
   let adminToken: string;
   let userToken: string;
 
   beforeEach(async () => {
-    // Initialize in-memory database for testing
-    await initializeDatabase({ runMigrations: true, seedData: false });
-    db = connection.getConnection();
+    db = await setupTestDatabase({ runMigrations: true, seedData: false });
     userModel = new UserModel();
     roleService = new RoleService();
 
@@ -29,27 +25,23 @@ describe('User Routes', () => {
       email: 'admin@example.com',
       full_name: 'Admin User',
       password: 'AdminPassword123!',
-      role: 'admin',
+      role: 'ADMIN',
     });
 
     regularUser = await userModel.create({
       email: 'user@example.com',
       full_name: 'Regular User',
       password: 'UserPassword123!',
-      role: 'user',
+      role: 'USER',
     });
 
     // Generate tokens
-    adminToken = generateToken({ userId: adminUser.id, email: adminUser.email, role: adminUser.role });
-    userToken = generateToken({ userId: regularUser.id, email: regularUser.email, role: regularUser.role });
+    adminToken = generateToken(adminUser);
+    userToken = generateToken(regularUser);
   });
 
-  afterEach(() => {
-    // Clean up database
-    if (db) {
-      db.exec('DELETE FROM tool_permissions');
-      db.exec('DELETE FROM users');
-    }
+  afterEach(async () => {
+    await cleanupTestDatabase();
   });
 
   describe('GET /api/users', () => {
@@ -85,7 +77,7 @@ describe('User Routes', () => {
         .expect(401);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain('Authentication required');
+      expect(response.body.error).toContain('Access denied. No token provided.');
     });
 
     it('should support pagination', async () => {
@@ -95,7 +87,7 @@ describe('User Routes', () => {
           email: `user${i}@example.com`,
           full_name: `User ${i}`,
           password: 'Password123!',
-          role: 'user',
+          role: 'USER',
         });
       }
 
@@ -121,8 +113,8 @@ describe('User Routes', () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data.totalUsers).toBe(2);
       expect(response.body.data.usersByRole).toBeDefined();
-      expect(response.body.data.usersByRole.admin).toBe(1);
-      expect(response.body.data.usersByRole.user).toBe(1);
+      expect(response.body.data.usersByRole.ADMIN).toBe(1);
+      expect(response.body.data.usersByRole.USER).toBe(1);
     });
 
     it('should deny access for regular user', async () => {
@@ -139,7 +131,7 @@ describe('User Routes', () => {
     it('should update user for admin', async () => {
       const updateData = {
         full_name: 'Updated Name',
-        role: 'moderator',
+        role: 'ADMIN',
       };
 
       const response = await request(app)
@@ -209,7 +201,7 @@ describe('User Routes', () => {
       expect(response.body.message).toContain('deleted successfully');
 
       // Verify user is deleted
-      const deletedUser = userModel.findById(regularUser.id);
+      const deletedUser = await userModel.findById(regularUser.id);
       expect(deletedUser).toBeNull();
     });
 

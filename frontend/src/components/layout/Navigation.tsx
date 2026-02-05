@@ -2,6 +2,8 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   MapPin, 
+  Moon,
+  Sun,
   Wrench,
   Settings, 
   ChevronDown,
@@ -10,7 +12,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useTheme } from '../../contexts/ThemeContext';
 import { Button } from '../ui/button';
+import { Switch } from '../ui/switch';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,6 +57,7 @@ const Navigation: React.FC = () => {
   const location = useLocation();
   const { user, logout } = useAuth();
   const { canAccess, isAdmin } = usePermissions();
+  const { theme, setTheme } = useTheme();
   const logoIconUrl = `${import.meta.env.BASE_URL}cableindex-icon.png`;
 
   const handleLogout = async () => {
@@ -74,7 +79,7 @@ const Navigation: React.FC = () => {
   });
 
   return (
-    <nav className="bg-white shadow-sm border-b">
+    <nav className="bg-background shadow-sm border-b border-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           {/* Logo and main navigation */}
@@ -86,7 +91,7 @@ const Navigation: React.FC = () => {
                   alt="CableIndex" 
                   className="h-8 w-8"
                 />
-                <span className="text-xl font-bold text-gray-900">CableIndex</span>
+                <span className="text-xl font-bold text-foreground">CableIndex</span>
               </Link>
             </div>
             
@@ -103,8 +108,8 @@ const Navigation: React.FC = () => {
                     className={cn(
                       'inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium transition-colors',
                       isActive
-                        ? 'border-blue-500 text-gray-900'
-                        : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                        ? 'border-primary text-foreground'
+                        : 'border-transparent text-muted-foreground hover:border-muted hover:text-foreground'
                     )}
                   >
                     <Icon className="w-4 h-4 mr-2" />
@@ -116,7 +121,20 @@ const Navigation: React.FC = () => {
           </div>
 
           {/* User menu */}
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" title="Toggle theme">
+              <span className="sr-only">Toggle theme</span>
+              {theme === 'dark' ? (
+                <Moon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              ) : (
+                <Sun className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              )}
+              <Switch
+                aria-label="Toggle theme"
+                checked={theme === 'dark'}
+                onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')}
+              />
+            </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center space-x-2">
@@ -166,8 +184,8 @@ const Navigation: React.FC = () => {
                   className={cn(
                     'block pl-3 pr-4 py-2 border-l-4 text-base font-medium transition-colors',
                     isActive
-                      ? 'bg-blue-50 border-blue-500 text-blue-700'
-                      : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
+                      ? 'bg-muted border-primary text-foreground'
+                      : 'border-transparent text-muted-foreground hover:bg-muted hover:border-muted hover:text-foreground'
                   )}
                 >
                   <div className="flex items-center">

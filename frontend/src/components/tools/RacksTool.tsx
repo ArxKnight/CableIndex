@@ -4,6 +4,7 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { splitLines } from './utils';
 import { ZplOutput } from './ZplOutput';
+import { RackPreview } from './ToolLabelPreview';
 
 function rackShortName(full: string): string {
   const parts = full.split('ROW');
@@ -25,6 +26,7 @@ function generateRackZpl(racks: string[]): string {
 export function RacksTool() {
   const [rackList, setRackList] = useState('');
   const racks = useMemo(() => splitLines(rackList), [rackList]);
+  const firstRack = useMemo(() => racks.find((r) => r.trim()) || '', [racks]);
   const zpl = useMemo(() => generateRackZpl(racks), [racks]);
 
   return (
@@ -56,6 +58,7 @@ export function RacksTool() {
         zpl={zpl}
         prefix="Racks"
         disabled={racks.length === 0}
+        preview={<RackPreview rack={firstRack} />}
       />
     </div>
   );

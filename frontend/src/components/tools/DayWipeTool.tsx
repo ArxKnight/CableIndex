@@ -5,6 +5,7 @@ import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { formatFutureDateDDMMYY, splitLines } from './utils';
 import { ZplOutput } from './ZplOutput';
+import { DayWipePreview } from './ToolLabelPreview';
 
 function generateDayWipeZpl(sids: string[], days: number): string {
   const dateStr = formatFutureDateDDMMYY(days);
@@ -25,6 +26,7 @@ export function DayWipeTool() {
   const [days, setDays] = useState<'30' | '14'>('30');
 
   const sids = useMemo(() => splitLines(sidList), [sidList]);
+  const firstSid = useMemo(() => sids.find((s) => s.trim()) || '', [sids]);
   const daysNum = days === '14' ? 14 : 30;
   const dateStr = useMemo(() => formatFutureDateDDMMYY(daysNum), [daysNum]);
   const zpl = useMemo(() => generateDayWipeZpl(sids, daysNum), [sids, daysNum]);
@@ -76,6 +78,7 @@ export function DayWipeTool() {
         zpl={zpl}
         prefix="30Day"
         disabled={sids.length === 0}
+        preview={<DayWipePreview sid={firstSid} dateStr={dateStr} />}
       />
     </div>
   );

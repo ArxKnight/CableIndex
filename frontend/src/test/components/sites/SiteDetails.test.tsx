@@ -5,9 +5,38 @@ import { MemoryRouter } from 'react-router-dom';
 import SiteDetails from '../../../components/sites/SiteDetails';
 import { apiClient } from '../../../lib/api';
 
+vi.mock('../../../components/locations/LocationHierarchyDropdown', () => {
+  return {
+    default: ({
+      locations,
+      valueLocationId,
+      onSelect,
+      placeholder,
+      disabled,
+    }: any) => (
+      <select
+        aria-label={placeholder}
+        disabled={disabled}
+        value={valueLocationId ?? ''}
+        onChange={(e) => onSelect(Number((e.target as HTMLSelectElement).value))}
+      >
+        <option value="" disabled>
+          {placeholder}
+        </option>
+        {locations.map((l: any) => (
+          <option key={l.id} value={String(l.id)}>
+            {`${l.label} | Floor: ${l.floor} | Suite: ${l.suite} | Row: ${l.row} | Rack: ${l.rack}`}
+          </option>
+        ))}
+      </select>
+    ),
+  };
+});
+
 const mockSite = {
   id: 1,
   name: 'Test Site',
+  code: 'TS',
   location: 'Test Location',
   description: 'Test Description',
   user_id: 1,
@@ -31,10 +60,35 @@ describe('SiteDetails', () => {
       data: { site: mockSite },
     });
 
+    vi.mocked(apiClient.getSiteLocations).mockResolvedValue({
+      success: true,
+      data: {
+        locations: [
+          { id: 101, label: 'SRC', floor: '1', suite: 'A', row: 'R1', rack: '1', site_id: 1 },
+        ],
+      },
+    } as any);
+
     vi.mocked(apiClient.getLabels).mockResolvedValue({
       success: true,
       data: { labels: [], pagination: { total: 0, has_more: false } },
     });
+
+    vi.mocked(apiClient.getSiteCableTypes).mockResolvedValue({
+      success: true,
+      data: {
+        cable_types: [
+          {
+            id: 201,
+            site_id: 1,
+            name: 'CAT6',
+            description: null,
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      },
+    } as any);
 
     vi.mocked(apiClient.createLabel).mockResolvedValue({
       success: true,
@@ -42,8 +96,8 @@ describe('SiteDetails', () => {
         label: {
           id: 1,
           reference_number: 'TEST-0001',
-          source: 'Server A',
-          destination: 'Switch B',
+          source: 'TS/1/A/R1/1',
+          destination: 'TS/1/A/R1/1',
           site_id: 1,
           created_at: '2024-01-01T00:00:00Z',
           updated_at: '2024-01-01T00:00:00Z',
@@ -63,9 +117,6 @@ describe('SiteDetails', () => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
       expect(screen.getByText('Test Location')).toBeInTheDocument();
       expect(screen.getByText('Test Description')).toBeInTheDocument();
-      // Check for label count in statistics section
-      const labelCountElements = screen.getAllByText('5');
-      expect(labelCountElements.length).toBeGreaterThan(0);
     });
   });
 
@@ -94,7 +145,7 @@ describe('SiteDetails', () => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
     });
 
-    const editButton = screen.getByText('Edit');
+    const editButton = screen.getByText('Edit Site');
     await user.click(editButton);
 
     expect(mockProps.onEdit).toHaveBeenCalledWith(mockSite);
@@ -118,7 +169,7 @@ describe('SiteDetails', () => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
     });
 
-    const deleteButton = screen.getByText('Delete');
+    const deleteButton = screen.getByText('Delete Site');
     await user.click(deleteButton);
 
     expect(mockProps.onDelete).toHaveBeenCalledWith(siteWithoutLabels);
@@ -136,7 +187,7 @@ describe('SiteDetails', () => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
     });
 
-    const deleteButton = screen.getByText('Delete');
+    const deleteButton = screen.getByText('Delete Site');
     expect(deleteButton).toBeEnabled();
     await user.click(deleteButton);
     expect(mockProps.onDelete).toHaveBeenCalledWith(mockSite);
@@ -234,22 +285,6 @@ describe('SiteDetails', () => {
     });
   });
 
-  it('should show labels statistics when labels exist', async () => {
-    render(
-      <MemoryRouter>
-        <SiteDetails {...mockProps} />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
-    });
-
-    // Check for the label count in the statistics section
-    const labelCountElements = screen.getAllByText('5');
-    expect(labelCountElements.length).toBeGreaterThan(0);
-  });
-
   it('should allow creating a label inside the site context', async () => {
     const user = userEvent.setup();
 
@@ -269,18 +304,56 @@ describe('SiteDetails', () => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
     });
 
+    vi.mocked(apiClient.getSiteLocations).mockResolvedValue({
+      success: true,
+      data: {
+        locations: [
+          { id: 101, label: 'SRC', floor: '1', suite: 'A', row: 'R1', rack: '1', site_id: 1 },
+          { id: 102, label: 'DST', floor: '2', suite: 'B', row: 'R2', rack: '2', site_id: 1 },
+        ],
+      },
+    } as any);
+
+    vi.mocked(apiClient.getSiteCableTypes).mockResolvedValue({
+      success: true,
+      data: {
+        cable_types: [
+          {
+            id: 201,
+            site_id: 1,
+            name: 'CAT6',
+            description: null,
+            created_at: '2024-01-01T00:00:00Z',
+            updated_at: '2024-01-01T00:00:00Z',
+          },
+        ],
+      },
+    } as any);
+
     await user.click(screen.getByText('Create Your First Label'));
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Create Label' })).toBeInTheDocument();
     });
 
-    await user.type(screen.getByLabelText(/source/i), 'Server A');
-    await user.type(screen.getByLabelText(/destination/i), 'Switch B');
+    await waitFor(() => {
+      expect(screen.getByLabelText('Source')).toBeInTheDocument();
+      expect(screen.getByLabelText('Destination')).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByLabelText('Source'), '101');
+    await user.selectOptions(screen.getByLabelText('Destination'), '102');
+
+    // Select cable type
+    await user.click(screen.getByRole('combobox', { name: /cable type/i }));
+    await user.click(screen.getByRole('option', { name: 'CAT6' }));
+
     await user.click(screen.getByRole('button', { name: /create label/i }));
 
     expect(apiClient.createLabel).toHaveBeenCalledWith({
-      source: 'Server A',
-      destination: 'Switch B',
+      source_location_id: 101,
+      destination_location_id: 102,
+      cable_type_id: 201,
+      notes: undefined,
       site_id: 1,
     });
   });

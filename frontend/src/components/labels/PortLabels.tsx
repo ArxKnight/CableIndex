@@ -79,7 +79,7 @@ export function PortLabels() {
     for (let port = formData.fromPort; port <= formData.toPort; port++) {
       previewLabels.push({
         port,
-        label: `${formData.sid}/${port}`
+        label: `${formData.sid.trim()}/${port}`,
       });
     }
 
@@ -222,7 +222,7 @@ export function PortLabels() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 max-h-60 overflow-y-auto">
-              {preview.map((item) => (
+              {preview.slice(0, 20).map((item) => (
                 <div
                   key={item.port}
                   className="p-2 border rounded text-center text-sm font-mono bg-muted"

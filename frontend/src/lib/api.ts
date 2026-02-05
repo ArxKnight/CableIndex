@@ -230,7 +230,7 @@ class ApiClient {
     return this.request<{ site: any }>(`/sites/${id}`);
   }
 
-  async createSite(data: { name: string; code?: string; location?: string; description?: string }) {
+  async createSite(data: { name: string; code: string; location?: string; description?: string }) {
     return this.request<{ site: any }>('/sites', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -249,12 +249,87 @@ class ApiClient {
     return this.request(`/sites/${id}${query}`, { method: 'DELETE' });
   }
 
+  // Site Locations endpoints
+  async getSiteLocations(siteId: number) {
+    return this.request<{ locations: any[] }>(`/sites/${siteId}/locations`);
+  }
+
+  async createSiteLocation(siteId: number, data: { floor?: string; suite?: string; row?: string; rack?: string; label?: string }) {
+    return this.request<{ location: any }>(`/sites/${siteId}/locations`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSiteLocation(
+    siteId: number,
+    locationId: number,
+    data: { floor?: string | null; suite?: string | null; row?: string | null; rack?: string | null; label?: string | null }
+  ) {
+    return this.request<{ location: any }>(`/sites/${siteId}/locations/${locationId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSiteLocation(
+    siteId: number,
+    locationId: number,
+    options?: { strategy?: 'reassign' | 'cascade'; target_location_id?: number; cascade?: boolean }
+  ) {
+    const params = new URLSearchParams();
+    // Prefer the explicit cascade=true query flag for cascade deletes.
+    // Keep supporting strategy=cascade for backwards compatibility.
+    if (options?.cascade || options?.strategy === 'cascade') params.set('cascade', 'true');
+    else if (options?.strategy) params.set('strategy', options.strategy);
+    if (options?.target_location_id) params.set('target_location_id', String(options.target_location_id));
+    const query = params.toString();
+    return this.request(`/sites/${siteId}/locations/${locationId}${query ? `?${query}` : ''}`, { method: 'DELETE' });
+  }
+
+  async getSiteLocationUsage(siteId: number, locationId: number) {
+    return this.request<{ usage: { source_count: number; destination_count: number; total_in_use: number } }>(
+      `/sites/${siteId}/locations/${locationId}/usage`
+    );
+  }
+
+  async reassignAndDeleteSiteLocation(siteId: number, locationId: number, reassignToLocationId: number) {
+    return this.request<{ reassigned_count: number; deleted_location_id: number; usage_before: any }>(
+      `/sites/${siteId}/locations/${locationId}/reassign-and-delete`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ reassign_to_location_id: reassignToLocationId }),
+      }
+    );
+  }
+
+  // Cable Types endpoints
+  async getSiteCableTypes(siteId: number) {
+    return this.request<{ cable_types: any[] }>(`/sites/${siteId}/cable-types`);
+  }
+
+  async createSiteCableType(siteId: number, data: { name: string; description?: string }) {
+    return this.request<{ cable_type: any }>(`/sites/${siteId}/cable-types`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSiteCableType(siteId: number, cableTypeId: number, data: { name?: string; description?: string | null }) {
+    return this.request<{ cable_type: any }>(`/sites/${siteId}/cable-types/${cableTypeId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSiteCableType(siteId: number, cableTypeId: number) {
+    return this.request(`/sites/${siteId}/cable-types/${cableTypeId}`, { method: 'DELETE' });
+  }
+
   // Label endpoints
   async getLabels(params: {
     site_id: number;
     search?: string;
-    source?: string;
-    destination?: string;
     reference_number?: string;
     limit?: number;
     offset?: number;
@@ -264,8 +339,6 @@ class ApiClient {
     const searchParams = new URLSearchParams();
     if (params?.search) searchParams.append('search', params.search);
     if (params?.site_id) searchParams.append('site_id', params.site_id.toString());
-    if (params?.source) searchParams.append('source', params.source);
-    if (params?.destination) searchParams.append('destination', params.destination);
     if (params?.reference_number) searchParams.append('reference_number', params.reference_number);
     if (params?.limit) searchParams.append('limit', params.limit.toString());
     if (params?.offset) searchParams.append('offset', params.offset.toString());
@@ -280,14 +353,17 @@ class ApiClient {
     return this.request<{ label: any }>(`/labels/${id}?site_id=${siteId}`);
   }
 
-  async createLabel(data: { source: string; destination: string; site_id: number; notes?: string; zpl_content?: string }) {
-    return this.request<{ label: any }>('/labels', {
+  async createLabel(data: { source_location_id: number; destination_location_id: number; cable_type_id: number; site_id: number; quantity?: number; notes?: string; zpl_content?: string }) {
+    return this.request<{ label: any; labels?: any[] }>('/labels', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
-  async updateLabel(id: number, data: { site_id: number; source?: string; destination?: string; notes?: string; zpl_content?: string }) {
+  async updateLabel(
+    id: number,
+    data: { site_id: number; source_location_id?: number; destination_location_id?: number; cable_type_id?: number; notes?: string; zpl_content?: string }
+  ) {
     return this.request<{ label: any }>(`/labels/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -470,6 +546,39 @@ class ApiClient {
       }
       throw new Error('Network error occurred');
     }
+  }
+
+  // Special method for downloading GET files as blobs
+  async downloadGetFile(endpoint: string): Promise<Blob> {
+    const url = `${this.baseURL}${endpoint}`;
+    const tokens = getAuthTokens();
+
+    const config: RequestInit = {
+      method: 'GET',
+      headers: {},
+    };
+
+    if (tokens?.accessToken) {
+      (config.headers as Record<string, string>)['Authorization'] = `Bearer ${tokens.accessToken}`;
+    }
+
+    const response = await fetch(url, config);
+    if (!response.ok) {
+      let message = `HTTP error! status: ${response.status}`;
+      try {
+        const errorData = await response.json();
+        message = errorData.error || message;
+      } catch {
+        // ignore
+      }
+      throw new Error(message);
+    }
+
+    return await response.blob();
+  }
+
+  async downloadLabelZpl(labelId: number, siteId: number): Promise<Blob> {
+    return this.downloadGetFile(`/labels/${labelId}/zpl?site_id=${siteId}`);
   }
 }
 

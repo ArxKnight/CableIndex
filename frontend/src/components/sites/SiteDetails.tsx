@@ -1,13 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { Site } from '../../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Label, Site } from '../../types';
 import { apiClient } from '../../lib/api';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Input } from '../ui/input';
 import { LabelDatabase, LabelForm } from '../labels';
-import type { LabelWithSiteInfo, CreateLabelData } from '../../types';
+import type { CreateLabelData } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
+import { downloadBlobAsNamedTextFile, makeTimestampLocal } from '../../lib/download';
+import SiteLocationsDialog from './SiteLocationsDialog';
+import SiteCableTypesDialog from './SiteCableTypesDialog';
 import { 
   MapPin, 
   Calendar, 
@@ -36,14 +40,20 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
   onDelete, 
   onBack 
 }) => {
-  const { canCreate } = usePermissions();
+  const { canCreate, isAdmin } = usePermissions();
   const [site, setSite] = useState<SiteWithLabelCount | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [labelMode, setLabelMode] = useState<'list' | 'edit'>('list');
-  const [editingLabel, setEditingLabel] = useState<LabelWithSiteInfo | null>(null);
   const [labelsRefreshToken, setLabelsRefreshToken] = useState(0);
   const [createLabelOpen, setCreateLabelOpen] = useState(false);
+  const [createSuccessOpen, setCreateSuccessOpen] = useState(false);
+  const [createdLabels, setCreatedLabels] = useState<Label[]>([]);
+  const [rangeStart, setRangeStart] = useState('');
+  const [rangeEnd, setRangeEnd] = useState('');
+  const [locationsOpen, setLocationsOpen] = useState(false);
+  const [locationCount, setLocationCount] = useState<number | null>(null);
+  const [cableTypesOpen, setCableTypesOpen] = useState(false);
+  const [cableTypeCount, setCableTypeCount] = useState<number | null>(null);
 
   const canCreateLabels = canCreate('labels');
 
@@ -60,6 +70,28 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
 
       if (response.success && response.data) {
         setSite(response.data.site);
+
+        try {
+          const locResp = await apiClient.getSiteLocations(siteId);
+          if (locResp.success && locResp.data) {
+            setLocationCount(locResp.data.locations.length);
+          } else {
+            setLocationCount(null);
+          }
+        } catch {
+          setLocationCount(null);
+        }
+
+        try {
+          const ctResp = await apiClient.getSiteCableTypes(siteId);
+          if (ctResp.success && ctResp.data) {
+            setCableTypeCount(ctResp.data.cable_types.length);
+          } else {
+            setCableTypeCount(null);
+          }
+        } catch {
+          setCableTypeCount(null);
+        }
       } else {
         throw new Error(response.error || 'Failed to load site');
       }
@@ -72,33 +104,93 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
 
   const handleCreateLabel = async (data: CreateLabelData) => {
     if (!site) return;
-    await apiClient.createLabel({
-      source: data.source,
-      destination: data.destination,
+    const resp = await apiClient.createLabel({
+      source_location_id: data.source_location_id,
+      destination_location_id: data.destination_location_id,
+      cable_type_id: data.cable_type_id,
       notes: data.notes,
       site_id: site.id,
+      quantity: data.quantity,
     });
+
+    if (!resp.success || !resp.data?.label) {
+      throw new Error(resp.error || 'Failed to create label');
+    }
+
+    const labels = (resp.data.labels && resp.data.labels.length)
+      ? (resp.data.labels as Label[])
+      : ([resp.data.label] as Label[]);
+
+    setCreatedLabels(labels);
     setCreateLabelOpen(false);
-    setEditingLabel(null);
+    setCreateSuccessOpen(true);
     setLabelsRefreshToken((t) => t + 1);
     await loadSite();
   };
 
-  const handleUpdateLabel = async (data: CreateLabelData) => {
-    if (!site || !editingLabel) return;
-    await apiClient.updateLabel(editingLabel.id, {
+  const createdRange = useMemo(() => {
+    if (!createdLabels.length) return null;
+    const refs = createdLabels
+      .map((l) => String(l.ref_string || l.ref_number || '').replace(/^#/, ''))
+      .map((s) => s.padStart(4, '0'))
+      .filter((s) => s.trim().length > 0);
+
+    if (!refs.length) return null;
+    refs.sort((a, b) => Number(a) - Number(b));
+    return { from: `#${refs[0]}`, to: `#${refs[refs.length - 1]}`, count: createdLabels.length };
+  }, [createdLabels]);
+
+  const handleDownloadCreated = async () => {
+    if (!site) return;
+    if (!createdLabels.length) return;
+
+    const ids = createdLabels.map((l) => l.id).filter(Boolean);
+    if (!ids.length) return;
+
+    const blob = await apiClient.downloadFile('/labels/bulk-zpl', {
       site_id: site.id,
-      source: data.source,
-      destination: data.destination,
-      notes: data.notes,
+      ids,
     });
-    setLabelMode('list');
-    setEditingLabel(null);
-    setLabelsRefreshToken((t) => t + 1);
-    await loadSite();
+
+    const filename = `crossrackref_${makeTimestampLocal()}.txt`;
+    await downloadBlobAsNamedTextFile(blob, filename);
   };
 
+  const handleRangeDownload = async () => {
+    if (!site) return;
 
+    if (!rangeStart.trim() || !rangeEnd.trim()) {
+      setError('Please enter both start and end reference numbers');
+      return;
+    }
+
+    const extractTrailingNumber = (value: string) => {
+      const match = value.trim().match(/(\d+)$/);
+      return match ? parseInt(match[1], 10) : 0;
+    };
+
+    const start = extractTrailingNumber(rangeStart);
+    const end = extractTrailingNumber(rangeEnd);
+
+    if (!start || !end || start < 1 || end < 1 || start > end) {
+      setError('Invalid reference range');
+      return;
+    }
+
+    try {
+      setError(null);
+      const blob = await apiClient.downloadFile('/labels/bulk-zpl-range', {
+        site_id: site.id,
+        start_ref: rangeStart,
+        end_ref: rangeEnd,
+      });
+
+      const filename = `crossrackref_${makeTimestampLocal()}.txt`;
+      await downloadBlobAsNamedTextFile(blob, filename);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to download labels');
+    }
+  };
 
   const formatDateTime = (dateString: string) => {
     return new Date(dateString).toLocaleString('en-US', {
@@ -147,6 +239,10 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
     );
   }
 
+  const locationsMissing = locationCount === 0;
+  const cableTypesMissing = cableTypeCount === 0;
+  const canCreateLabelForSite = canCreateLabels && !locationsMissing && !cableTypesMissing;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -161,34 +257,66 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
             <p className="text-muted-foreground">Site Details</p>
           </div>
         </div>
-        <div className="flex space-x-2">
-          <Button variant="outline" onClick={() => onEdit(site)}>
-            <Edit className="mr-2 h-4 w-4" />
-            Edit
-          </Button>
-          <Button 
-            variant="destructive" 
-            onClick={() => onDelete(site)}
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
-            Delete
-          </Button>
-        </div>
       </div>
 
       {/* Site Information */}
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center">
-              <FileText className="mr-2 h-5 w-5" />
-              Site Information
-            </CardTitle>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle className="flex items-center whitespace-nowrap shrink-0">
+                <FileText className="mr-2 h-5 w-5" />
+                Site Information
+              </CardTitle>
+
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {isAdmin && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+                      onClick={() => setLocationsOpen(true)}
+                    >
+                      Manage Site Locations
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+                      onClick={() => setCableTypesOpen(true)}
+                    >
+                      Manage Cable Types
+                    </Button>
+                  </>
+                )}
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+                  onClick={() => onEdit(site)}
+                >
+                  <Edit className="mr-2 h-4 w-4" />
+                  Edit Site
+                </Button>
+
+                <Button variant="destructive" size="sm" onClick={() => onDelete(site)}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Site
+                </Button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
               <label className="text-sm font-medium text-muted-foreground">Name</label>
               <p className="text-sm">{site.name}</p>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">Abbreviation</label>
+              <p className="text-sm font-mono">{site.code}</p>
             </div>
             
             {site.location && (
@@ -207,6 +335,20 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
                 <p className="text-sm whitespace-pre-wrap">{site.description}</p>
               </div>
             )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-muted-foreground flex items-center">
+                  <Calendar className="mr-1 h-3 w-3" />
+                  Created
+                </label>
+                <p className="text-sm">{formatDateTime(site.created_at)}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-muted-foreground">Last Updated</label>
+                <p className="text-sm">{formatDateTime(site.updated_at)}</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -214,26 +356,40 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
           <CardHeader>
             <CardTitle className="flex items-center">
               <Tag className="mr-2 h-5 w-5" />
-              Statistics
+              Bulk Operations
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <label className="text-sm font-medium text-muted-foreground">Total Labels</label>
-              <p className="text-2xl font-bold">{site.label_count}</p>
-            </div>
-            
-            <div>
-              <label className="text-sm font-medium text-muted-foreground flex items-center">
-                <Calendar className="mr-1 h-3 w-3" />
-                Created
-              </label>
-              <p className="text-sm">{formatDateTime(site.created_at)}</p>
-            </div>
-            
-            <div>
-              <label className="text-sm font-medium text-muted-foreground">Last Updated</label>
-              <p className="text-sm">{formatDateTime(site.updated_at)}</p>
+            <div className="space-y-2 rounded-md border p-3">
+              <div>
+                <div className="text-sm font-semibold">Cross-Rack Reference Range</div>
+                <div className="text-xs text-muted-foreground">Downloads a single .txt for a reference range.</div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">From Cable ID</label>
+                  <Input
+                    placeholder="#0001"
+                    value={rangeStart}
+                    onChange={(e) => setRangeStart(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">To Cable ID</label>
+                  <Input
+                    placeholder="#0100"
+                    value={rangeEnd}
+                    onChange={(e) => setRangeEnd(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-center">
+                <Button variant="outline" onClick={handleRangeDownload}>
+                  Download Label Range
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -250,14 +406,42 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
               </CardDescription>
             </div>
 
-            {canCreateLabels && labelMode === 'list' && (
+            {locationsMissing ? (
+              isAdmin ? (
+                <Button aria-label="Open site locations dialog" onClick={() => setLocationsOpen(true)}>
+                  Create Your First Site Location
+                </Button>
+              ) : null
+            ) : cableTypesMissing ? (
+              isAdmin ? (
+                <Button aria-label="Open cable types dialog" onClick={() => setCableTypesOpen(true)}>
+                  Create Your First Cable Type
+                </Button>
+              ) : null
+            ) : canCreateLabels ? (
               <Button aria-label="Open label creation dialog" onClick={() => setCreateLabelOpen(true)}>
                 Create Label
               </Button>
-            )}
+            ) : null}
           </div>
         </CardHeader>
         <CardContent>
+          {locationsMissing && !isAdmin && (
+            <Alert>
+              <AlertDescription>
+                No site locations exist yet. Ask an admin to add locations for this site.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {cableTypesMissing && !isAdmin && (
+            <Alert>
+              <AlertDescription>
+                No cable types exist yet. Ask an admin to add cable types for this site.
+              </AlertDescription>
+            </Alert>
+          )}
+
           <Dialog open={createLabelOpen} onOpenChange={setCreateLabelOpen}>
             <DialogContent className="max-w-3xl">
               <DialogHeader>
@@ -267,38 +451,104 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
                 onSubmit={handleCreateLabel}
                 onCancel={() => setCreateLabelOpen(false)}
                 isLoading={false}
-                showPreview={true}
                 lockedSiteId={site.id}
+                lockedSiteCode={site.code}
                 lockedSiteName={site.name}
               />
             </DialogContent>
           </Dialog>
 
-          {labelMode === 'edit' && editingLabel && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Edit Label {editingLabel.reference_number}</h3>
-                <Button variant="outline" onClick={() => { setLabelMode('list'); setEditingLabel(null); }}>Back to Labels</Button>
+          <Dialog
+            open={createSuccessOpen}
+            onOpenChange={(open) => {
+              setCreateSuccessOpen(open);
+              if (!open) setCreatedLabels([]);
+            }}
+          >
+            <DialogContent className="max-w-xl">
+              <DialogHeader>
+                <DialogTitle>Success</DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-3">
+                <div className="text-sm">
+                  {createdRange?.count === 1
+                    ? `Label created: ${createdRange.from}`
+                    : createdRange
+                      ? `Created ${createdRange.count} labels: ${createdRange.from} → ${createdRange.to}`
+                      : createdLabels.length > 1
+                        ? `Created ${createdLabels.length} labels.`
+                        : 'Label created.'}
+                </div>
+
+                <div className="flex items-center justify-end gap-2">
+                  <Button variant="outline" onClick={handleDownloadCreated} disabled={!createdLabels.length}>
+                    Download .txt
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setCreateSuccessOpen(false);
+                      setCreatedLabels([]);
+                      setCreateLabelOpen(true);
+                    }}
+                  >
+                    Create Another
+                  </Button>
+                  <Button onClick={() => setCreateSuccessOpen(false)}>Close</Button>
+                </div>
               </div>
-              <LabelForm
-                label={editingLabel}
-                onSubmit={handleUpdateLabel}
-                onCancel={() => { setLabelMode('list'); setEditingLabel(null); }}
-                isLoading={false}
-                showPreview={false}
-                lockedSiteId={site.id}
-                lockedSiteName={site.name}
-              />
-            </div>
+            </DialogContent>
+          </Dialog>
+
+          <LabelDatabase
+            fixedSiteId={site.id}
+            siteCode={site.code}
+            refreshToken={labelsRefreshToken}
+            onCreateLabel={canCreateLabelForSite ? () => setCreateLabelOpen(true) : undefined}
+            emptyStateDescription={
+              locationsMissing
+                ? (isAdmin
+                  ? 'No site locations exist yet. Add a site location to enable labels.'
+                  : 'No site locations exist yet. Ask an admin to add locations for this site.')
+                : cableTypesMissing
+                  ? (isAdmin
+                    ? 'No cable types exist yet. Add a cable type to enable labels.'
+                    : 'No cable types exist yet. Ask an admin to add cable types for this site.')
+                  : undefined
+            }
+            emptyStateAction={
+              locationsMissing && isAdmin
+                ? { label: 'Create Your First Site Location', onClick: () => setLocationsOpen(true) }
+                : cableTypesMissing && isAdmin
+                  ? { label: 'Create Your First Cable Type', onClick: () => setCableTypesOpen(true) }
+                  : undefined
+            }
+            onLabelsChanged={() => {
+              setLabelsRefreshToken((t) => t + 1);
+              loadSite();
+            }}
+          />
+
+          {isAdmin && (
+            <SiteLocationsDialog
+              open={locationsOpen}
+              onOpenChange={setLocationsOpen}
+              siteId={site.id}
+              siteCode={site.code}
+              siteName={site.name}
+              onChanged={loadSite}
+            />
           )}
 
-          {labelMode === 'list' && (
-            <LabelDatabase
-              fixedSiteId={site.id}
-              refreshToken={labelsRefreshToken}
-              onCreateLabel={canCreateLabels ? () => setCreateLabelOpen(true) : undefined}
-              onEditLabel={(label) => { setEditingLabel(label); setLabelMode('edit'); }}
-              onLabelsChanged={() => { setLabelsRefreshToken((t) => t + 1); loadSite(); }}
+          {isAdmin && (
+            <SiteCableTypesDialog
+              open={cableTypesOpen}
+              onOpenChange={setCableTypesOpen}
+              siteId={site.id}
+              siteCode={site.code}
+              siteName={site.name}
+              onChanged={loadSite}
             />
           )}
         </CardContent>

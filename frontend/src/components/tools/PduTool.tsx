@@ -4,6 +4,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { clampInt } from './utils';
 import { ZplOutput } from './ZplOutput';
+import { PduPreview } from './ToolLabelPreview';
 
 function generatePduZpl(pduSid: string, fromPort: number, toPort: number): string {
   const sid = pduSid.trim();
@@ -95,6 +96,7 @@ export function PduTool() {
         zpl={zpl}
         prefix="PDU"
         disabled={disabled}
+        preview={<PduPreview pduSid={pduSid} fromPort={fromPort} toPort={toPort} />}
       />
     </div>
   );

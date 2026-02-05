@@ -1,24 +1,24 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
-import Database from 'better-sqlite3';
 import app from '../app.js';
 import UserModel from '../models/User.js';
-import connection from '../database/connection.js';
-import { initializeDatabase } from '../database/init.js';
+import { SiteModel } from '../models/Site.js';
 import { generateToken } from '../utils/jwt.js';
+import { setupTestDatabase, cleanupTestDatabase } from './setup.js';
+import crypto from 'crypto';
 
 describe('Admin Routes', () => {
   let userModel: UserModel;
-  let db: Database.Database;
+  let db: any;
   let adminUser: any;
   let regularUser: any;
   let adminToken: string;
   let userToken: string;
+  let testSite: any;
+  let extraSite: any;
 
   beforeEach(async () => {
-    // Initialize in-memory database for testing
-    await initializeDatabase({ runMigrations: true, seedData: false });
-    db = connection.getConnection();
+    db = await setupTestDatabase({ runMigrations: true, seedData: false });
     userModel = new UserModel();
 
     // Create test users
@@ -39,22 +39,34 @@ describe('Admin Routes', () => {
     // Generate tokens
     adminToken = generateToken(adminUser);
     userToken = generateToken(regularUser);
+
+    const siteModel = new SiteModel();
+    testSite = await siteModel.create({
+      name: 'Test Site 1',
+      code: 'TS1',
+      created_by: adminUser.id,
+      location: 'Location 1',
+      description: 'Test site',
+    });
+    extraSite = await siteModel.create({
+      name: 'Test Site 2',
+      code: 'TS2',
+      created_by: adminUser.id,
+      location: 'Location 2',
+      description: 'Another test site',
+    });
   });
 
-  afterEach(() => {
-    // Clean up database
-    if (db) {
-      db.exec('DELETE FROM user_invitations');
-      db.exec('DELETE FROM tool_permissions');
-      db.exec('DELETE FROM users');
-    }
+  afterEach(async () => {
+    await cleanupTestDatabase();
   });
 
   describe('POST /api/admin/invite', () => {
     it('should create user invitation for admin', async () => {
       const inviteData = {
         email: 'newuser@example.com',
-        role: 'user',
+        full_name: 'New User',
+        sites: [{ site_id: testSite.id, site_role: 'USER' }],
       };
 
       const response = await request(app)
@@ -65,18 +77,24 @@ describe('Admin Routes', () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.email).toBe(inviteData.email);
-      expect(response.body.data.role).toBe(inviteData.role);
       expect(response.body.data.token).toBeDefined();
       expect(response.body.data.expiresAt).toBeDefined();
+      expect(response.body.data.sites).toHaveLength(1);
+      expect(response.body.data.sites[0]).toMatchObject({ site_id: testSite.id, site_role: 'USER' });
 
       // Verify invitation was created in database
-      const invitation = db.prepare('SELECT * FROM user_invitations WHERE email = ?').get(inviteData.email);
-      expect(invitation).toBeDefined();
+      const rows = await db.query('SELECT id, email, full_name, used_at FROM invitations WHERE email = ?', [inviteData.email]);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].email).toBe(inviteData.email);
+      expect(rows[0].full_name).toBe(inviteData.full_name);
+      expect(rows[0].used_at).toBeNull();
     });
 
     it('should use default role if not specified', async () => {
       const inviteData = {
         email: 'newuser@example.com',
+        full_name: 'New User',
+        sites: [{ site_id: testSite.id }],
       };
 
       const response = await request(app)
@@ -85,14 +103,15 @@ describe('Admin Routes', () => {
         .send(inviteData)
         .expect(201);
 
-      expect(response.body.data.role).toBe('user');
+      expect(response.body.data.sites).toHaveLength(1);
+      expect(response.body.data.sites[0]).toMatchObject({ site_id: testSite.id, site_role: 'USER' });
     });
 
     it('should deny access for regular user', async () => {
       const response = await request(app)
         .post('/api/admin/invite')
         .set('Authorization', `Bearer ${userToken}`)
-        .send({ email: 'newuser@example.com' })
+        .send({ email: 'newuser@example.com', full_name: 'New User', sites: [{ site_id: testSite.id }] })
         .expect(403);
 
       expect(response.body.success).toBe(false);
@@ -102,7 +121,7 @@ describe('Admin Routes', () => {
       const response = await request(app)
         .post('/api/admin/invite')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ email: adminUser.email })
+        .send({ email: adminUser.email, full_name: 'Existing Admin', sites: [{ site_id: testSite.id }] })
         .expect(409);
 
       expect(response.body.success).toBe(false);
@@ -110,7 +129,7 @@ describe('Admin Routes', () => {
     });
 
     it('should prevent duplicate invitations', async () => {
-      const inviteData = { email: 'newuser@example.com' };
+      const inviteData = { email: 'newuser@example.com', full_name: 'New User', sites: [{ site_id: testSite.id }] };
 
       // First invitation
       await request(app)
@@ -133,7 +152,7 @@ describe('Admin Routes', () => {
       const response = await request(app)
         .post('/api/admin/invite')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ email: 'invalid-email' })
+        .send({ email: 'invalid-email', full_name: 'New User', sites: [{ site_id: testSite.id }] })
         .expect(400);
 
       expect(response.body.success).toBe(false);
@@ -143,15 +162,25 @@ describe('Admin Routes', () => {
 
   describe('GET /api/admin/invitations', () => {
     beforeEach(async () => {
-      // Create test invitations
-      const stmt = db.prepare(`
-        INSERT INTO user_invitations (email, token, invited_by, role, expires_at)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-      
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-      stmt.run('invite1@example.com', 'token1', adminUser.id, 'user', expiresAt);
-      stmt.run('invite2@example.com', 'token2', adminUser.id, 'moderator', expiresAt);
+      const insertInvitation = async (opts: { email: string; token: string; fullName: string; siteId: number; siteRole: 'ADMIN' | 'USER' }) => {
+        const tokenHash = crypto.createHash('sha256').update(opts.token).digest('hex');
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        const result = await db.execute(
+          `INSERT INTO invitations (email, full_name, token_hash, invited_by, expires_at)
+           VALUES (?, ?, ?, ?, ?)`,
+          [opts.email, opts.fullName, tokenHash, adminUser.id, expiresAt]
+        );
+        const invitationId = Number(result.insertId);
+        await db.execute(
+          `INSERT INTO invitation_sites (invitation_id, site_id, site_role)
+           VALUES (?, ?, ?)`,
+          [invitationId, opts.siteId, opts.siteRole]
+        );
+        return invitationId;
+      };
+
+      await insertInvitation({ email: 'invite1@example.com', token: 'token1', fullName: 'Invite One', siteId: testSite.id, siteRole: 'USER' });
+      await insertInvitation({ email: 'invite2@example.com', token: 'token2', fullName: 'Invite Two', siteId: extraSite.id, siteRole: 'ADMIN' });
     });
 
     it('should return pending invitations for admin', async () => {
@@ -163,8 +192,13 @@ describe('Admin Routes', () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data).toHaveLength(2);
       expect(response.body.data[0].email).toBeDefined();
-      expect(response.body.data[0].role).toBeDefined();
       expect(response.body.data[0].invited_by_name).toBe(adminUser.full_name);
+      expect(response.body.data[0].sites).toBeDefined();
+      expect(response.body.data[0].sites.length).toBeGreaterThan(0);
+      expect(response.body.data[0].sites[0]).toHaveProperty('site_id');
+      expect(response.body.data[0].sites[0]).toHaveProperty('site_role');
+      expect(response.body.data[0].sites[0]).toHaveProperty('site_name');
+      expect(response.body.data[0].sites[0]).toHaveProperty('site_code');
     });
 
     it('should deny access for regular user', async () => {
@@ -180,16 +214,21 @@ describe('Admin Routes', () => {
   describe('DELETE /api/admin/invitations/:id', () => {
     let invitationId: number;
 
-    beforeEach(() => {
-      // Create test invitation
-      const stmt = db.prepare(`
-        INSERT INTO user_invitations (email, token, invited_by, role, expires_at)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-      
+    beforeEach(async () => {
+      const token = 'token123';
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-      const result = stmt.run('invite@example.com', 'token123', adminUser.id, 'user', expiresAt);
-      invitationId = Number(result.lastInsertRowid);
+      const result = await db.execute(
+        `INSERT INTO invitations (email, full_name, token_hash, invited_by, expires_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        ['invite@example.com', 'Invited User', tokenHash, adminUser.id, expiresAt]
+      );
+      invitationId = Number(result.insertId);
+      await db.execute(
+        `INSERT INTO invitation_sites (invitation_id, site_id, site_role)
+         VALUES (?, ?, ?)`,
+        [invitationId, testSite.id, 'USER']
+      );
     });
 
     it('should cancel invitation for admin', async () => {
@@ -202,8 +241,8 @@ describe('Admin Routes', () => {
       expect(response.body.message).toContain('cancelled successfully');
 
       // Verify invitation was deleted
-      const invitation = db.prepare('SELECT * FROM user_invitations WHERE id = ?').get(invitationId);
-      expect(invitation).toBeUndefined();
+      const rows = await db.query('SELECT id FROM invitations WHERE id = ?', [invitationId]);
+      expect(rows).toHaveLength(0);
     });
 
     it('should deny access for regular user', async () => {
@@ -229,16 +268,21 @@ describe('Admin Routes', () => {
   describe('GET /api/admin/validate-invite/:token', () => {
     let validToken: string;
 
-    beforeEach(() => {
-      // Create test invitation
+    beforeEach(async () => {
       validToken = 'valid-token-123';
-      const stmt = db.prepare(`
-        INSERT INTO user_invitations (email, token, invited_by, role, expires_at)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-      
+      const tokenHash = crypto.createHash('sha256').update(validToken).digest('hex');
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-      stmt.run('invite@example.com', validToken, adminUser.id, 'user', expiresAt);
+      const result = await db.execute(
+        `INSERT INTO invitations (email, full_name, token_hash, invited_by, expires_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        ['invite@example.com', 'Invited User', tokenHash, adminUser.id, expiresAt]
+      );
+      const invitationId = Number(result.insertId);
+      await db.execute(
+        `INSERT INTO invitation_sites (invitation_id, site_id, site_role)
+         VALUES (?, ?, ?)`,
+        [invitationId, testSite.id, 'USER']
+      );
     });
 
     it('should validate valid invitation token', async () => {
@@ -248,8 +292,9 @@ describe('Admin Routes', () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.email).toBe('invite@example.com');
-      expect(response.body.data.role).toBe('user');
       expect(response.body.data.expiresAt).toBeDefined();
+      expect(response.body.data.sites).toBeDefined();
+      expect(response.body.data.sites.length).toBeGreaterThan(0);
     });
 
     it('should reject invalid token', async () => {
@@ -264,13 +309,19 @@ describe('Admin Routes', () => {
     it('should reject expired token', async () => {
       // Create expired invitation
       const expiredToken = 'expired-token-123';
-      const stmt = db.prepare(`
-        INSERT INTO user_invitations (email, token, invited_by, role, expires_at)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-      
-      const expiredAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // Yesterday
-      stmt.run('expired@example.com', expiredToken, adminUser.id, 'user', expiredAt);
+      const tokenHash = crypto.createHash('sha256').update(expiredToken).digest('hex');
+      const expiredAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const result = await db.execute(
+        `INSERT INTO invitations (email, full_name, token_hash, invited_by, expires_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        ['expired@example.com', 'Expired User', tokenHash, adminUser.id, expiredAt]
+      );
+      const invitationId = Number(result.insertId);
+      await db.execute(
+        `INSERT INTO invitation_sites (invitation_id, site_id, site_role)
+         VALUES (?, ?, ?)`,
+        [invitationId, testSite.id, 'USER']
+      );
 
       const response = await request(app)
         .get(`/api/admin/validate-invite/${expiredToken}`)
@@ -284,16 +335,21 @@ describe('Admin Routes', () => {
   describe('POST /api/admin/accept-invite', () => {
     let validToken: string;
 
-    beforeEach(() => {
-      // Create test invitation
+    beforeEach(async () => {
       validToken = 'valid-token-123';
-      const stmt = db.prepare(`
-        INSERT INTO user_invitations (email, token, invited_by, role, expires_at)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-      
+      const tokenHash = crypto.createHash('sha256').update(validToken).digest('hex');
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-      stmt.run('invite@example.com', validToken, adminUser.id, 'ADMIN', expiresAt);
+      const result = await db.execute(
+        `INSERT INTO invitations (email, full_name, token_hash, invited_by, expires_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        ['invite@example.com', 'Invited User', tokenHash, adminUser.id, expiresAt]
+      );
+      const invitationId = Number(result.insertId);
+      await db.execute(
+        `INSERT INTO invitation_sites (invitation_id, site_id, site_role)
+         VALUES (?, ?, ?)`,
+        [invitationId, testSite.id, 'ADMIN']
+      );
     });
 
     it('should accept valid invitation and create account', async () => {
@@ -315,8 +371,10 @@ describe('Admin Routes', () => {
       expect(response.body.data.password_hash).toBeUndefined();
 
       // Verify invitation was marked as used
-      const invitation = db.prepare('SELECT used_at FROM user_invitations WHERE token = ?').get(validToken) as any;
-      expect(invitation.used_at).toBeDefined();
+      const tokenHash = crypto.createHash('sha256').update(validToken).digest('hex');
+      const usedRows = await db.query('SELECT used_at FROM invitations WHERE token_hash = ?', [tokenHash]);
+      expect(usedRows).toHaveLength(1);
+      expect(usedRows[0].used_at).toBeTruthy();
 
       // Verify user was created
       const user = await userModel.findByEmail('invite@example.com');
@@ -365,13 +423,19 @@ describe('Admin Routes', () => {
 
       // Create another invitation for the same email
       const newToken = 'new-token-123';
-      const stmt = db.prepare(`
-        INSERT INTO user_invitations (email, token, invited_by, role, expires_at)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-      
+      const tokenHash = crypto.createHash('sha256').update(newToken).digest('hex');
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-      stmt.run('invite@example.com', newToken, adminUser.id, 'user', expiresAt);
+      const result = await db.execute(
+        `INSERT INTO invitations (email, full_name, token_hash, invited_by, expires_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        ['invite@example.com', 'Invited User Again', tokenHash, adminUser.id, expiresAt]
+      );
+      const invitationId = Number(result.insertId);
+      await db.execute(
+        `INSERT INTO invitation_sites (invitation_id, site_id, site_role)
+         VALUES (?, ?, ?)`,
+        [invitationId, testSite.id, 'USER']
+      );
 
       // Try to accept the new invitation
       const response = await request(app)
@@ -427,7 +491,7 @@ describe('Admin Routes', () => {
 
     it('should filter users by role', async () => {
       const response = await request(app)
-        .get('/api/admin/users?role=moderator')
+        .get('/api/admin/users?role=ADMIN')
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
 
@@ -487,7 +551,7 @@ describe('Admin Routes', () => {
       const response = await request(app)
         .put('/api/admin/users/999/role')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ role: 'moderator' })
+        .send({ role: 'ADMIN' })
         .expect(404);
 
       expect(response.body.success).toBe(false);
@@ -552,25 +616,9 @@ describe('Admin Routes', () => {
   });
 
   describe('GET /api/admin/stats', () => {
-    beforeEach(async () => {
-      // Create some test data for statistics
-      const siteModel = db.prepare(`
-        INSERT INTO sites (name, location, user_id) VALUES (?, ?, ?)
-      `);
-      siteModel.run('Test Site 1', 'Location 1', adminUser.id);
-      siteModel.run('Test Site 2', 'Location 2', regularUser.id);
-
-      const labelModel = db.prepare(`
-        INSERT INTO labels (reference_number, source, destination, site_id, user_id) 
-        VALUES (?, ?, ?, ?, ?)
-      `);
-      labelModel.run('TEST-001', 'Source 1', 'Dest 1', 1, adminUser.id);
-      labelModel.run('TEST-002', 'Source 2', 'Dest 2', 2, regularUser.id);
-    });
-
     it('should return admin statistics for admin', async () => {
       const response = await request(app)
-        .get('/api/admin/stats')
+        .get(`/api/admin/stats?site_id=${testSite.id}`)
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
 
@@ -588,7 +636,7 @@ describe('Admin Routes', () => {
 
     it('should deny access for regular user', async () => {
       const response = await request(app)
-        .get('/api/admin/stats')
+        .get(`/api/admin/stats?site_id=${testSite.id}`)
         .set('Authorization', `Bearer ${userToken}`)
         .expect(403);
 
@@ -639,9 +687,12 @@ describe('Admin Routes', () => {
       expect(response.body.message).toContain('updated successfully');
 
       // Verify settings were saved (key/value)
-      const getValue = (key: string) => db.prepare('SELECT value FROM app_settings WHERE `key` = ?').get(key) as any;
-      expect(getValue('default_user_role').value).toBe(validSettings.default_user_role);
-      expect(getValue('max_labels_per_user').value).toBe(String(validSettings.max_labels_per_user));
+      const getValue = async (key: string) => {
+        const rows = await db.query('SELECT value FROM app_settings WHERE `key` = ?', [key]);
+        return rows[0] as any;
+      };
+      expect((await getValue('default_user_role')).value).toBe(validSettings.default_user_role);
+      expect((await getValue('max_labels_per_user')).value).toBe(String(validSettings.max_labels_per_user));
     });
 
     it('should deny access for regular user', async () => {

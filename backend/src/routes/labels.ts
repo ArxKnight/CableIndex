@@ -14,16 +14,19 @@ const zplService = new ZPLService();
 
 // Validation schemas
 const createLabelSchema = z.object({
-  source: z.string().min(1, 'Source is required').max(200, 'Source must be less than 200 characters'),
-  destination: z.string().min(1, 'Destination is required').max(200, 'Destination must be less than 200 characters'),
+  source_location_id: z.coerce.number().min(1, 'Source location is required'),
+  destination_location_id: z.coerce.number().min(1, 'Destination location is required'),
+  cable_type_id: z.coerce.number().min(1, 'Cable type is required'),
   site_id: z.number().min(1, 'Valid site ID is required'),
   notes: z.string().max(1000, 'Notes must be less than 1000 characters').optional(),
   zpl_content: z.string().optional(),
+  quantity: z.coerce.number().int().min(1).max(500).optional(),
 });
 
 const updateLabelSchema = z.object({
-  source: z.string().min(1, 'Source is required').max(200, 'Source must be less than 200 characters').optional(),
-  destination: z.string().min(1, 'Destination is required').max(200, 'Destination must be less than 200 characters').optional(),
+  source_location_id: z.coerce.number().min(1, 'Source location is required').optional(),
+  destination_location_id: z.coerce.number().min(1, 'Destination location is required').optional(),
+  cable_type_id: z.coerce.number().min(1, 'Cable type is required').optional(),
   notes: z.string().max(1000, 'Notes must be less than 1000 characters').optional(),
   zpl_content: z.string().optional(),
 });
@@ -31,8 +34,6 @@ const updateLabelSchema = z.object({
 const getLabelsQuerySchema = z.object({
   search: z.string().optional(),
   site_id: z.coerce.number().min(1),
-  source: z.string().optional(),
-  destination: z.string().optional(),
   reference_number: z.string().optional(),
   limit: z.coerce.number().min(1).max(100).default(50),
   offset: z.coerce.number().min(0).default(0),
@@ -87,8 +88,6 @@ router.get('/', authenticateToken, resolveSiteAccess(req => Number(req.query.sit
     const { 
       search, 
       site_id, 
-      source, 
-      destination, 
       reference_number,
       limit, 
       offset, 
@@ -100,8 +99,6 @@ router.get('/', authenticateToken, resolveSiteAccess(req => Number(req.query.sit
     const searchOptions = {
       ...(search ? { search } : {}),
       ...(reference_number ? { reference_number } : {}),
-      ...(source ? { source } : {}),
-      ...(destination ? { destination } : {}),
       limit,
       offset,
       sort_by,
@@ -112,8 +109,6 @@ router.get('/', authenticateToken, resolveSiteAccess(req => Number(req.query.sit
     const total = await labelModel.countBySiteId(site_id, {
       ...(search ? { search } : {}),
       ...(reference_number ? { reference_number } : {}),
-      ...(source ? { source } : {}),
-      ...(destination ? { destination } : {}),
     });
 
     res.json({
@@ -261,15 +256,34 @@ router.post('/', authenticateToken, resolveSiteAccess(req => Number(req.body.sit
   try {
     // Validate request body
     const labelDataParsed = createLabelSchema.parse(req.body);
+    const quantity = labelDataParsed.quantity ?? 1;
     const labelData = {
-      source: labelDataParsed.source,
-      destination: labelDataParsed.destination,
       site_id: labelDataParsed.site_id,
+      source_location_id: labelDataParsed.source_location_id,
+      destination_location_id: labelDataParsed.destination_location_id,
+      cable_type_id: labelDataParsed.cable_type_id,
       ...(labelDataParsed.notes ? { notes: labelDataParsed.notes } : {}),
       ...(labelDataParsed.zpl_content ? { zpl_content: labelDataParsed.zpl_content } : {}),
     };
 
-    // Create label
+    // Create label(s)
+    if (quantity > 1) {
+      const labels = await labelModel.createMany(
+        {
+          ...labelData,
+          created_by: req.user!.userId,
+        },
+        quantity
+      );
+
+      res.status(201).json({
+        success: true,
+        data: { label: labels[0], labels },
+        message: 'Labels created successfully',
+      } as ApiResponse);
+      return;
+    }
+
     const label = await labelModel.create({
       ...labelData,
       created_by: req.user!.userId,
@@ -292,7 +306,7 @@ router.post('/', authenticateToken, resolveSiteAccess(req => Number(req.body.sit
 
     // Handle specific model errors
     if (error instanceof Error) {
-      if (error.message === 'Source is required' || error.message === 'Destination is required') {
+      if (error.message === 'Source location is required' || error.message === 'Destination location is required') {
         return res.status(400).json({
           success: false,
           error: error.message,
@@ -325,8 +339,9 @@ router.put('/:id', authenticateToken, resolveSiteAccess(req => Number(req.body.s
     const { id } = labelIdSchema.parse(req.params);
     const labelDataParsed = updateLabelSchema.parse(req.body);
     const labelData = {
-      ...(labelDataParsed.source !== undefined ? { source: labelDataParsed.source } : {}),
-      ...(labelDataParsed.destination !== undefined ? { destination: labelDataParsed.destination } : {}),
+      ...(labelDataParsed.source_location_id !== undefined ? { source_location_id: labelDataParsed.source_location_id } : {}),
+      ...(labelDataParsed.destination_location_id !== undefined ? { destination_location_id: labelDataParsed.destination_location_id } : {}),
+      ...(labelDataParsed.cable_type_id !== undefined ? { cable_type_id: labelDataParsed.cable_type_id } : {}),
       ...(labelDataParsed.notes !== undefined ? { notes: labelDataParsed.notes } : {}),
       ...(labelDataParsed.zpl_content !== undefined ? { zpl_content: labelDataParsed.zpl_content } : {}),
     };
@@ -358,7 +373,7 @@ router.put('/:id', authenticateToken, resolveSiteAccess(req => Number(req.body.s
 
     // Handle specific model errors
     if (error instanceof Error) {
-      if (error.message === 'Source cannot be empty' || error.message === 'Destination cannot be empty') {
+      if (error.message === 'Source location is required' || error.message === 'Destination location is required') {
         return res.status(400).json({
           success: false,
           error: error.message,
@@ -545,9 +560,20 @@ router.post('/bulk-zpl', authenticateToken, resolveSiteAccess(req => Number(req.
     const zplContent = zplService.generateBulkLabels(labels, sitesArray);
 
     // Set headers for file download
-    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+    const makeTimestamp = (): string => {
+      const now = new Date();
+      const yyyy = String(now.getFullYear());
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mi = String(now.getMinutes()).padStart(2, '0');
+      const ss = String(now.getSeconds()).padStart(2, '0');
+      return `${yyyy}${mm}${dd}_${hh}${mi}${ss}`;
+    };
+
+    const timestamp = makeTimestamp();
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="bulk-labels-${timestamp}.txt"`);
+    res.setHeader('Content-Disposition', `attachment; filename="crossrackref_${timestamp}.txt"`);
     
     res.send(zplContent);
 
@@ -613,9 +639,20 @@ router.post('/bulk-zpl-range', authenticateToken, resolveSiteAccess(req => Numbe
 
     const zplContent = zplService.generateBulkLabels(labels, [site]);
 
-    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+    const makeTimestamp = (): string => {
+      const now = new Date();
+      const yyyy = String(now.getFullYear());
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mi = String(now.getMinutes()).padStart(2, '0');
+      const ss = String(now.getSeconds()).padStart(2, '0');
+      return `${yyyy}${mm}${dd}_${hh}${mi}${ss}`;
+    };
+
+    const timestamp = makeTimestamp();
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="labels-${site.code || site.name}-${startNum}-${endNum}-${timestamp}.txt"`);
+    res.setHeader('Content-Disposition', `attachment; filename="crossrackref_${timestamp}.txt"`);
     res.send(zplContent);
   } catch (error) {
     if (error instanceof z.ZodError) {

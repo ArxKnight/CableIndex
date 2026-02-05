@@ -42,8 +42,8 @@ const AdminPage: React.FC = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Admin Panel</h1>
-        <p className="text-gray-600 mt-2">
+        <h1 className="text-3xl font-bold text-foreground">Admin Panel</h1>
+        <p className="text-muted-foreground mt-2">
           Manage users, permissions, and application settings
         </p>
       </div>

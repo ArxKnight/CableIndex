@@ -25,12 +25,14 @@ const ProfilePage: React.FC = () => {
 
   const getRoleColor = (role: string) => {
     switch (role) {
+      case 'ADMIN':
       case 'admin':
-        return 'text-red-600 bg-red-100';
+        return 'text-destructive bg-destructive/10';
+      case 'MODERATOR':
       case 'moderator':
-        return 'text-yellow-600 bg-yellow-100';
+        return 'text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30';
       default:
-        return 'text-blue-600 bg-blue-100';
+        return 'text-primary bg-primary/10';
     }
   };
 
@@ -38,8 +40,8 @@ const ProfilePage: React.FC = () => {
     <div className="space-y-6 p-6">
       <div className="space-y-2">
         <Breadcrumb />
-        <h1 className="text-3xl font-bold text-gray-900">Profile</h1>
-        <p className="text-gray-600">Manage your account information and settings.</p>
+        <h1 className="text-3xl font-bold text-foreground">Profile</h1>
+        <p className="text-muted-foreground">Manage your account information and settings.</p>
       </div>
 
       <div className="max-w-4xl">
@@ -70,23 +72,23 @@ const ProfilePage: React.FC = () => {
               <CardContent className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700 flex items-center">
+                    <label className="text-sm font-medium text-muted-foreground flex items-center">
                       <User className="w-4 h-4 mr-2" />
                       Full Name
                     </label>
-                    <p className="text-gray-900 font-medium">{user.full_name}</p>
+                    <p className="text-foreground font-medium">{user.full_name}</p>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700 flex items-center">
+                    <label className="text-sm font-medium text-muted-foreground flex items-center">
                       <Mail className="w-4 h-4 mr-2" />
                       Email Address
                     </label>
-                    <p className="text-gray-900">{user.email}</p>
+                    <p className="text-foreground">{user.email}</p>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700 flex items-center">
+                    <label className="text-sm font-medium text-muted-foreground flex items-center">
                       <Shield className="w-4 h-4 mr-2" />
                       Role
                     </label>
@@ -96,11 +98,11 @@ const ProfilePage: React.FC = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700 flex items-center">
+                    <label className="text-sm font-medium text-muted-foreground flex items-center">
                       <Calendar className="w-4 h-4 mr-2" />
                       Member Since
                     </label>
-                    <p className="text-gray-900">{formatDate(user.created_at)}</p>
+                    <p className="text-foreground">{formatDate(user.created_at)}</p>
                   </div>
                 </div>
               </CardContent>

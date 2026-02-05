@@ -1,5 +1,6 @@
 import type { Migration } from './index.js';
 import connection from '../connection.js';
+import { columnExists, indexExists, tableExists } from './schemaChecks.js';
 
 export const Migration003_RbacSiteScoping: Migration = {
   id: '003',
@@ -8,40 +9,51 @@ export const Migration003_RbacSiteScoping: Migration = {
   up: async (adapter) => {
     const config = connection.getConfig();
     const isMySQL = config?.type === 'mysql';
+    const dbType = config?.type || 'sqlite';
     const getSQL = (sqlite: string, mysql: string) => isMySQL ? mysql : sqlite;
 
+    // If the schema is already at/after this migration's target, skip doing work.
+    const schemaAlreadyHasRbac =
+      (await tableExists(adapter, 'site_memberships', dbType)) &&
+      (await columnExists(adapter, 'sites', 'code', dbType)) &&
+      (await columnExists(adapter, 'sites', 'created_by', dbType)) &&
+      (await columnExists(adapter, 'labels', 'ref_string', dbType)) &&
+      (await columnExists(adapter, 'labels', 'created_by', dbType));
+    if (schemaAlreadyHasRbac) {
+      console.log('ℹ️  RBAC/site scoping already present; skipping migration 003 body');
+      return;
+    }
+
     // Add new columns to sites
-    try {
+    if (!(await columnExists(adapter, 'sites', 'code', dbType))) {
       await adapter.execute(getSQL(
         `ALTER TABLE sites ADD COLUMN code TEXT`,
         `ALTER TABLE sites ADD COLUMN code VARCHAR(255)`
       ));
-    } catch (error) {
-      // Column may already exist
     }
 
-    try {
+    if (!(await columnExists(adapter, 'sites', 'created_by', dbType))) {
       await adapter.execute(getSQL(
         `ALTER TABLE sites ADD COLUMN created_by INTEGER`,
         `ALTER TABLE sites ADD COLUMN created_by INT`
       ));
-    } catch (error) {
-      // Column may already exist
     }
 
     // Backfill created_by and code
-    try {
+    const sitesHasLegacyUserId = await columnExists(adapter, 'sites', 'user_id', dbType);
+    if (sitesHasLegacyUserId) {
       await adapter.execute(`UPDATE sites SET created_by = COALESCE(created_by, user_id) WHERE created_by IS NULL`);
-    } catch (error) {
-      // user_id might not exist in newer installs
     }
-    await adapter.execute(`UPDATE sites SET code = COALESCE(code, name) WHERE code IS NULL`);
+    if (await columnExists(adapter, 'sites', 'code', dbType)) {
+      await adapter.execute(`UPDATE sites SET code = COALESCE(code, name) WHERE code IS NULL`);
+    }
 
     // Add unique index on code if not exists
-    try {
-      await adapter.execute('CREATE UNIQUE INDEX idx_sites_code_unique ON sites(code)');
-    } catch (error) {
-      // Index may already exist
+    if (!(await indexExists(adapter, 'idx_sites_code_unique', dbType))) {
+      await adapter.execute(getSQL(
+        'CREATE UNIQUE INDEX idx_sites_code_unique ON sites(code)',
+        'CREATE UNIQUE INDEX idx_sites_code_unique ON sites(code)'
+      ));
     }
 
     // Create site_memberships table
@@ -67,16 +79,18 @@ export const Migration003_RbacSiteScoping: Migration = {
       )`
     ));
 
-    try {
-      await adapter.execute('CREATE INDEX idx_site_memberships_site_id ON site_memberships(site_id)');
-    } catch (error) {
-      // Index may already exist
+    if (!(await indexExists(adapter, 'idx_site_memberships_site_id', dbType))) {
+      await adapter.execute(getSQL(
+        'CREATE INDEX idx_site_memberships_site_id ON site_memberships(site_id)',
+        'CREATE INDEX idx_site_memberships_site_id ON site_memberships(site_id)'
+      ));
     }
 
-    try {
-      await adapter.execute('CREATE INDEX idx_site_memberships_user_id ON site_memberships(user_id)');
-    } catch (error) {
-      // Index may already exist
+    if (!(await indexExists(adapter, 'idx_site_memberships_user_id', dbType))) {
+      await adapter.execute(getSQL(
+        'CREATE INDEX idx_site_memberships_user_id ON site_memberships(user_id)',
+        'CREATE INDEX idx_site_memberships_user_id ON site_memberships(user_id)'
+      ));
     }
 
     // Backfill memberships for site creators
@@ -169,65 +183,55 @@ export const Migration003_RbacSiteScoping: Migration = {
     }
 
     // Add new columns to labels
-    try {
+    if (!(await columnExists(adapter, 'labels', 'ref_number', dbType))) {
       await adapter.execute(getSQL(
         `ALTER TABLE labels ADD COLUMN ref_number INTEGER`,
         `ALTER TABLE labels ADD COLUMN ref_number INT`
       ));
-    } catch (error) {
-      // Column may already exist
     }
 
-    try {
+    if (!(await columnExists(adapter, 'labels', 'ref_string', dbType))) {
       await adapter.execute(getSQL(
         `ALTER TABLE labels ADD COLUMN ref_string TEXT`,
         `ALTER TABLE labels ADD COLUMN ref_string VARCHAR(255)`
       ));
-    } catch (error) {
-      // Column may already exist
     }
 
-    try {
+    if (!(await columnExists(adapter, 'labels', 'type', dbType))) {
       await adapter.execute(getSQL(
         `ALTER TABLE labels ADD COLUMN type TEXT`,
         `ALTER TABLE labels ADD COLUMN type VARCHAR(100)`
       ));
-    } catch (error) {
-      // Column may already exist
     }
 
-    try {
+    if (!(await columnExists(adapter, 'labels', 'payload_json', dbType))) {
       await adapter.execute(getSQL(
         `ALTER TABLE labels ADD COLUMN payload_json TEXT`,
         `ALTER TABLE labels ADD COLUMN payload_json TEXT`
       ));
-    } catch (error) {
-      // Column may already exist
     }
 
-    try {
+    if (!(await columnExists(adapter, 'labels', 'created_by', dbType))) {
       await adapter.execute(getSQL(
         `ALTER TABLE labels ADD COLUMN created_by INTEGER`,
         `ALTER TABLE labels ADD COLUMN created_by INT`
       ));
-    } catch (error) {
-      // Column may already exist
     }
 
     // Backfill label fields
-    try {
+    const labelsHasLegacyUserId = await columnExists(adapter, 'labels', 'user_id', dbType);
+    if (labelsHasLegacyUserId) {
       await adapter.execute(`UPDATE labels SET created_by = COALESCE(created_by, user_id) WHERE created_by IS NULL`);
-    } catch (error) {
-      // user_id may not exist
     }
 
-    await adapter.execute(`UPDATE labels SET type = COALESCE(type, 'cable') WHERE type IS NULL`);
+    if (await columnExists(adapter, 'labels', 'type', dbType)) {
+      await adapter.execute(`UPDATE labels SET type = COALESCE(type, 'cable') WHERE type IS NULL`);
+    }
 
     // Backfill ref_string and ref_number from legacy reference_number if available
-    try {
+    const labelsHasLegacyReferenceNumber = await columnExists(adapter, 'labels', 'reference_number', dbType);
+    if (labelsHasLegacyReferenceNumber) {
       await adapter.execute(`UPDATE labels SET ref_string = COALESCE(ref_string, reference_number) WHERE ref_string IS NULL`);
-    } catch (error) {
-      // reference_number may not exist
     }
 
     try {
@@ -247,19 +251,23 @@ export const Migration003_RbacSiteScoping: Migration = {
       // Parsing might fail; fallback below
     }
 
-    await adapter.execute(`UPDATE labels SET ref_number = COALESCE(ref_number, 1) WHERE ref_number IS NULL`);
-
-    // Add indexes for labels
-    try {
-      await adapter.execute('CREATE INDEX idx_labels_ref_string ON labels(ref_string)');
-    } catch (error) {
-      // Index may already exist
+    if (await columnExists(adapter, 'labels', 'ref_number', dbType)) {
+      await adapter.execute(`UPDATE labels SET ref_number = COALESCE(ref_number, 1) WHERE ref_number IS NULL`);
     }
 
-    try {
-      await adapter.execute('CREATE INDEX idx_labels_created_by ON labels(created_by)');
-    } catch (error) {
-      // Index may already exist
+    // Add indexes for labels
+    if (!(await indexExists(adapter, 'idx_labels_ref_string', dbType))) {
+      await adapter.execute(getSQL(
+        'CREATE INDEX idx_labels_ref_string ON labels(ref_string)',
+        'CREATE INDEX idx_labels_ref_string ON labels(ref_string)'
+      ));
+    }
+
+    if (!(await indexExists(adapter, 'idx_labels_created_by', dbType))) {
+      await adapter.execute(getSQL(
+        'CREATE INDEX idx_labels_created_by ON labels(created_by)',
+        'CREATE INDEX idx_labels_created_by ON labels(created_by)'
+      ));
     }
   },
 

@@ -87,8 +87,8 @@ const AdminStats: React.FC = () => {
         {[...Array(8)].map((_, i) => (
           <Card key={i}>
             <CardHeader className="animate-pulse">
-              <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-              <div className="h-8 bg-gray-200 rounded w-1/2"></div>
+              <div className="h-4 bg-muted rounded w-3/4"></div>
+              <div className="h-8 bg-muted rounded w-1/2"></div>
             </CardHeader>
           </Card>
         ))}
@@ -107,7 +107,7 @@ const AdminStats: React.FC = () => {
   if (!selectedSiteId || !sitesData?.sites?.length) {
     return (
       <div className="text-center py-8">
-        <p className="text-gray-600">No sites available. Create a site first to view statistics.</p>
+        <p className="text-muted-foreground">No sites available. Create a site first to view statistics.</p>
       </div>
     );
   }
@@ -115,7 +115,7 @@ const AdminStats: React.FC = () => {
   if (!statsData) {
     return (
       <div className="text-center py-8">
-        <p className="text-gray-600">No statistics available</p>
+        <p className="text-muted-foreground">No statistics available</p>
       </div>
     );
   }

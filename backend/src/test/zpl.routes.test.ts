@@ -3,7 +3,9 @@ import request from 'supertest';
 import app from '../app.js';
 import { setupTestDatabase, cleanupTestDatabase } from './setup.js';
 import LabelModel from '../models/Label.js';
+import CableTypeModel from '../models/CableType.js';
 import SiteModel from '../models/Site.js';
+import SiteLocationModel from '../models/SiteLocation.js';
 import UserModel from '../models/User.js';
 import { generateToken } from '../utils/jwt.js';
 
@@ -12,64 +14,99 @@ describe('ZPL Routes', () => {
   let testSiteId: number;
   let testLabelId: number;
   let authToken: string;
+  let testLabelRefString: string;
+  let testCableTypeId: number;
 
   beforeEach(async () => {
-    setupTestDatabase();
+    await setupTestDatabase();
 
     // Create test user
     const userModel = new UserModel();
-    const user = userModel.create({
+    const user = await userModel.create({
       email: 'test@example.com',
       password: 'password123',
-      full_name: 'Test User'
+      full_name: 'Test User',
+      role: 'USER',
     });
     testUserId = user.id;
-    authToken = generateToken({ userId: user.id, email: user.email });
+    authToken = generateToken(user);
 
     // Create test site
     const siteModel = new SiteModel();
-    const site = siteModel.create({
+    const site = await siteModel.create({
       name: 'TestSite',
+      code: 'TS',
       location: 'Test Location',
       description: 'Test site for ZPL tests',
-      user_id: testUserId
+      created_by: testUserId,
     });
     testSiteId = site.id;
 
+    const cableTypeModel = new CableTypeModel();
+    const cableType = await cableTypeModel.create({ site_id: testSiteId, name: 'CAT6' });
+    testCableTypeId = cableType.id;
+
+    // Create test locations
+    const siteLocationModel = new SiteLocationModel();
+    const locA = await siteLocationModel.create({
+      site_id: testSiteId,
+      floor: '1',
+      suite: 'A',
+      row: 'R1',
+      rack: '01',
+      label: 'Loft',
+    });
+    const locB = await siteLocationModel.create({
+      site_id: testSiteId,
+      floor: '1',
+      suite: 'A',
+      row: 'R1',
+      rack: '02',
+      label: 'Garage',
+    });
+
     // Create test label
     const labelModel = new LabelModel();
-    const label = labelModel.create({
-      source: 'Server-01',
-      destination: 'Switch-01',
+    const label = await labelModel.create({
       site_id: testSiteId,
-      user_id: testUserId,
-      notes: 'Test label'
+      created_by: testUserId,
+      source_location_id: locA.id,
+      destination_location_id: locB.id,
+      cable_type_id: testCableTypeId,
+      notes: 'Test label',
     });
     testLabelId = label.id;
+    testLabelRefString = label.ref_string;
   });
 
-  afterEach(() => {
-    cleanupTestDatabase();
+  afterEach(async () => {
+    await cleanupTestDatabase();
   });
 
   describe('GET /api/labels/:id/zpl', () => {
     it('should generate and download ZPL for existing label', async () => {
       const response = await request(app)
-        .get(`/api/labels/${testLabelId}/zpl`)
+        .get(`/api/labels/${testLabelId}/zpl?site_id=${testSiteId}`)
         .set('Authorization', `Bearer ${authToken}`)
         .expect(200);
 
       expect(response.headers['content-type']).toBe('text/plain; charset=utf-8');
       expect(response.headers['content-disposition']).toContain('attachment');
-      expect(response.headers['content-disposition']).toContain('.txt');
+      expect(response.headers['content-disposition']).toContain(`${testLabelRefString}.txt`);
       expect(response.text).toContain('^XA');
       expect(response.text).toContain('^XZ');
-      expect(response.text).toContain('TestSite-1 Server-01 > Switch-01');
+      expect(response.text).toContain(`#${testLabelRefString}`);
+      expect(response.text).toContain('Loft/1/A/R1/01');
+      expect(response.text).toContain('Garage/1/A/R1/02');
+
+      // Canonical cable label structure: ^FD line followed by standalone ^FS.
+      expect(response.text).not.toMatch(/\^FD[^\n]*\^FS/);
+      expect(response.text.match(/\^FD[^\n]*\n\^FS/g) || []).toHaveLength(2);
     });
 
     it('should return 404 for non-existent label', async () => {
       const response = await request(app)
-        .get('/api/labels/99999/zpl')
+        .get(`/api/labels/99999/zpl?site_id=${testSiteId}`)
         .set('Authorization', `Bearer ${authToken}`)
         .expect(404);
 
@@ -79,16 +116,16 @@ describe('ZPL Routes', () => {
 
     it('should return 401 without authentication', async () => {
       const response = await request(app)
-        .get(`/api/labels/${testLabelId}/zpl`)
+        .get(`/api/labels/${testLabelId}/zpl?site_id=${testSiteId}`)
         .expect(401);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.error).toBe('Authentication required');
+      expect(response.body.error).toBe('Access denied. No token provided.');
     });
 
     it('should return 400 for invalid label ID', async () => {
       const response = await request(app)
-        .get('/api/labels/invalid/zpl')
+        .get(`/api/labels/invalid/zpl?site_id=${testSiteId}`)
         .set('Authorization', `Bearer ${authToken}`)
         .expect(400);
 
@@ -101,31 +138,58 @@ describe('ZPL Routes', () => {
     it('should generate bulk ZPL for multiple labels', async () => {
       // Create another test label
       const labelModel = new LabelModel();
-      const label2 = labelModel.create({
-        source: 'Server-02',
-        destination: 'Switch-02',
+      const siteLocationModel = new SiteLocationModel();
+      const locC = await siteLocationModel.create({
         site_id: testSiteId,
-        user_id: testUserId
+        floor: '1',
+        suite: 'A',
+        row: 'R1',
+        rack: '03',
+      });
+      const locD = await siteLocationModel.create({
+        site_id: testSiteId,
+        floor: '1',
+        suite: 'A',
+        row: 'R1',
+        rack: '04',
+      });
+
+      const label2 = await labelModel.create({
+        site_id: testSiteId,
+        created_by: testUserId,
+        source_location_id: locC.id,
+        destination_location_id: locD.id,
+        cable_type_id: testCableTypeId,
       });
 
       const response = await request(app)
         .post('/api/labels/bulk-zpl')
         .set('Authorization', `Bearer ${authToken}`)
-        .send({ ids: [testLabelId, label2.id] })
+        .send({ site_id: testSiteId, ids: [testLabelId, label2.id] })
         .expect(200);
 
       expect(response.headers['content-type']).toBe('text/plain; charset=utf-8');
-      expect(response.headers['content-disposition']).toContain('attachment');
-      expect(response.headers['content-disposition']).toContain('bulk-labels-');
-      expect(response.text).toContain('TestSite-1 Server-01 > Switch-01');
-      expect(response.text).toContain('TestSite-2 Server-02 > Switch-02');
+      const contentDisposition = response.headers['content-disposition'];
+      expect(contentDisposition).toContain('attachment');
+      expect(contentDisposition).toMatch(/filename="crossrackref_\d{8}_\d{6}\.txt"/);
+      expect(response.text).toContain(`#${testLabelRefString}`);
+      expect(response.text).toContain(`#${label2.ref_string}`);
+
+      // Two labels => two complete blocks, joined as ^XZ\n^XA.
+      expect((response.text.match(/\^XA/g) || []).length).toBe(2);
+      expect((response.text.match(/\^XZ/g) || []).length).toBe(2);
+      expect(response.text).toContain('^XZ\n^XA');
+
+      // Each label prints the payload twice, each with ^FD line then standalone ^FS line.
+      expect(response.text).not.toMatch(/\^FD[^\n]*\^FS/);
+      expect(response.text.match(/\^FD[^\n]*\n\^FS/g) || []).toHaveLength(4);
     });
 
     it('should return 404 when no valid labels found', async () => {
       const response = await request(app)
         .post('/api/labels/bulk-zpl')
         .set('Authorization', `Bearer ${authToken}`)
-        .send({ ids: [99999, 99998] })
+        .send({ site_id: testSiteId, ids: [99999, 99998] })
         .expect(404);
 
       expect(response.body.success).toBe(false);
@@ -136,7 +200,7 @@ describe('ZPL Routes', () => {
       const response = await request(app)
         .post('/api/labels/bulk-zpl')
         .set('Authorization', `Bearer ${authToken}`)
-        .send({ ids: [] })
+        .send({ site_id: testSiteId, ids: [] })
         .expect(400);
 
       expect(response.body.success).toBe(false);
@@ -149,7 +213,7 @@ describe('ZPL Routes', () => {
       const response = await request(app)
         .post('/api/labels/bulk-zpl')
         .set('Authorization', `Bearer ${authToken}`)
-        .send({ ids: manyIds })
+        .send({ site_id: testSiteId, ids: manyIds })
         .expect(400);
 
       expect(response.body.success).toBe(false);
@@ -318,7 +382,7 @@ describe('ZPL Routes', () => {
         .expect(401);
 
       expect(response.body.success).toBe(false);
-      expect(response.body.error).toBe('Authentication required');
+      expect(response.body.error).toBe('Access denied. No token provided.');
     });
   });
 });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { LabelWithSiteInfo, Site, LabelSearchParams } from '../../types';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -8,35 +8,39 @@ import { Card, CardContent, CardHeader } from '../ui/card';
 import { 
   Search, 
   Filter, 
-  Download, 
-  Edit, 
   Trash2, 
   ChevronLeft, 
   ChevronRight,
   CheckSquare,
   Square,
+  Eye,
   X,
   Plus
 } from 'lucide-react';
 import apiClient from '../../lib/api';
-import { downloadBlobAsTextFile, downloadTextAsFile, makeDownloadFilename } from '../../lib/download';
+import { formatLocationDisplay, formatLocationFields } from '../../lib/locationFormat';
+import LabelDetailsDialog from './LabelDetailsDialog';
 
 interface LabelDatabaseProps {
-  onEditLabel?: (label: LabelWithSiteInfo) => void;
   onCreateLabel?: () => void;
   initialSiteId?: number;
   fixedSiteId?: number;
   refreshToken?: number;
   onLabelsChanged?: () => void;
+  siteCode?: string;
+  emptyStateDescription?: string;
+  emptyStateAction?: { label: string; onClick: () => void };
 }
 
 const LabelDatabase: React.FC<LabelDatabaseProps> = ({ 
-  onEditLabel, 
   onCreateLabel,
   initialSiteId,
   fixedSiteId,
   refreshToken,
-  onLabelsChanged
+  onLabelsChanged,
+  siteCode,
+  emptyStateDescription,
+  emptyStateAction
 }) => {
   const [labels, setLabels] = useState<LabelWithSiteInfo[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
@@ -45,17 +49,20 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [selectedLabels, setSelectedLabels] = useState<Set<number>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
-  const [rangeStart, setRangeStart] = useState('');
-  const [rangeEnd, setRangeEnd] = useState('');
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsLabel, setDetailsLabel] = useState<LabelWithSiteInfo | null>(null);
+  const [multiSelectEnabled, setMultiSelectEnabled] = useState(false);
 
-  const crossRacksFilenamePreview = useMemo(() => makeDownloadFilename('Cross-Racks'), []);
+  useEffect(() => {
+    if (!multiSelectEnabled && selectedLabels.size > 0) {
+      setSelectedLabels(new Set());
+    }
+  }, [multiSelectEnabled, selectedLabels.size]);
   
   // Search and filter state
   const [searchParams, setSearchParams] = useState<LabelSearchParams>({
     search: '',
     site_id: fixedSiteId || 0,
-    source: '',
-    destination: '',
     reference_number: '',
     limit: 25,
     offset: 0,
@@ -204,44 +211,6 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     setSelectedLabels(new Set());
   };
 
-  const handleRangeDownload = async () => {
-    if (!selectedSiteId) {
-      setError('No site selected');
-      return;
-    }
-
-    if (!rangeStart.trim() || !rangeEnd.trim()) {
-      setError('Please enter both start and end reference numbers');
-      return;
-    }
-
-    const extractTrailingNumber = (value: string) => {
-      const match = value.trim().match(/(\d+)$/);
-      return match ? parseInt(match[1], 10) : 0;
-    };
-
-    const start = extractTrailingNumber(rangeStart);
-    const end = extractTrailingNumber(rangeEnd);
-
-    if (!start || !end || start < 1 || end < 1 || start > end) {
-      setError('Invalid reference range');
-      return;
-    }
-
-    try {
-      setError(null);
-      const blob = await apiClient.downloadFile('/labels/bulk-zpl-range', {
-        site_id: selectedSiteId,
-        start_ref: rangeStart,
-        end_ref: rangeEnd,
-      });
-
-      await downloadBlobAsTextFile(blob, 'Cross-Racks');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to download labels');
-    }
-  };
-
   // Handle bulk operations
   const handleBulkDelete = async () => {
     if (selectedLabels.size === 0) return;
@@ -267,26 +236,9 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     }
   };
 
-  // Handle individual label operations
-  const handleDeleteLabel = async (labelId: number) => {
-    if (!confirm('Are you sure you want to delete this label?')) {
-      return;
-    }
-
-    if (!selectedSiteId) {
-      setError('No site selected');
-      return;
-    }
-
-    try {
-      const response = await apiClient.deleteLabel(selectedSiteId, labelId);
-      if (response.success) {
-        loadLabels(searchParams); // Reload labels
-        onLabelsChanged?.();
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete label');
-    }
+  const openDetails = (label: LabelWithSiteInfo) => {
+    setDetailsLabel(label);
+    setDetailsOpen(true);
   };
 
   const formatRefForSiteDetails = (label: LabelWithSiteInfo): string => {
@@ -308,34 +260,17 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     return `${datePart} ${timePart} — ${who}`;
   };
 
-  const handleDownloadLabel = (label: LabelWithSiteInfo) => {
-    const refForPrint = fixedSiteId ? formatRefForSiteDetails(label) : (label.reference_number || label.ref_string);
-    const zplContent = `^XA
-^MUm^LH8,19^FS
-^MUm^FO0,2
-^A0N,7,5
-^FB280,1,1,C
-^FD${refForPrint} ${label.source} > ${label.destination}
-^FS
-^XZ`;
-
-    downloadTextAsFile(zplContent, 'SID');
-  };
-
   const clearFilters = () => {
     setSearchParams(prev => ({
       ...prev,
       search: '',
-      source: '',
-      destination: '',
       reference_number: '',
       site_id: selectedSiteId || 0,
       offset: 0,
     }));
   };
 
-  const hasActiveFilters = searchParams.search || 
-    searchParams.source || searchParams.destination || searchParams.reference_number;
+  const hasActiveFilters = searchParams.search || searchParams.reference_number;
 
   const showSiteColumn = !fixedSiteId;
 
@@ -403,6 +338,21 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
                   <span className="ml-1 bg-primary text-primary-foreground rounded-full w-2 h-2" />
                 )}
               </Button>
+
+              <Button
+                type="button"
+                variant={multiSelectEnabled ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => setMultiSelectEnabled((v) => !v)}
+                disabled={!selectedSiteId}
+              >
+                {multiSelectEnabled ? (
+                  <CheckSquare className="h-4 w-4 mr-1" />
+                ) : (
+                  <Square className="h-4 w-4 mr-1" />
+                )}
+                Select Multiple
+              </Button>
               
               {hasActiveFilters && (
                 <Button
@@ -423,29 +373,9 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
                 <Label htmlFor="filter-reference">Reference</Label>
                 <Input
                   id="filter-reference"
-                  placeholder="e.g., MAIN-001"
+                  placeholder="e.g., #0001"
                   value={searchParams.reference_number || ''}
                   onChange={(e) => handleFilterChange('reference_number', e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="filter-source">Source</Label>
-                <Input
-                  id="filter-source"
-                  placeholder="e.g., Switch A"
-                  value={searchParams.source || ''}
-                  onChange={(e) => handleFilterChange('source', e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="filter-destination">Destination</Label>
-                <Input
-                  id="filter-destination"
-                  placeholder="e.g., Server B"
-                  value={searchParams.destination || ''}
-                  onChange={(e) => handleFilterChange('destination', e.target.value)}
                 />
               </div>
             </div>
@@ -453,72 +383,18 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
         </CardHeader>
       </Card>
 
-      {/* Bulk Download Section - Always visible when site selected */}
-      {selectedSiteId && pagination.total > 0 && (
-        <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold mb-1">Cross Rack References</h3>
-                <p className="text-xs text-muted-foreground">
-                  Download labels by reference range for this site.
-                </p>
-              </div>
-              
-              <div className="flex gap-2">
-                <div className="flex gap-2 items-end">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Print From Cable ID</Label>
-                  <Input
-                    placeholder="From #0000"
-                    value={rangeStart}
-                    onChange={(e) => setRangeStart(e.target.value)}
-                    className="w-[140px]"
-                  />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Print To Cable ID</Label>
-                  <Input
-                    placeholder="To #0000"
-                    value={rangeEnd}
-                    onChange={(e) => setRangeEnd(e.target.value)}
-                    className="w-[140px]"
-                  />
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRangeDownload}
-                  >
-                    <Download className="h-4 w-4 mr-1" />
-                    Download {crossRacksFilenamePreview}
-                  </Button>
-                </div>
-
-                {selectedLabels.size > 0 && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={clearSelection}
-                    >
-                      <X className="h-4 w-4 mr-1" />
-                      Clear Selection
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={handleBulkDelete}
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Delete Selected ({selectedLabels.size})
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Bulk operations */}
+      {multiSelectEnabled && selectedLabels.size > 0 && (
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={clearSelection}>
+            <X className="h-4 w-4 mr-1" />
+            Clear Selection
+          </Button>
+          <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
+            <Trash2 className="h-4 w-4 mr-1" />
+            Delete Selected ({selectedLabels.size})
+          </Button>
+        </div>
       )}
 
       {/* Labels List */}
@@ -538,12 +414,12 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
                 <p className="text-sm text-muted-foreground">
                   {hasActiveFilters 
                     ? 'Try adjusting your filters to find what you\'re looking for.'
-                    : 'Select a site above and start creating your first label.'}
+                    : (emptyStateDescription || (fixedSiteId ? 'Start by creating your first label for this site.' : 'Select a site above and start creating your first label.'))}
                 </p>
-                {onCreateLabel && !hasActiveFilters && (
-                  <Button onClick={onCreateLabel} className="mt-4">
+                {!hasActiveFilters && (emptyStateAction || onCreateLabel) && (
+                  <Button onClick={emptyStateAction?.onClick || onCreateLabel} className="mt-4">
                     <Plus className="h-4 w-4 mr-2" />
-                    Create Your First Label
+                    {emptyStateAction?.label || 'Create Your First Label'}
                   </Button>
                 )}
               </div>
@@ -552,131 +428,185 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
             <>
               {/* Table Header */}
               <div className="border-b bg-muted/50 px-4 py-3">
-                <div className={showSiteColumn ? 'grid grid-cols-12 gap-4 items-center text-sm font-medium' : 'grid grid-cols-12 gap-4 items-center text-sm font-medium'}>
-                  <div className="col-span-1">
-                    <span className="sr-only">Select</span>
-                  </div>
-                  <div className="col-span-2">Reference</div>
+                <div className="grid grid-cols-12 gap-4 items-center text-sm font-medium">
+                  {multiSelectEnabled && (
+                    <div className="col-span-1">
+                      <span className="sr-only">Select</span>
+                    </div>
+                  )}
+
+                  <div className="col-span-2">Cable Reference #</div>
+
                   {showSiteColumn ? (
                     <>
                       <div className="col-span-2">Site</div>
-                      <div className="col-span-2">Source</div>
-                      <div className="col-span-2">Destination</div>
-                      <div className="col-span-2">Created</div>
+                      <div className={multiSelectEnabled ? 'col-span-2' : 'col-span-3'}>Cable Source</div>
+                      <div className={multiSelectEnabled ? 'col-span-2' : 'col-span-3'}>Cable Destination</div>
+                      <div className="col-span-2">Created By</div>
                     </>
                   ) : (
                     <>
-                      <div className="col-span-3">Source</div>
-                      <div className="col-span-3">Destination</div>
-                      <div className="col-span-3">Created</div>
+                      <div className={multiSelectEnabled ? 'col-span-3' : 'col-span-4'}>Cable Source</div>
+                      <div className={multiSelectEnabled ? 'col-span-3' : 'col-span-4'}>Cable Destination</div>
+                      <div className="col-span-2">Created By</div>
                     </>
                   )}
-                  <div className="col-span-1">Actions</div>
+
+                  {multiSelectEnabled && <div className="col-span-1 text-right">Actions</div>}
                 </div>
               </div>
 
               {/* Table Body */}
               <div className="divide-y">
-                {labels.map((label) => (
-                  <div key={label.id} className="px-4 py-3 hover:bg-muted/50">
-                    <div className="grid grid-cols-12 gap-4 items-center text-sm">
-                      <div className="col-span-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => toggleLabelSelection(label.id)}
-                          className="h-6 w-6 p-0"
-                        >
-                          {selectedLabels.has(label.id) ? (
-                            <CheckSquare className="h-4 w-4" />
-                          ) : (
-                            <Square className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                      <div className="col-span-2 font-mono font-medium">
-                        {fixedSiteId ? formatRefForSiteDetails(label) : label.reference_number}
-                      </div>
-                      {showSiteColumn ? (
-                        <>
-                          <div className="col-span-2">
-                            <div>{label.site_name}</div>
-                            {label.site_location && (
-                              <div className="text-xs text-muted-foreground">
-                                {label.site_location}
-                              </div>
-                            )}
-                          </div>
-                          <div className="col-span-2 truncate" title={label.source}>
-                            {label.source}
-                          </div>
-                          <div className="col-span-2 truncate" title={label.destination}>
-                            {label.destination}
-                          </div>
-                          <div className="col-span-2 text-muted-foreground">
-                            {formatCreatedDisplay(label)}
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="col-span-3 truncate" title={label.source}>
-                            {label.source}
-                          </div>
-                          <div className="col-span-3 truncate" title={label.destination}>
-                            {label.destination}
-                          </div>
-                          <div className="col-span-3 text-muted-foreground">
-                            {formatCreatedDisplay(label)}
-                          </div>
-                        </>
-                      )}
-                      <div className="col-span-1">
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDownloadLabel(label)}
-                            className="h-8 w-8 p-0"
-                            title="Download .txt"
-                          >
-                            <Download className="h-3 w-3" />
-                          </Button>
-                          {onEditLabel && (
+                {labels.map((label) => {
+                  const sourceText = label.source_location
+                    ? (fixedSiteId && siteCode
+                      ? formatLocationDisplay(label.source_location, siteCode)
+                      : formatLocationFields(label.source_location))
+                    : (label.source ?? '');
+
+                  const destinationText = label.destination_location
+                    ? (fixedSiteId && siteCode
+                      ? formatLocationDisplay(label.destination_location, siteCode)
+                      : formatLocationFields(label.destination_location))
+                    : (label.destination ?? '');
+
+                  return (
+                    <div
+                      key={label.id}
+                      className="px-4 py-3 hover:bg-muted/50 cursor-pointer"
+                      onClick={() => {
+                        if (multiSelectEnabled) {
+                          toggleLabelSelection(label.id);
+                        } else {
+                          openDetails(label);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          if (multiSelectEnabled) {
+                            toggleLabelSelection(label.id);
+                          } else {
+                            openDetails(label);
+                          }
+                        }
+                      }}
+                    >
+                      <div className="grid grid-cols-12 gap-4 items-center text-sm">
+                        {multiSelectEnabled && (
+                          <div className="col-span-1">
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => onEditLabel(label)}
-                              className="h-8 w-8 p-0"
-                              title="Edit Label"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleLabelSelection(label.id);
+                              }}
+                              className="h-6 w-6 p-0"
                             >
-                              <Edit className="h-3 w-3" />
+                              {selectedLabels.has(label.id) ? (
+                                <CheckSquare className="h-4 w-4" />
+                              ) : (
+                                <Square className="h-4 w-4" />
+                              )}
                             </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteLabel(label.id)}
-                            className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                            title="Delete Label"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                          </div>
+                        )}
+
+                        <div className="col-span-2 font-mono font-medium">
+                          {fixedSiteId ? formatRefForSiteDetails(label) : label.reference_number}
                         </div>
+
+                        {showSiteColumn ? (
+                          <>
+                            <div className="col-span-2">
+                              <div>{label.site_name}</div>
+                              {label.site_location && (
+                                <div className="text-xs text-muted-foreground">
+                                  {label.site_location}
+                                </div>
+                              )}
+                            </div>
+
+                            <div
+                              className={(multiSelectEnabled ? 'col-span-2' : 'col-span-3') + ' truncate'}
+                              title={sourceText || undefined}
+                            >
+                              {sourceText || '—'}
+                            </div>
+                            <div
+                              className={(multiSelectEnabled ? 'col-span-2' : 'col-span-3') + ' truncate'}
+                              title={destinationText || undefined}
+                            >
+                              {destinationText || '—'}
+                            </div>
+                            <div className="col-span-2 text-muted-foreground">
+                              {formatCreatedDisplay(label)}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div
+                              className={(multiSelectEnabled ? 'col-span-3' : 'col-span-4') + ' truncate'}
+                              title={sourceText || undefined}
+                            >
+                              {sourceText || '—'}
+                            </div>
+                            <div
+                              className={(multiSelectEnabled ? 'col-span-3' : 'col-span-4') + ' truncate'}
+                              title={destinationText || undefined}
+                            >
+                              {destinationText || '—'}
+                            </div>
+                            <div className="col-span-2 text-muted-foreground">
+                              {formatCreatedDisplay(label)}
+                            </div>
+                          </>
+                        )}
+
+                        {multiSelectEnabled && (
+                          <div className="col-span-1 flex justify-end">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openDetails(label);
+                              }}
+                              aria-label="Open label details"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    
-                    {label.notes && (
-                      <div className="mt-2 text-xs text-muted-foreground pl-8">
-                        <strong>Notes:</strong> {label.notes}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           )}
         </CardContent>
       </Card>
+
+      {fixedSiteId && (
+        <LabelDetailsDialog
+          open={detailsOpen}
+          onOpenChange={setDetailsOpen}
+          label={detailsLabel}
+          siteId={fixedSiteId}
+          siteCode={siteCode || ''}
+          onChanged={() => {
+            setDetailsLabel(null);
+            loadLabels(searchParams);
+            onLabelsChanged?.();
+          }}
+        />
+      )}
 
       {/* Pagination */}
       {pagination.total > (searchParams.limit || 10) && (

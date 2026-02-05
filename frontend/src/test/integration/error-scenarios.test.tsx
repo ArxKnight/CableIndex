@@ -13,6 +13,10 @@ vi.mock('../../lib/api', () => ({
     createSite: vi.fn(),
     getLabels: vi.fn(),
     createLabel: vi.fn(),
+    getSiteCableTypes: vi.fn(),
+    createSiteCableType: vi.fn(),
+    updateSiteCableType: vi.fn(),
+    deleteSiteCableType: vi.fn(),
     get: vi.fn(),
     post: vi.fn(),
     put: vi.fn(),
@@ -25,6 +29,10 @@ vi.mock('../../lib/api', () => ({
     createSite: vi.fn(),
     getLabels: vi.fn(),
     createLabel: vi.fn(),
+    getSiteCableTypes: vi.fn(),
+    createSiteCableType: vi.fn(),
+    updateSiteCableType: vi.fn(),
+    deleteSiteCableType: vi.fn(),
     get: vi.fn(),
     post: vi.fn(),
     put: vi.fn(),
@@ -232,7 +240,9 @@ describe('Error Scenarios Integration Tests', () => {
       .getAllByRole('button', { name: /^create site$/i })
       .find((btn) => btn.getAttribute('type') === 'submit');
 
-    expect(submitButton).toBeTruthy();
+    if (!submitButton) {
+      throw new Error('Expected to find a submit button for "Create Site"');
+    }
     await user.click(submitButton);
 
     // Should show validation errors
@@ -302,14 +312,18 @@ describe('Error Scenarios Integration Tests', () => {
 
     // Fill in site form
     const nameInput = screen.getByLabelText(/site name/i);
+    const codeInput = screen.getByLabelText(/abbreviation/i);
     await user.type(nameInput, 'Duplicate Site');
+    await user.type(codeInput, 'DUP');
 
     // Submit form
     const submitButton = screen
       .getAllByRole('button', { name: /^create site$/i })
       .find((btn) => btn.getAttribute('type') === 'submit');
 
-    expect(submitButton).toBeTruthy();
+    if (!submitButton) {
+      throw new Error('Expected to find a submit button for "Create Site"');
+    }
     await user.click(submitButton);
 
     // Should show API error message

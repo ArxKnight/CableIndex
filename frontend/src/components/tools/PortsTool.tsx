@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '../ui/alert';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../ui/alert-dialog';
 import { clampInt } from './utils';
 import { ZplOutput } from './ZplOutput';
+import { PortsPreview } from './ToolLabelPreview';
 
 const BANKS = ['Bank1', 'Bank2', 'Bank3', 'Bank4'] as const;
 const PREFIXES = ['PORT', 'Gi1', 'Gi2', 'Te1', 'Eth', 'Et', 'Fa1'] as const;
@@ -211,6 +212,15 @@ export function PortsTool() {
         zpl={zpl}
         prefix="Ports"
         disabled={disabled}
+        preview={
+          <PortsPreview
+            hostname={hostname}
+            bankPrefix={useBankPrefix ? bank : ''}
+            prefix={prefix}
+            fromPort={fromPort}
+            toPort={toPort}
+          />
+        }
       />
     </div>
   );

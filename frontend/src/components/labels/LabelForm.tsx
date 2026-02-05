@@ -2,25 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Label as LabelType, Site, CreateLabelData } from '../../types';
+import { CableType, Label as LabelType, SiteLocation, CreateLabelData } from '../../types';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Alert, AlertDescription } from '../ui/alert';
-import { Loader2, Download } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Loader2 } from 'lucide-react';
 import apiClient from '../../lib/api';
-import { downloadTextAsFile } from '../../lib/download';
+import LocationHierarchyDropdown from '../locations/LocationHierarchyDropdown';
 
 const labelSchema = z.object({
-  source: z.string()
-    .min(1, 'Source is required')
-    .max(200, 'Source must be less than 200 characters'),
-  destination: z.string()
-    .min(1, 'Destination is required')
-    .max(200, 'Destination must be less than 200 characters'),
-  site_id: z.number()
-    .min(1, 'Please select a site'),
+  source_location_id: z.coerce.number().min(1, 'Source location is required'),
+  destination_location_id: z.coerce.number().min(1, 'Destination location is required'),
+  cable_type_id: z.coerce.number().min(1, 'Cable type is required'),
+  site_id: z.coerce.number().min(1, 'Valid site ID is required'),
+  quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1').max(500, 'Quantity cannot exceed 500').optional(),
   notes: z.string()
     .max(1000, 'Notes must be less than 1000 characters')
     .optional()
@@ -34,9 +32,9 @@ interface LabelFormProps {
   onSubmit: (data: CreateLabelData) => Promise<void>;
   onCancel?: () => void;
   isLoading?: boolean;
-  showPreview?: boolean;
   initialSiteId?: number;
   lockedSiteId?: number;
+  lockedSiteCode?: string;
   lockedSiteName?: string;
 }
 
@@ -45,90 +43,109 @@ const LabelForm: React.FC<LabelFormProps> = ({
   onSubmit, 
   onCancel, 
   isLoading = false,
-  showPreview = true,
   initialSiteId,
   lockedSiteId,
+  lockedSiteCode,
   lockedSiteName
 }) => {
   const [error, setError] = useState<string | null>(null);
-  const [sites, setSites] = useState<Site[]>([]);
   const siteLocked = Number.isFinite(lockedSiteId) && (lockedSiteId || 0) > 0;
   const [loadingSites, setLoadingSites] = useState(!siteLocked);
-  const [previewRef, setPreviewRef] = useState<string>('');
+  const [locations, setLocations] = useState<SiteLocation[]>([]);
+  const [loadingLocations, setLoadingLocations] = useState(siteLocked);
+  const [cableTypes, setCableTypes] = useState<CableType[]>([]);
+  const [loadingCableTypes, setLoadingCableTypes] = useState(siteLocked);
 
   const {
     register,
     handleSubmit,
     watch,
+    getValues,
     setValue,
     formState: { errors },
   } = useForm<LabelFormData>({
     resolver: zodResolver(labelSchema),
     defaultValues: {
-      source: label?.source || '',
-      destination: label?.destination || '',
+      source_location_id: label?.source_location_id || 0,
+      destination_location_id: label?.destination_location_id || 0,
+      cable_type_id: label?.cable_type_id || 0,
       site_id: label?.site_id || lockedSiteId || initialSiteId || 0,
+      quantity: 1,
       notes: label?.notes || '',
     },
   });
 
   const watchedValues = watch();
 
-  // Load sites on component mount
+  // Labels are always created within a site in the Site Details flow.
   useEffect(() => {
-    if (siteLocked) {
-      return;
-    }
-    const loadSites = async () => {
-      try {
-        const response = await apiClient.getSites();
-        if (response.success && response.data) {
-          setSites(response.data.sites);
-        }
-      } catch (err) {
-        console.error('Failed to load sites:', err);
-        setError('Failed to load sites');
-      } finally {
-        setLoadingSites(false);
-      }
-    };
-
-    loadSites();
+    if (!siteLocked) return;
+    setLoadingSites(false);
   }, [siteLocked]);
 
   // Lock the site context when provided
   useEffect(() => {
     if (siteLocked && lockedSiteId) {
       setValue('site_id', lockedSiteId, { shouldValidate: true });
-      setLoadingSites(false);
     }
   }, [lockedSiteId, setValue, siteLocked]);
 
-  // Update preview reference number when site or form values change
+  // Load locations + cable types for the locked site
   useEffect(() => {
-    if (watchedValues.site_id && watchedValues.source && watchedValues.destination) {
-      // For preview, show a placeholder reference number with 4 digits
-      setPreviewRef('XXXX');
-    } else {
-      setPreviewRef('');
-    }
-  }, [watchedValues.site_id, watchedValues.source, watchedValues.destination]);
+    const siteId = getValues('site_id');
+    if (!siteId) return;
 
-  // If we navigated here with a site_id query param, preselect it for create flow.
-  useEffect(() => {
-    if (siteLocked) return;
-    if (!label && initialSiteId && watchedValues.site_id === 0) {
-      setValue('site_id', initialSiteId, { shouldValidate: true });
-    }
-  }, [initialSiteId, label, setValue, siteLocked, watchedValues.site_id]);
+    let cancelled = false;
+    const run = async () => {
+      try {
+        setLoadingLocations(true);
+        setLoadingCableTypes(true);
+        setError(null);
+
+        const [locResp, ctResp] = await Promise.all([
+          apiClient.getSiteLocations(siteId),
+          apiClient.getSiteCableTypes(siteId),
+        ]);
+
+        if (!locResp.success || !locResp.data) {
+          throw new Error(locResp.error || 'Failed to load site locations');
+        }
+
+        if (!ctResp.success || !ctResp.data) {
+          throw new Error(ctResp.error || 'Failed to load cable types');
+        }
+
+        if (cancelled) return;
+        setLocations(locResp.data.locations);
+        setCableTypes(ctResp.data.cable_types as any);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load site data');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingLocations(false);
+          setLoadingCableTypes(false);
+        }
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [getValues, lockedSiteId, lockedSiteCode, lockedSiteName]);
 
   const handleFormSubmit = async (data: LabelFormData) => {
     try {
       setError(null);
+      const quantity = data.quantity ? Number(data.quantity) : 1;
       const submitData: CreateLabelData = {
-        source: data.source,
-        destination: data.destination,
+        source_location_id: Number(data.source_location_id),
+        destination_location_id: Number(data.destination_location_id),
+        cable_type_id: Number(data.cable_type_id),
         site_id: data.site_id,
+        ...(label || quantity <= 1 ? {} : { quantity }),
         notes: data.notes || undefined,
       };
       await onSubmit(submitData);
@@ -137,46 +154,27 @@ const LabelForm: React.FC<LabelFormProps> = ({
     }
   };
 
-  const generateZPLPreview = () => {
-    if (!previewRef || !watchedValues.source || !watchedValues.destination) {
-      return '';
-    }
-    
-    const referenceNumber = previewRef || 'XXXX';
-    
-    return `^XA
-^MUm^LH8,19^FS
-^MUm^FO0,2
-^A0N,7,5
-^FB280,1,1,C
-^FD#${referenceNumber}^FS
-^FO0,14
-^A0N,7,5
-^FB280,1,1,C
-^FD${watchedValues.source} > ${watchedValues.destination}^FS
-^XZ`;
-  };
-
-  const downloadZPLPreview = () => {
-    const zplContent = generateZPLPreview();
-    if (!zplContent) return;
-
-    downloadTextAsFile(zplContent, 'SID');
-  };
-
-  if (loadingSites) {
+  if (loadingSites || loadingLocations || loadingCableTypes) {
     return (
       <div className="flex items-center justify-center p-8">
         <Loader2 className="h-6 w-6 animate-spin" />
-        <span className="ml-2">Loading sites...</span>
+        <span className="ml-2">Loading...</span>
       </div>
     );
   }
 
-  if (!loadingSites && !siteLocked && sites.length === 0) {
+  if (siteLocked && locations.length === 0) {
     return (
       <div className="text-center py-8 text-muted-foreground">
-        You do not have access to any sites
+        No site locations exist yet. Ask an admin to add locations for this site.
+      </div>
+    );
+  }
+
+  if (siteLocked && cableTypes.length === 0) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        No cable types exist yet. Ask an admin to add cable types for this site.
       </div>
     );
   }
@@ -190,71 +188,84 @@ const LabelForm: React.FC<LabelFormProps> = ({
       )}
 
       <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="site_id">Site *</Label>
-          {/* Always register site_id so it is included in submission even when locked */}
-          <input type="hidden" {...register('site_id', { valueAsNumber: true })} />
-
-          {siteLocked ? (
-            <Input
-              value={lockedSiteName || (lockedSiteId ? `Site #${lockedSiteId}` : '')}
-              disabled
-            />
-          ) : (
-            <select
-              id="site_id"
-              {...register('site_id', { valueAsNumber: true })}
-              disabled={isLoading}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>option]:py-2"
-            >
-              <option value={0}>Select a site...</option>
-              {sites.map((site) => (
-                <option key={site.id} value={site.id}>
-                  {site.name} {site.location && `(${site.location})`}
-                </option>
-              ))}
-            </select>
-          )}
-          {errors.site_id && (
-            <p className="text-sm text-destructive">{errors.site_id.message}</p>
-          )}
-          <p className="text-xs text-muted-foreground">
-            {siteLocked ? 'Labels are always created within a site.' : 'The site where this cable will be installed'}
-          </p>
-        </div>
+        {/* Always register site_id so it is included in submission */}
+        <input type="hidden" {...register('site_id', { valueAsNumber: true })} />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="source">Source *</Label>
-            <Input
-              id="source"
-              placeholder="e.g., Switch A Port 1, Panel 1-12"
-              {...register('source')}
+            <Label htmlFor="source_location_id">Source Location *</Label>
+            <input type="hidden" {...register('source_location_id', { valueAsNumber: true })} />
+            <LocationHierarchyDropdown
+              locations={locations}
+              valueLocationId={watchedValues.source_location_id ? Number(watchedValues.source_location_id) : null}
+              placeholder="Source"
               disabled={isLoading}
+              onSelect={(id) => setValue('source_location_id', id, { shouldValidate: true })}
             />
-            {errors.source && (
-              <p className="text-sm text-destructive">{errors.source.message}</p>
+            {errors.source_location_id && (
+              <p className="text-sm text-destructive">{errors.source_location_id.message}</p>
             )}
-            <p className="text-xs text-muted-foreground">
-              Where the cable originates from
-            </p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="destination">Destination *</Label>
+            <Label htmlFor="destination_location_id">Destination Location *</Label>
+            <input type="hidden" {...register('destination_location_id', { valueAsNumber: true })} />
+            <LocationHierarchyDropdown
+              locations={locations}
+              valueLocationId={watchedValues.destination_location_id ? Number(watchedValues.destination_location_id) : null}
+              placeholder="Destination"
+              disabled={isLoading}
+              onSelect={(id) => setValue('destination_location_id', id, { shouldValidate: true })}
+            />
+            {errors.destination_location_id && (
+              <p className="text-sm text-destructive">{errors.destination_location_id.message}</p>
+            )}
+          </div>
+        </div>
+
+        {!label && (
+          <div className="space-y-2">
+            <Label htmlFor="quantity">Quantity</Label>
             <Input
-              id="destination"
-              placeholder="e.g., Server Rack B-15, Workstation 42"
-              {...register('destination')}
+              id="quantity"
+              type="number"
+              min={1}
+              max={500}
+              step={1}
+              {...register('quantity', { valueAsNumber: true })}
               disabled={isLoading}
             />
-            {errors.destination && (
-              <p className="text-sm text-destructive">{errors.destination.message}</p>
+            {errors.quantity && (
+              <p className="text-sm text-destructive">{errors.quantity.message}</p>
             )}
             <p className="text-xs text-muted-foreground">
-              Where the cable terminates
+              Create multiple labels with the same details
             </p>
           </div>
+        )}
+
+        <div className="space-y-2">
+          <Label htmlFor="cable_type_id">Cable Type *</Label>
+          <input type="hidden" {...register('cable_type_id', { valueAsNumber: true })} />
+          <Select
+            value={watchedValues.cable_type_id ? String(Number(watchedValues.cable_type_id)) : ''}
+            onValueChange={(value) => setValue('cable_type_id', Number(value), { shouldValidate: true })}
+            disabled={isLoading || cableTypes.length === 0}
+          >
+            <SelectTrigger id="cable_type_id">
+              <SelectValue placeholder={cableTypes.length ? 'Select a cable type' : 'No cable types'} />
+            </SelectTrigger>
+            <SelectContent>
+              {cableTypes.map((ct) => (
+                <SelectItem key={ct.id} value={String(ct.id)}>
+                  {ct.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {errors.cable_type_id && (
+            <p className="text-sm text-destructive">{errors.cable_type_id.message}</p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -297,42 +308,6 @@ const LabelForm: React.FC<LabelFormProps> = ({
           </Button>
         </div>
       </form>
-
-      {showPreview && previewRef && watchedValues.source && watchedValues.destination && (
-        <div className="border rounded-lg p-4 bg-muted/50">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium">Label Preview</h3>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={downloadZPLPreview}
-              className="h-8"
-            >
-              <Download className="h-3 w-3 mr-1" />
-              Download ZPL
-            </Button>
-          </div>
-          
-          <div className="space-y-2">
-            <div className="text-sm">
-              <span className="font-medium">Reference:</span> #{previewRef}
-            </div>
-            <div className="text-sm">
-              <span className="font-medium">Label Text:</span> #{previewRef} {watchedValues.source} &gt; {watchedValues.destination}
-            </div>
-            
-            <details className="text-xs">
-              <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                View ZPL Code
-              </summary>
-              <pre className="mt-2 p-2 bg-background border rounded text-xs overflow-x-auto">
-                {generateZPLPreview()}
-              </pre>
-            </details>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

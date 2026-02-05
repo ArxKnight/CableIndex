@@ -79,7 +79,7 @@ export function PDULabels() {
     for (let port = formData.fromPort; port <= formData.toPort; port++) {
       previewLabels.push({
         port,
-        label: `${formData.pduSid}/${port}`
+        label: `${formData.pduSid.trim()}/${port}`,
       });
     }
 
@@ -225,7 +225,7 @@ export function PDULabels() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 max-h-60 overflow-y-auto">
-              {preview.map((item) => (
+              {preview.slice(0, 20).map((item) => (
                 <div
                   key={item.port}
                   className="p-2 border rounded text-center text-sm font-mono bg-yellow-50 border-yellow-200"

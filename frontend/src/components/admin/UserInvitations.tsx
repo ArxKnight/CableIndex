@@ -312,7 +312,7 @@ const UserInvitations: React.FC = () => {
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-lg font-medium">Pending Invitations</h3>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             Manage user invitations and send new invites
           </p>
         </div>
@@ -586,9 +586,9 @@ const UserInvitations: React.FC = () => {
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-8">
                   <div className="flex flex-col items-center gap-2">
-                    <UserPlus className="w-8 h-8 text-gray-400" />
-                    <p className="text-gray-600">No pending invitations</p>
-                    <p className="text-sm text-gray-500">Click "Invite User" above to send your first invitation</p>
+                    <UserPlus className="w-8 h-8 text-muted-foreground" />
+                    <p className="text-muted-foreground">No pending invitations</p>
+                    <p className="text-sm text-muted-foreground">Click "Invite User" above to send your first invitation</p>
                   </div>
                 </TableCell>
               </TableRow>
@@ -600,7 +600,7 @@ const UserInvitations: React.FC = () => {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-gray-400" />
+                      <Mail className="w-4 h-4 text-muted-foreground" />
                       <span className="text-sm">{invitation.email}</span>
                     </div>
                   </TableCell>
@@ -618,7 +618,7 @@ const UserInvitations: React.FC = () => {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <span className="text-sm text-gray-600">
+                    <span className="text-sm text-muted-foreground">
                       {invitation.invited_by_name}
                     </span>
                   </TableCell>
@@ -641,7 +641,7 @@ const UserInvitations: React.FC = () => {
                     )}
                   </TableCell>
                   <TableCell>
-                    <span className="text-sm text-gray-600">
+                    <span className="text-sm text-muted-foreground">
                       {formatDistanceToNow(new Date(invitation.expires_at), { addSuffix: true })}
                     </span>
                   </TableCell>

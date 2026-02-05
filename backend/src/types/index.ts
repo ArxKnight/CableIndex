@@ -22,6 +22,27 @@ export interface Site {
   updated_at: string;
 }
 
+export interface SiteLocation {
+  id: number;
+  site_id: number;
+  floor: string;
+  suite: string;
+  row: string;
+  rack: string;
+  label?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CableType {
+  id: number;
+  site_id: number;
+  name: string;
+  description?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Label {
   id: number;
   site_id: number;
@@ -30,8 +51,14 @@ export interface Label {
   created_by_email?: string | null;
   ref_number: number;
   ref_string: string;
+  cable_type_id?: number | null;
+  cable_type?: CableType | null;
   type: string;
   payload_json: string | null;
+  source_location_id?: number | null;
+  destination_location_id?: number | null;
+  source_location?: SiteLocation | null;
+  destination_location?: SiteLocation | null;
   created_at: string;
   updated_at: string;
   // Legacy API compatibility fields

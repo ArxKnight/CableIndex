@@ -37,11 +37,11 @@ const ErrorPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-background">
       <Card className="w-full max-w-md text-center">
         <CardHeader>
-          <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
-            <AlertTriangle className="w-8 h-8 text-red-600" />
+          <div className="mx-auto w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center mb-4">
+            <AlertTriangle className="w-8 h-8 text-destructive" />
           </div>
           <CardTitle className="text-2xl">{getErrorTitle()}</CardTitle>
           <CardDescription>
@@ -50,8 +50,8 @@ const ErrorPage: React.FC = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           {(import.meta as any).env?.DEV && error && (
-            <div className="p-3 bg-gray-100 rounded-md text-left">
-              <pre className="text-sm text-gray-700 whitespace-pre-wrap">
+            <div className="p-3 bg-muted rounded-md text-left">
+              <pre className="text-sm text-muted-foreground whitespace-pre-wrap">
                 {JSON.stringify(error, null, 2)}
               </pre>
             </div>

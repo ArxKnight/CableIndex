@@ -1,25 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import Database from 'better-sqlite3';
 import UserModel from '../models/User.js';
-import connection from '../database/connection.js';
-import { initializeDatabase } from '../database/init.js';
+import { setupTestDatabase, cleanupTestDatabase } from './setup.js';
 
 describe('User Model', () => {
   let userModel: UserModel;
-  let db: Database.Database;
+  let db: any;
 
   beforeEach(async () => {
-    // Initialize in-memory database for testing
-    await initializeDatabase({ runMigrations: true, seedData: false });
-    db = connection.getConnection();
+    db = await setupTestDatabase({ runMigrations: true, seedData: false });
     userModel = new UserModel();
   });
 
-  afterEach(() => {
-    // Clean up database
-    if (db) {
-      db.exec('DELETE FROM users');
-    }
+  afterEach(async () => {
+    await cleanupTestDatabase();
   });
 
   describe('create', () => {
@@ -28,7 +21,7 @@ describe('User Model', () => {
         email: 'test@example.com',
         full_name: 'Test User',
         password: 'TestPassword123!',
-        role: 'user' as const,
+        role: 'USER' as const,
       };
 
       const user = await userModel.create(userData);
@@ -51,7 +44,7 @@ describe('User Model', () => {
 
       const user = await userModel.create(userData);
 
-      expect(user.role).toBe('user');
+      expect(user.role).toBe('USER');
     });
   });
 
@@ -64,15 +57,15 @@ describe('User Model', () => {
       };
 
       const createdUser = await userModel.create(userData);
-      const foundUser = userModel.findById(createdUser.id);
+      const foundUser = await userModel.findById(createdUser.id);
 
       expect(foundUser).toBeDefined();
-      expect(foundUser?.id).toBe(createdUser.id);
-      expect(foundUser?.email).toBe(userData.email);
+      expect(foundUser!.id).toBe(createdUser.id);
+      expect(foundUser!.email).toBe(userData.email);
     });
 
-    it('should return null for non-existent ID', () => {
-      const user = userModel.findById(999);
+    it('should return null for non-existent ID', async () => {
+      const user = await userModel.findById(999);
       expect(user).toBeNull();
     });
   });
@@ -86,10 +79,10 @@ describe('User Model', () => {
       };
 
       await userModel.create(userData);
-      const foundUser = userModel.findByEmail(userData.email);
+      const foundUser = await userModel.findByEmail(userData.email);
 
       expect(foundUser).toBeDefined();
-      expect(foundUser?.email).toBe(userData.email);
+      expect(foundUser!.email).toBe(userData.email);
     });
 
     it('should be case insensitive', async () => {
@@ -100,14 +93,14 @@ describe('User Model', () => {
       };
 
       await userModel.create(userData);
-      const foundUser = userModel.findByEmail('TEST@EXAMPLE.COM');
+      const foundUser = await userModel.findByEmail('TEST@EXAMPLE.COM');
 
       expect(foundUser).toBeDefined();
-      expect(foundUser?.email).toBe(userData.email);
+      expect(foundUser!.email).toBe(userData.email);
     });
 
-    it('should return null for non-existent email', () => {
-      const user = userModel.findByEmail('nonexistent@example.com');
+    it('should return null for non-existent email', async () => {
+      const user = await userModel.findByEmail('nonexistent@example.com');
       expect(user).toBeNull();
     });
   });
@@ -155,13 +148,13 @@ describe('User Model', () => {
       };
 
       await userModel.create(userData);
-      const exists = userModel.emailExists(userData.email);
+      const exists = await userModel.emailExists(userData.email);
 
       expect(exists).toBe(true);
     });
 
-    it('should return false for non-existent email', () => {
-      const exists = userModel.emailExists('nonexistent@example.com');
+    it('should return false for non-existent email', async () => {
+      const exists = await userModel.emailExists('nonexistent@example.com');
       expect(exists).toBe(false);
     });
 
@@ -173,7 +166,7 @@ describe('User Model', () => {
       };
 
       const user = await userModel.create(userData);
-      const exists = userModel.emailExists(userData.email, user.id);
+      const exists = await userModel.emailExists(userData.email, user.id);
 
       expect(exists).toBe(false);
     });
@@ -190,12 +183,12 @@ describe('User Model', () => {
       const user = await userModel.create(userData);
       const updatedUser = await userModel.update(user.id, {
         full_name: 'Updated Name',
-        role: 'admin',
+        role: 'ADMIN',
       });
 
       expect(updatedUser).toBeDefined();
       expect(updatedUser?.full_name).toBe('Updated Name');
-      expect(updatedUser?.role).toBe('admin');
+      expect(updatedUser?.role).toBe('ADMIN');
       expect(updatedUser?.email).toBe(userData.email); // Should remain unchanged
     });
 
@@ -238,16 +231,16 @@ describe('User Model', () => {
       };
 
       const user = await userModel.create(userData);
-      const success = userModel.delete(user.id);
+      const success = await userModel.delete(user.id);
 
       expect(success).toBe(true);
 
-      const deletedUser = userModel.findById(user.id);
+      const deletedUser = await userModel.findById(user.id);
       expect(deletedUser).toBeNull();
     });
 
-    it('should return false for non-existent user', () => {
-      const success = userModel.delete(999);
+    it('should return false for non-existent user', async () => {
+      const success = await userModel.delete(999);
       expect(success).toBe(false);
     });
   });

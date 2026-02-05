@@ -25,9 +25,28 @@ export interface ZPLValidationResult {
 }
 
 export class ZPLService {
+  private safe(value: unknown): string {
+    return (value ?? '').toString().trim();
+  }
+
+  private formatLocationPrint(location: {
+    label?: string | null;
+    floor?: string | null;
+    suite?: string | null;
+    row?: string | null;
+    rack?: string | null;
+  }): string {
+    const label = this.safe(location.label);
+    const floor = this.safe(location.floor);
+    const suite = this.safe(location.suite);
+    const row = this.safe(location.row);
+    const rack = this.safe(location.rack);
+    return `${label}/${floor}/${suite}/${row}/${rack}`;
+  }
+
   /**
    * Generate ZPL code for a cable label
-   * Format: Reference on first line, Source > Destination on second line
+   * Format: #[REF]\& [SOURCE]\& [DESTINATION] (printed twice per label)
    */
   generateCableLabel(data: CableLabelData): string {
     const { referenceNumber, source, destination } = data;
@@ -35,20 +54,25 @@ export class ZPLService {
     // Validate input data
     this.validateCableLabelData(data);
     
-    // Generate ZPL code with reference on top line, source > destination below
-    const zpl = `^XA
-^MUm^LH8,19^FS
-^MUm^FO0,2
-^A0N,7,5
-^FB280,1,1,C
-^FD#${referenceNumber}^FS
-^MUm^FO0,12
-^A0N,7,5
-^FB280,1,1,C
-^FD${source} > ${destination}^FS
-^XZ`;
-    
-    return zpl;
+    const payload = `#${referenceNumber}\\& ${source}\\& ${destination}`;
+
+    const lines: string[] = [
+      '^XA',
+      '^MUm^LH8,19^FS',
+      '^MUm^FO1,1',
+      '^A0N,3,3',
+      '^FB292,3,1,C',
+      `^FD${payload}`,
+      '^FS',
+      '^MUm^FO31,1',
+      '^A0N,3,3',
+      '^FB292,3,1,C',
+      `^FD${payload}`,
+      '^FS',
+      '^XZ',
+    ];
+
+    return lines.join('\n');
   }
 
   /**
@@ -109,14 +133,21 @@ export class ZPLService {
    * Generate ZPL code from existing label data
    */
   generateFromLabel(label: Label, site: Site): string {
-    const refNum = label.reference_number || label.ref_string || '';
-    const referenceNumber = refNum.includes('-') ? refNum.split('-')[1] || refNum : refNum;
+    const referenceNumber = (String(label.ref_string || '').trim() || (Number.isFinite(label.ref_number) ? String(label.ref_number).padStart(4, '0') : '') || 'UNKNOWN');
+
+    const source = label.source_location
+      ? this.formatLocationPrint(label.source_location)
+      : (label.source || 'Unknown');
+
+    const destination = label.destination_location
+      ? this.formatLocationPrint(label.destination_location)
+      : (label.destination || 'Unknown');
     
     return this.generateCableLabel({
-      site: site.name,
+      site: site.code,
       referenceNumber: referenceNumber || 'UNKNOWN',
-      source: label.source || 'Unknown',
-      destination: label.destination || 'Unknown'
+      source,
+      destination
     });
   }
 
@@ -125,16 +156,15 @@ export class ZPLService {
    */
   generateBulkLabels(labels: Label[], sites: Site[]): string {
     const siteMap = new Map(sites.map(site => [site.id, site]));
-    let bulkZpl = '';
-    
+    const blocks: string[] = [];
+
     for (const label of labels) {
       const site = siteMap.get(label.site_id);
-      if (site) {
-        bulkZpl += this.generateFromLabel(label, site) + '\n\n';
-      }
+      if (!site) continue;
+      blocks.push(this.generateFromLabel(label, site));
     }
-    
-    return bulkZpl.trim();
+
+    return blocks.join('\n').trim();
   }
 
   /**
@@ -159,13 +189,19 @@ export class ZPLService {
         errors.push(`ZPL code must contain ${command} command`);
       }
     }
-    
-    // Check for balanced ^FD and ^FS commands
-    const fdCount = (zplCode.match(/\^FD/g) || []).length;
-    const fsCount = (zplCode.match(/\^FS/g) || []).length;
-    
-    if (fdCount !== fsCount) {
-      errors.push('Unbalanced ^FD and ^FS commands');
+
+    // Check that every ^FD has a terminating ^FS after it.
+    // Note: many templates include additional ^FS (e.g., after ^LH), so we
+    // cannot require a strict 1:1 count of ^FD and ^FS.
+    const fdMatches = [...zplCode.matchAll(/\^FD/g)];
+    for (const match of fdMatches) {
+      const startIndex = match.index ?? -1;
+      if (startIndex < 0) continue;
+      const remainder = zplCode.slice(startIndex);
+      if (!remainder.includes('^FS')) {
+        errors.push('Unbalanced ^FD and ^FS commands');
+        break;
+      }
     }
     
     return {
@@ -193,7 +229,7 @@ export class ZPLService {
     const { site, referenceNumber, source, destination } = data;
     
     if (!site || !site.trim()) {
-      throw new Error('Site name is required');
+      throw new Error('Site abbreviation is required');
     }
     
     if (!referenceNumber || !referenceNumber.trim()) {

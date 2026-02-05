@@ -1,5 +1,6 @@
 import type { Migration } from './index.js';
 import connection from '../connection.js';
+import { columnExists, tableExists } from './schemaChecks.js';
 
 export const Migration002_AddRoleToUsers: Migration = {
   id: '002',
@@ -8,15 +9,15 @@ export const Migration002_AddRoleToUsers: Migration = {
   up: async (adapter) => {
     const config = connection.getConfig();
     const isMySQL = config?.type === 'mysql';
+    const dbType = config?.type || 'sqlite';
 
     // Add role column to users table (if not already present)
-    try {
+    const hasRoleColumn = await columnExists(adapter, 'users', 'role', dbType);
+    if (!hasRoleColumn) {
       await adapter.execute(isMySQL
         ? `ALTER TABLE users ADD COLUMN role VARCHAR(50) NOT NULL DEFAULT 'USER'`
         : `ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'USER' CHECK (role IN ('GLOBAL_ADMIN', 'ADMIN', 'USER'))`
       );
-    } catch (error) {
-      // Column may already exist
     }
 
     // For MySQL, add the CHECK constraint separately (if supported in your MySQL version)
@@ -29,35 +30,36 @@ export const Migration002_AddRoleToUsers: Migration = {
     }
 
     // Migrate existing role data from user_roles table to users table (if it exists)
-    try {
+    const hasUserRolesTable = await tableExists(adapter, 'user_roles', dbType);
+    if (hasUserRolesTable) {
       await adapter.execute(`
-        UPDATE users 
+        UPDATE users
         SET role = (
-          SELECT role 
-          FROM user_roles 
-          WHERE user_roles.user_id = users.id 
+          SELECT role
+          FROM user_roles
+          WHERE user_roles.user_id = users.id
           LIMIT 1
         )
         WHERE EXISTS (
-          SELECT 1 
-          FROM user_roles 
+          SELECT 1
+          FROM user_roles
           WHERE user_roles.user_id = users.id
         )
       `);
-    } catch (error) {
-      // user_roles table may not exist
     }
 
     // Normalize legacy roles to new global roles
-    await adapter.execute(
-      `UPDATE users
-       SET role = CASE
-         WHEN role IN ('admin', 'ADMIN') THEN 'GLOBAL_ADMIN'
-         WHEN role IN ('moderator', 'MODERATOR') THEN 'ADMIN'
-         WHEN role IN ('user', 'USER') THEN 'USER'
-         ELSE role
-       END`
-    );
+    if (hasRoleColumn || (await columnExists(adapter, 'users', 'role', dbType))) {
+      await adapter.execute(
+        `UPDATE users
+         SET role = CASE
+           WHEN role IN ('admin', 'ADMIN') THEN 'GLOBAL_ADMIN'
+           WHEN role IN ('moderator', 'MODERATOR') THEN 'ADMIN'
+           WHEN role IN ('user', 'USER') THEN 'USER'
+           ELSE role
+         END`
+      );
+    }
 
     console.log('✅ Added role field to users table');
   },

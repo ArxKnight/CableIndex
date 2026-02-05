@@ -19,6 +19,27 @@ export interface Site {
   updated_at: string;
 }
 
+export interface SiteLocation {
+  id: number;
+  site_id: number;
+  floor?: string | null;
+  suite?: string | null;
+  row?: string | null;
+  rack?: string | null;
+  label?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CableType {
+  id: number;
+  site_id: number;
+  name: string;
+  description?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Label {
   id: number;
   site_id: number;
@@ -27,11 +48,17 @@ export interface Label {
   created_by_email?: string;
   ref_number: number;
   ref_string: string;
+  cable_type_id?: number | null;
+  cable_type?: CableType | null;
   type: string;
   payload_json?: string | null;
   reference_number?: string;
   source?: string;
   destination?: string;
+  source_location_id?: number | null;
+  destination_location_id?: number | null;
+  source_location?: SiteLocation | null;
+  destination_location?: SiteLocation | null;
   notes?: string;
   zpl_content?: string;
   created_at: string;
@@ -44,16 +71,19 @@ export interface LabelWithSiteInfo extends Label {
 }
 
 export interface CreateLabelData {
-  source: string;
-  destination: string;
+  source_location_id: number;
+  destination_location_id: number;
+  cable_type_id: number;
   site_id: number;
+  quantity?: number;
   notes?: string;
   zpl_content?: string;
 }
 
 export interface UpdateLabelData {
-  source?: string;
-  destination?: string;
+  source_location_id?: number;
+  destination_location_id?: number;
+  cable_type_id?: number;
   notes?: string;
   zpl_content?: string;
 }
@@ -61,8 +91,6 @@ export interface UpdateLabelData {
 export interface LabelSearchParams {
   search?: string;
   site_id: number;
-  source?: string;
-  destination?: string;
   reference_number?: string;
   limit?: number;
   offset?: number;

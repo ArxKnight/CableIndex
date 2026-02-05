@@ -5,6 +5,7 @@ import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { splitLines } from './utils';
 import { ZplOutput } from './ZplOutput';
+import { TextPreview } from './ToolLabelPreview';
 
 function generateTextZpl(lines: string[], fontSize: number): string {
   let out = '';
@@ -67,6 +68,7 @@ export function TextTool() {
         zpl={zpl}
         prefix="Text"
         disabled={lines.length === 0}
+        preview={<TextPreview lines={lines} />}
       />
     </div>
   );

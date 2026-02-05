@@ -221,8 +221,15 @@ export const requireUserManagement = (req: Request, res: Response, next: NextFun
     return;
   }
 
-  const userId = req.user.userId;
-  
+  const userRole = req.user.role as UserRole | undefined;
+  if (userRole !== 'GLOBAL_ADMIN' && userRole !== 'ADMIN') {
+    res.status(403).json({
+      success: false,
+      error: 'Insufficient permissions'
+    });
+    return;
+  }
+
   next();
   return;
 };

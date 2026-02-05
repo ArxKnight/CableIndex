@@ -12,18 +12,14 @@ interface ZplOutputProps {
   zpl: string;
   prefix: string;
   disabled?: boolean;
+  preview?: React.ReactNode;
 }
 
-export function ZplOutput({ title = 'Output', description, zpl, prefix, disabled }: ZplOutputProps) {
+export function ZplOutput({ title = 'Output', description, zpl, prefix, disabled, preview }: ZplOutputProps) {
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState(false);
 
   const filename = useMemo(() => makeDownloadFilename(prefix), [prefix]);
-
-  const snippet = useMemo(() => {
-    const lines = zpl.split(/\r?\n/);
-    return lines.slice(0, 25).join('\n');
-  }, [zpl]);
 
   const handleCopy = async () => {
     try {
@@ -63,7 +59,7 @@ export function ZplOutput({ title = 'Output', description, zpl, prefix, disabled
           </Button>
 
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogContent className="max-w-3xl" onOpenChange={setOpen}>
+            <DialogContent className="max-w-3xl">
               <DialogHeader>
                 <DialogTitle>{filename}</DialogTitle>
               </DialogHeader>
@@ -81,8 +77,8 @@ export function ZplOutput({ title = 'Output', description, zpl, prefix, disabled
         </div>
 
         <div className="rounded-md border bg-muted/30 p-3">
-          <div className="text-xs text-muted-foreground mb-2">Preview (first 25 lines)</div>
-          <pre className="text-xs whitespace-pre-wrap font-mono">{snippet || '(no output yet)'}</pre>
+          <div className="text-xs text-muted-foreground mb-2">Label Preview</div>
+          {preview || <div className="text-sm text-muted-foreground">(no preview yet)</div>}
         </div>
       </CardContent>
     </Card>

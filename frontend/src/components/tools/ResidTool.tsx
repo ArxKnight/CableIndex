@@ -4,6 +4,7 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { splitLines } from './utils';
 import { ZplOutput } from './ZplOutput';
+import { ResidPreview } from './ToolLabelPreview';
 
 function generateResidZpl(sids: string[]): string {
   let out = '';
@@ -20,6 +21,7 @@ export function ResidTool() {
   const [sidList, setSidList] = useState('');
 
   const sids = useMemo(() => splitLines(sidList), [sidList]);
+  const firstSid = useMemo(() => sids.find((s) => s.trim()) || '', [sids]);
   const zpl = useMemo(() => generateResidZpl(sids), [sids]);
   const techDbFriendly = useMemo(() => sids.join(', '), [sids]);
 
@@ -61,6 +63,7 @@ export function ResidTool() {
         zpl={zpl}
         prefix="SID"
         disabled={sids.length === 0}
+        preview={<ResidPreview sid={firstSid} />}
       />
     </div>
   );

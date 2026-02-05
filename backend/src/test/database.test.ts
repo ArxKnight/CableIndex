@@ -3,31 +3,34 @@ import connection from '../database/connection.js';
 import { initializeDatabase } from '../database/init.js';
 import { runMigrations, getMigrationStatus } from '../database/migrations/index.js';
 
+const testDbConfig = {
+  type: 'sqlite' as const,
+  sqlite: { filename: ':memory:' },
+};
+
 describe('Database Connection', () => {
   beforeEach(async () => {
     // Use in-memory database for tests
     process.env.DATABASE_PATH = ':memory:';
   });
 
-  afterEach(() => {
-    // Close connection after each test
-    connection.close();
+  afterEach(async () => {
+    await connection.disconnect();
   });
 
   it('should connect to database successfully', async () => {
-    const db = await connection.connect();
-    expect(db).toBeDefined();
+    await connection.connect(testDbConfig);
     expect(connection.isConnected()).toBe(true);
   });
 
   it('should test connection successfully', async () => {
-    await connection.connect();
+    await connection.connect(testDbConfig);
     const isConnected = connection.testConnection();
     expect(isConnected).toBe(true);
   });
 
   it('should get existing connection', async () => {
-    await connection.connect();
+    await connection.connect(testDbConfig);
     const db = connection.getConnection();
     expect(db).toBeDefined();
   });
@@ -37,10 +40,10 @@ describe('Database Connection', () => {
   });
 
   it('should close connection successfully', async () => {
-    await connection.connect();
+    await connection.connect(testDbConfig);
     expect(connection.isConnected()).toBe(true);
     
-    connection.close();
+    await connection.disconnect();
     expect(connection.isConnected()).toBe(false);
   });
 });
@@ -48,10 +51,11 @@ describe('Database Connection', () => {
 describe('Database Initialization', () => {
   beforeEach(async () => {
     process.env.DATABASE_PATH = ':memory:';
+    await connection.connect(testDbConfig);
   });
 
-  afterEach(() => {
-    connection.close();
+  afterEach(async () => {
+    await connection.disconnect();
   });
 
   it('should initialize database with migrations', async () => {
@@ -87,11 +91,11 @@ describe('Database Initialization', () => {
 describe('Database Migrations', () => {
   beforeEach(async () => {
     process.env.DATABASE_PATH = ':memory:';
-    await connection.connect();
+    await connection.connect(testDbConfig);
   });
 
-  afterEach(() => {
-    connection.close();
+  afterEach(async () => {
+    await connection.disconnect();
   });
 
   it('should run migrations successfully', async () => {
@@ -101,8 +105,17 @@ describe('Database Migrations', () => {
     
     // Check if all expected tables exist
     const tables = [
-      'users', 'user_roles', 'tool_permissions', 
-      'sites', 'labels', 'app_settings', 'user_invitations'
+      'migrations',
+      'users',
+      'sites',
+      'site_memberships',
+      'labels',
+      'app_settings',
+      'invitations',
+      'invitation_sites',
+      'site_counters',
+      'site_locations',
+      'cable_types',
     ];
     
     for (const tableName of tables) {
@@ -118,10 +131,15 @@ describe('Database Migrations', () => {
   it('should get migration status', async () => {
     await runMigrations();
     
-    const status = getMigrationStatus();
-    expect(status).toHaveLength(1);
-    expect(status[0].id).toBe('001');
-    expect(status[0].applied).toBe(true);
+    const status = await getMigrationStatus();
+    expect(status).toHaveLength(6);
+
+    const m001 = status.find((m) => m.id === '001');
+    expect(m001).toBeDefined();
+    expect(m001!.applied).toBe(true);
+
+    // All known migrations should be applied after runMigrations()
+    expect(status.every((m) => m.applied)).toBe(true);
   });
 
   it('should not run already applied migrations', async () => {
@@ -129,20 +147,21 @@ describe('Database Migrations', () => {
     await runMigrations();
     await runMigrations();
     
-    const status = getMigrationStatus();
-    expect(status).toHaveLength(1);
-    expect(status[0].applied).toBe(true);
+    const status = await getMigrationStatus();
+    expect(status).toHaveLength(6);
+    expect(status.every((m) => m.applied)).toBe(true);
   });
 });
 
 describe('Database Schema and Constraints', () => {
   beforeEach(async () => {
     process.env.DATABASE_PATH = ':memory:';
+    await connection.connect(testDbConfig);
     await initializeDatabase({ runMigrations: true, seedData: false });
   });
 
-  afterEach(() => {
-    connection.close();
+  afterEach(async () => {
+    await connection.disconnect();
   });
 
   describe('Users Table', () => {
@@ -157,6 +176,9 @@ describe('Database Schema and Constraints', () => {
       const result = insertUser.run('test@example.com', 'hashed_password', 'Test User');
       expect(result.lastInsertRowid).toBeDefined();
       expect(result.changes).toBe(1);
+
+      const created = db.prepare('SELECT role FROM users WHERE id = ?').get(result.lastInsertRowid) as { role: string };
+      expect(created.role).toBe('USER');
     });
 
     it('should enforce unique email constraint', () => {
@@ -176,7 +198,7 @@ describe('Database Schema and Constraints', () => {
       }).toThrow();
     });
 
-    it('should auto-assign default role and permissions on user creation', () => {
+    it('should assign default role on user creation', () => {
       const db = connection.getConnection();
       
       const insertUser = db.prepare(`
@@ -187,13 +209,9 @@ describe('Database Schema and Constraints', () => {
       const result = insertUser.run('test@example.com', 'hashed_password', 'Test User');
       const userId = result.lastInsertRowid;
       
-      // Check if default role was assigned
-      const role = db.prepare('SELECT role FROM user_roles WHERE user_id = ?').get(userId) as { role: string };
-      expect(role.role).toBe('user');
-      
-      // Check if default permissions were assigned
-      const permissions = db.prepare('SELECT COUNT(*) as count FROM tool_permissions WHERE user_id = ?').get(userId) as { count: number };
-      expect(permissions.count).toBeGreaterThan(0);
+      // Role is stored on users table in current schema
+      const role = db.prepare('SELECT role FROM users WHERE id = ?').get(userId) as { role: string };
+      expect(role.role).toBe('USER');
     });
   });
 
@@ -211,11 +229,11 @@ describe('Database Schema and Constraints', () => {
       
       // Create site
       const insertSite = db.prepare(`
-        INSERT INTO sites (name, location, description, user_id)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO sites (name, code, created_by, location, description)
+        VALUES (?, ?, ?, ?, ?)
       `);
       
-      const result = insertSite.run('Test Site', 'Test Location', 'Test Description', userId);
+      const result = insertSite.run('Test Site', 'TS', userId, 'Test Location', 'Test Description');
       expect(result.lastInsertRowid).toBeDefined();
       expect(result.changes).toBe(1);
     });
@@ -224,13 +242,13 @@ describe('Database Schema and Constraints', () => {
       const db = connection.getConnection();
       
       const insertSite = db.prepare(`
-        INSERT INTO sites (name, location, description, user_id)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO sites (name, code, created_by)
+        VALUES (?, ?, ?)
       `);
       
-      // Try to insert site with non-existent user_id
+      // Try to insert site with non-existent created_by
       expect(() => {
-        insertSite.run('Test Site', 'Test Location', 'Test Description', 999);
+        insertSite.run('Test Site', 'TS2', 999);
       }).toThrow();
     });
   });
@@ -248,19 +266,19 @@ describe('Database Schema and Constraints', () => {
       const userId = userResult.lastInsertRowid;
       
       const insertSite = db.prepare(`
-        INSERT INTO sites (name, location, description, user_id)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO sites (name, code, created_by)
+        VALUES (?, ?, ?)
       `);
-      const siteResult = insertSite.run('TEST', 'Test Location', 'Test Description', userId);
+      const siteResult = insertSite.run('Test Site', 'TEST', userId);
       const siteId = siteResult.lastInsertRowid;
       
       // Create label
       const insertLabel = db.prepare(`
-        INSERT INTO labels (reference_number, site_id, user_id, source, destination)
+        INSERT INTO labels (site_id, ref_number, ref_string, type, created_by)
         VALUES (?, ?, ?, ?, ?)
       `);
       
-      const result = insertLabel.run('TEST-001', siteId, userId, 'Source A', 'Destination B');
+      const result = insertLabel.run(siteId, 1, 'TEST-001', 'cable', userId);
       expect(result.lastInsertRowid).toBeDefined();
       expect(result.changes).toBe(1);
     });
@@ -277,23 +295,23 @@ describe('Database Schema and Constraints', () => {
       const userId = userResult.lastInsertRowid;
       
       const insertSite = db.prepare(`
-        INSERT INTO sites (name, location, description, user_id)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO sites (name, code, created_by)
+        VALUES (?, ?, ?)
       `);
-      const siteResult = insertSite.run('TEST', 'Test Location', 'Test Description', userId);
+      const siteResult = insertSite.run('Test Site', 'TEST', userId);
       const siteId = siteResult.lastInsertRowid;
       
       const insertLabel = db.prepare(`
-        INSERT INTO labels (reference_number, site_id, user_id, source, destination)
+        INSERT INTO labels (site_id, ref_number, ref_string, type, created_by)
         VALUES (?, ?, ?, ?, ?)
       `);
       
       // Insert first label
-      insertLabel.run('TEST-001', siteId, userId, 'Source A', 'Destination B');
+      insertLabel.run(siteId, 1, 'TEST-001', 'cable', userId);
       
       // Try to insert duplicate reference number for same site
       expect(() => {
-        insertLabel.run('TEST-001', siteId, userId, 'Source C', 'Destination D');
+        insertLabel.run(siteId, 1, 'TEST-002', 'cable', userId);
       }).toThrow();
     });
 
@@ -301,13 +319,13 @@ describe('Database Schema and Constraints', () => {
       const db = connection.getConnection();
       
       const insertLabel = db.prepare(`
-        INSERT INTO labels (reference_number, site_id, user_id, source, destination)
+        INSERT INTO labels (site_id, ref_number, ref_string, type, created_by)
         VALUES (?, ?, ?, ?, ?)
       `);
       
-      // Try to insert label with non-existent site_id and user_id
+      // Try to insert label with non-existent site_id and created_by
       expect(() => {
-        insertLabel.run('TEST-001', 999, 999, 'Source A', 'Destination B');
+        insertLabel.run(999, 1, 'TEST-001', 'cable', 999);
       }).toThrow();
     });
   });
@@ -348,32 +366,27 @@ describe('Database Schema and Constraints', () => {
     });
   });
 
-  describe('Timestamp Triggers', () => {
-    it('should automatically update timestamps on record updates', () => {
+  describe('Timestamps', () => {
+    it('should allow updating updated_at explicitly', async () => {
       const db = connection.getConnection();
-      
-      // Create user
+
       const insertUser = db.prepare(`
         INSERT INTO users (email, password_hash, full_name)
         VALUES (?, ?, ?)
       `);
+
       const userResult = insertUser.run('test@example.com', 'hashed_password', 'Test User');
       const userId = userResult.lastInsertRowid;
-      
-      // Get initial timestamps
-      const initialUser = db.prepare('SELECT created_at, updated_at FROM users WHERE id = ?').get(userId) as any;
-      
-      // Wait a moment and update user
-      setTimeout(() => {
-        const updateUser = db.prepare('UPDATE users SET full_name = ? WHERE id = ?');
-        updateUser.run('Updated Test User', userId);
-        
-        // Check if updated_at changed
-        const updatedUser = db.prepare('SELECT created_at, updated_at FROM users WHERE id = ?').get(userId) as any;
-        
-        expect(updatedUser.created_at).toBe(initialUser.created_at);
-        expect(updatedUser.updated_at).not.toBe(initialUser.updated_at);
-      }, 10);
+
+      const initial = db.prepare('SELECT created_at, updated_at FROM users WHERE id = ?').get(userId) as any;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const newUpdatedAt = new Date().toISOString();
+
+      db.prepare('UPDATE users SET full_name = ?, updated_at = ? WHERE id = ?').run('Updated Test User', newUpdatedAt, userId);
+      const updated = db.prepare('SELECT created_at, updated_at FROM users WHERE id = ?').get(userId) as any;
+
+      expect(updated.created_at).toBe(initial.created_at);
+      expect(updated.updated_at).not.toBe(initial.updated_at);
     });
   });
 });

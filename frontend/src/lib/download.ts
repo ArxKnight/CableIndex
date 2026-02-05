@@ -25,6 +25,15 @@ export function makeDownloadFilename(prefix: string, timestamp = makeTimestampLo
 
 export function downloadTextAsFile(content: string, prefix: string): void {
   const filename = makeDownloadFilename(prefix);
+  downloadTextAsNamedFile(content, filename);
+}
+
+export async function downloadBlobAsTextFile(blob: Blob, prefix: string): Promise<void> {
+  const content = await blob.text();
+  downloadTextAsFile(content, prefix);
+}
+
+export function downloadTextAsNamedFile(content: string, filename: string): void {
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
 
@@ -38,7 +47,7 @@ export function downloadTextAsFile(content: string, prefix: string): void {
   URL.revokeObjectURL(url);
 }
 
-export async function downloadBlobAsTextFile(blob: Blob, prefix: string): Promise<void> {
+export async function downloadBlobAsNamedTextFile(blob: Blob, filename: string): Promise<void> {
   const content = await blob.text();
-  downloadTextAsFile(content, prefix);
+  downloadTextAsNamedFile(content, filename);
 }

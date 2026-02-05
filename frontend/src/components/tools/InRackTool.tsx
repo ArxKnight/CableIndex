@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { ZplOutput } from './ZplOutput';
+import { InRackPreview } from './ToolLabelPreview';
 
 function generateInRackZpl(fromSid: string, toSid: string): string {
   if (!fromSid.trim() || !toSid.trim()) return '';
@@ -41,6 +42,7 @@ export function InRackTool() {
         zpl={zpl}
         prefix="In-rack"
         disabled={disabled}
+        preview={<InRackPreview fromSid={fromSid} toSid={toSid} />}
       />
     </div>
   );

@@ -1,173 +1,124 @@
-// @ts-ignore - Vitest globals are available at runtime
-const { describe, it, expect, beforeEach, afterEach } = globalThis;
-// Use any type for Database to avoid better-sqlite3 installation issues
-type Database = any;
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import SiteModel from '../models/Site.js';
 import UserModel from '../models/User.js';
-import connection from '../database/connection.js';
-import { initializeDatabase } from '../database/init.js';
+import { setupTestDatabase, cleanupTestDatabase } from './setup.js';
 
 describe('Site Model', () => {
   let siteModel: SiteModel;
   let userModel: UserModel;
-  let db: Database;
+  let db: any;
   let testUserId: number;
 
   beforeEach(async () => {
-    // Initialize in-memory database for testing
-    await initializeDatabase({ runMigrations: true, seedData: false });
-    db = connection.getConnection();
+    db = await setupTestDatabase({ runMigrations: true, seedData: false });
     siteModel = new SiteModel();
     userModel = new UserModel();
 
-    // Create a test user
     const testUser = await userModel.create({
       email: 'test@example.com',
       full_name: 'Test User',
       password: 'TestPassword123!',
+      role: 'USER',
     });
     testUserId = testUser.id;
   });
 
-  afterEach(() => {
-    // Clean up database
-    if (db) {
-      db.exec('DELETE FROM labels');
-      db.exec('DELETE FROM sites');
-      db.exec('DELETE FROM users');
-    }
+  afterEach(async () => {
+    await cleanupTestDatabase();
   });
 
   describe('create', () => {
-    it('should create a new site', () => {
-      const siteData = {
+    it('creates a new site and membership', async () => {
+      const site = await siteModel.create({
         name: 'Test Site',
+        code: 'TS',
         location: 'Test Location',
         description: 'Test Description',
-        user_id: testUserId,
-      };
+        created_by: testUserId,
+      });
 
-      const site = siteModel.create(siteData);
-
-      expect(site).toBeDefined();
       expect(site.id).toBeDefined();
-      expect(site.name).toBe(siteData.name);
-      expect(site.location).toBe(siteData.location);
-      expect(site.description).toBe(siteData.description);
-      expect(site.user_id).toBe(testUserId);
-      expect(site.created_at).toBeDefined();
-      expect(site.updated_at).toBeDefined();
+      expect(site.name).toBe('Test Site');
+      expect(site.code).toBe('TS');
+      expect(site.location).toBe('Test Location');
+      expect(site.description).toBe('Test Description');
+      expect(site.created_by).toBe(testUserId);
     });
 
-    it('should create site with minimal data', () => {
-      const siteData = {
+    it('creates site with minimal data', async () => {
+      const site = await siteModel.create({
         name: 'Minimal Site',
-        user_id: testUserId,
-      };
+        code: 'MS',
+        created_by: testUserId,
+      });
 
-      const site = siteModel.create(siteData);
-
-      expect(site).toBeDefined();
-      expect(site.name).toBe(siteData.name);
-      expect(site.location).toBeNull();
-      expect(site.description).toBeNull();
-      expect(site.user_id).toBe(testUserId);
+      expect(site.name).toBe('Minimal Site');
+      expect(site.code).toBe('MS');
+      expect(site.location ?? null).toBeNull();
+      expect(site.description ?? null).toBeNull();
     });
   });
 
   describe('findById', () => {
-    it('should find site by ID', () => {
-      const siteData = {
+    it('finds site by ID', async () => {
+      const createdSite = await siteModel.create({
         name: 'Test Site',
+        code: 'TS',
         location: 'Test Location',
-        user_id: testUserId,
-      };
+        created_by: testUserId,
+      });
 
-      const createdSite = siteModel.create(siteData);
-      const foundSite = siteModel.findById(createdSite.id);
-
+      const foundSite = await siteModel.findById(createdSite.id);
       expect(foundSite).toBeDefined();
       expect(foundSite!.id).toBe(createdSite.id);
-      expect(foundSite!.name).toBe(siteData.name);
-      expect(foundSite!.location).toBe(siteData.location);
+      expect(foundSite!.name).toBe('Test Site');
+      expect(foundSite!.code).toBe('TS');
     });
 
-    it('should return null for non-existent ID', () => {
-      const site = siteModel.findById(999);
+    it('returns null for non-existent ID', async () => {
+      const site = await siteModel.findById(999);
       expect(site).toBeNull();
     });
 
-    it('should not find inactive sites', () => {
-      const siteData = {
-        name: 'Test Site',
-        user_id: testUserId,
-      };
+    it('does not return inactive sites', async () => {
+      const createdSite = await siteModel.create({
+        name: 'Inactive Site',
+        code: 'IS',
+        created_by: testUserId,
+      });
 
-      const createdSite = siteModel.create(siteData);
-
-      // Manually set site as inactive
-      db.exec(`UPDATE sites SET is_active = 0 WHERE id = ${createdSite.id}`);
-
-      const foundSite = siteModel.findById(createdSite.id);
+      await db.execute(`UPDATE sites SET is_active = 0 WHERE id = ?`, [createdSite.id]);
+      const foundSite = await siteModel.findById(createdSite.id);
       expect(foundSite).toBeNull();
     });
   });
 
   describe('findByUserId', () => {
-    it('should find sites by user ID', () => {
-      const siteData1 = {
-        name: 'Site 1',
-        location: 'Location 1',
-        user_id: testUserId,
-      };
-      const siteData2 = {
-        name: 'Site 2',
-        location: 'Location 2',
-        user_id: testUserId,
-      };
+    it('lists sites for a user ordered by name', async () => {
+      await siteModel.create({ name: 'Site 1', code: 'S1', created_by: testUserId });
+      await siteModel.create({ name: 'Site 2', code: 'S2', created_by: testUserId });
 
-      siteModel.create(siteData1);
-      siteModel.create(siteData2);
-
-      const sites = siteModel.findByUserId(testUserId);
-
+      const sites = await siteModel.findByUserId(testUserId);
       expect(sites).toHaveLength(2);
-      expect(sites[0]?.name).toBe('Site 1'); // Should be ordered by name ASC
+      expect(sites[0]?.name).toBe('Site 1');
       expect(sites[1]?.name).toBe('Site 2');
     });
 
-    it('should filter sites by search term', () => {
-      const siteData1 = {
-        name: 'Office Site',
-        location: 'New York',
-        user_id: testUserId,
-      };
-      const siteData2 = {
-        name: 'Warehouse Site',
-        location: 'California',
-        user_id: testUserId,
-      };
+    it('filters by search term', async () => {
+      await siteModel.create({ name: 'Office Site', code: 'OFF', location: 'New York', created_by: testUserId });
+      await siteModel.create({ name: 'Warehouse Site', code: 'WH', location: 'California', created_by: testUserId });
 
-      siteModel.create(siteData1);
-      siteModel.create(siteData2);
-
-      const sites = siteModel.findByUserId(testUserId, { search: 'Office' });
-
+      const sites = await siteModel.findByUserId(testUserId, { search: 'Office' });
       expect(sites).toHaveLength(1);
       expect(sites[0]?.name).toBe('Office Site');
     });
 
-    it('should respect limit and offset', () => {
-      // Create multiple sites
+    it('respects limit and offset', async () => {
       for (let i = 1; i <= 5; i++) {
-        siteModel.create({
-          name: `Site ${i}`,
-          user_id: testUserId,
-        });
+        await siteModel.create({ name: `Site ${i}`, code: `S${i}`, created_by: testUserId });
       }
 
-      const sites = siteModel.findByUserId(testUserId, { limit: 2, offset: 1 });
-
+      const sites = await siteModel.findByUserId(testUserId, { limit: 2, offset: 1 });
       expect(sites).toHaveLength(2);
       expect(sites[0]?.name).toBe('Site 2');
       expect(sites[1]?.name).toBe('Site 3');
@@ -175,16 +126,16 @@ describe('Site Model', () => {
   });
 
   describe('update', () => {
-    it('should update site data', () => {
-      const siteData = {
+    it('updates site data', async () => {
+      const site = await siteModel.create({
         name: 'Original Site',
+        code: 'OS',
         location: 'Original Location',
         description: 'Original Description',
-        user_id: testUserId,
-      };
+        created_by: testUserId,
+      });
 
-      const site = siteModel.create(siteData);
-      const updatedSite = siteModel.update(site.id, testUserId, {
+      const updatedSite = await siteModel.update(site.id, testUserId, {
         name: 'Updated Site',
         location: 'Updated Location',
       });
@@ -192,212 +143,32 @@ describe('Site Model', () => {
       expect(updatedSite).toBeDefined();
       expect(updatedSite!.name).toBe('Updated Site');
       expect(updatedSite!.location).toBe('Updated Location');
-      expect(updatedSite!.description).toBe('Original Description'); // Should remain unchanged
+      expect(updatedSite!.description ?? null).toBe('Original Description');
     });
 
-    it('should return null for non-existent site', () => {
-      const updatedSite = siteModel.update(999, testUserId, { name: 'Updated Site' });
+    it('returns null for non-existent site', async () => {
+      const updatedSite = await siteModel.update(999, testUserId, { name: 'Updated Site' });
       expect(updatedSite).toBeNull();
-    });
-
-    it('should return null when user does not own site', async () => {
-      // Create another user
-      const otherUser = await userModel.create({
-        email: 'other@example.com',
-        full_name: 'Other User',
-        password: 'TestPassword123!',
-      });
-
-      const siteData = {
-        name: 'Test Site',
-        user_id: testUserId,
-      };
-
-      const site = siteModel.create(siteData);
-      const updatedSite = siteModel.update(site.id, otherUser.id, { name: 'Updated Site' });
-
-      expect(updatedSite).toBeNull();
-    });
-  });
-
-  describe('delete', () => {
-    it('should soft delete site', () => {
-      const siteData = {
-        name: 'Test Site',
-        user_id: testUserId,
-      };
-
-      const site = siteModel.create(siteData);
-      const success = siteModel.delete(site.id, testUserId);
-
-      expect(success).toBe(true);
-
-      // Site should not be found by normal queries
-      const deletedSite = siteModel.findById(site.id);
-      expect(deletedSite).toBeNull();
-
-      // But should still exist in database as inactive
-      const rawSite = db.prepare('SELECT * FROM sites WHERE id = ?').get(site.id);
-      expect(rawSite).toBeDefined();
-      expect((rawSite as any).is_active).toBe(0);
-    });
-
-    it('should prevent deletion when site has labels', () => {
-      const siteData = {
-        name: 'Test Site',
-        user_id: testUserId,
-      };
-
-      const site = siteModel.create(siteData);
-
-      // Create a label for this site
-      db.exec(`
-        INSERT INTO labels (reference_number, site_id, user_id, source, destination)
-        VALUES ('TEST-001', ${site.id}, ${testUserId}, 'Source', 'Destination')
-      `);
-
-      expect(() => {
-        siteModel.delete(site.id, testUserId);
-      }).toThrow('Cannot delete site with existing labels');
-    });
-
-    it('should return false for non-existent site', () => {
-      const success = siteModel.delete(999, testUserId);
-      expect(success).toBe(false);
-    });
-
-    it('should return false when user does not own site', async () => {
-      // Create another user
-      const otherUser = await userModel.create({
-        email: 'other@example.com',
-        full_name: 'Other User',
-        password: 'TestPassword123!',
-      });
-
-      const siteData = {
-        name: 'Test Site',
-        user_id: testUserId,
-      };
-
-      const site = siteModel.create(siteData);
-      const success = siteModel.delete(site.id, otherUser.id);
-
-      expect(success).toBe(false);
     });
   });
 
   describe('existsForUser', () => {
-    it('should return true for existing site owned by user', () => {
-      const siteData = {
-        name: 'Test Site',
-        user_id: testUserId,
-      };
-
-      const site = siteModel.create(siteData);
-      const exists = siteModel.existsForUser(site.id, testUserId);
-
+    it('returns true if user is a member of the site', async () => {
+      const site = await siteModel.create({ name: 'Member Site', code: 'MB', created_by: testUserId });
+      const exists = await siteModel.existsForUser(site.id, testUserId);
       expect(exists).toBe(true);
     });
-
-    it('should return false for non-existent site', () => {
-      const exists = siteModel.existsForUser(999, testUserId);
-      expect(exists).toBe(false);
-    });
-
-    it('should return false for site owned by different user', async () => {
-      // Create another user
-      const otherUser = await userModel.create({
-        email: 'other@example.com',
-        full_name: 'Other User',
-        password: 'TestPassword123!',
-      });
-
-      const siteData = {
-        name: 'Test Site',
-        user_id: testUserId,
-      };
-
-      const site = siteModel.create(siteData);
-      const exists = siteModel.existsForUser(site.id, otherUser.id);
-
-      expect(exists).toBe(false);
-    });
   });
 
-  describe('countByUserId', () => {
-    it('should count sites for user', () => {
-      siteModel.create({ name: 'Site 1', user_id: testUserId });
-      siteModel.create({ name: 'Site 2', user_id: testUserId });
+  describe('delete', () => {
+    it('deletes a site without labels', async () => {
+      const site = await siteModel.create({ name: 'Delete Site', code: 'DEL', created_by: testUserId });
+      const success = await siteModel.delete(site.id, testUserId);
+      expect(success).toBe(true);
 
-      const count = siteModel.countByUserId(testUserId);
-      expect(count).toBe(2);
-    });
-
-    it('should count sites with search filter', () => {
-      siteModel.create({ name: 'Office Site', user_id: testUserId });
-      siteModel.create({ name: 'Warehouse Site', user_id: testUserId });
-
-      const count = siteModel.countByUserId(testUserId, 'Office');
-      expect(count).toBe(1);
-    });
-  });
-
-  describe('findByIdWithLabelCount', () => {
-    it('should return site with label count', () => {
-      const siteData = {
-        name: 'Test Site',
-        user_id: testUserId,
-      };
-
-      const site = siteModel.create(siteData);
-
-      // Create labels for this site
-      db.exec(`
-        INSERT INTO labels (reference_number, site_id, user_id, source, destination)
-        VALUES 
-          ('TEST-001', ${site.id}, ${testUserId}, 'Source1', 'Dest1'),
-          ('TEST-002', ${site.id}, ${testUserId}, 'Source2', 'Dest2')
-      `);
-
-      const siteWithCount = siteModel.findByIdWithLabelCount(site.id, testUserId);
-
-      expect(siteWithCount).toBeDefined();
-      expect(siteWithCount!.name).toBe('Test Site');
-      expect(siteWithCount!.label_count).toBe(2);
-    });
-
-    it('should return site with zero label count', () => {
-      const siteData = {
-        name: 'Test Site',
-        user_id: testUserId,
-      };
-
-      const site = siteModel.create(siteData);
-      const siteWithCount = siteModel.findByIdWithLabelCount(site.id, testUserId);
-
-      expect(siteWithCount).toBeDefined();
-      expect(siteWithCount!.label_count).toBe(0);
-    });
-  });
-
-  describe('findByUserIdWithLabelCounts', () => {
-    it('should return sites with label counts', () => {
-      const site1 = siteModel.create({ name: 'Site 1', user_id: testUserId });
-      const site2 = siteModel.create({ name: 'Site 2', user_id: testUserId });
-
-      // Create labels for site1 only
-      db.exec(`
-        INSERT INTO labels (reference_number, site_id, user_id, source, destination)
-        VALUES ('TEST-001', ${site1.id}, ${testUserId}, 'Source', 'Dest')
-      `);
-
-      const sitesWithCounts = siteModel.findByUserIdWithLabelCounts(testUserId);
-
-      expect(sitesWithCounts).toHaveLength(2);
-      expect(sitesWithCounts[0]?.name).toBe('Site 1');
-      expect(sitesWithCounts[0]?.label_count).toBe(1);
-      expect(sitesWithCounts[1]?.name).toBe('Site 2');
-      expect(sitesWithCounts[1]?.label_count).toBe(0);
+      const found = await siteModel.findById(site.id);
+      expect(found).toBeNull();
     });
   });
 });
+

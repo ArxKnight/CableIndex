@@ -139,7 +139,7 @@ describe('Navigation', () => {
     const sitesLinks = screen.getAllByRole('link', { name: /^sites$/i });
     const desktopSitesLink = sitesLinks.find((link) => link.className.includes('border-b-2'));
     expect(desktopSitesLink).toBeDefined();
-    expect(desktopSitesLink!).toHaveClass('border-blue-500');
+    expect(desktopSitesLink!).toHaveClass('border-primary');
   });
 
   it('should render mobile navigation on small screens', () => {

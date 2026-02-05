@@ -65,7 +65,7 @@ const SitesPage: React.FC = () => {
     setDeleteCascadeConfirmed(false);
   };
 
-  const handleSubmitSite = async (data: { name: string; location?: string; description?: string }) => {
+  const handleSubmitSite = async (data: { name: string; code: string; location?: string; description?: string }) => {
     try {
       setIsLoading(true);
       setError(null);

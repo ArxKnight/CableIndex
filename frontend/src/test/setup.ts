@@ -9,6 +9,24 @@ const ResizeObserverMock = class {
 };
 vi.stubGlobal('ResizeObserver', ResizeObserverMock as any);
 
+// Radix Select relies on Pointer Capture APIs which jsdom does not implement.
+// Polyfill them to avoid `target.hasPointerCapture is not a function` during tests.
+if (!(Element.prototype as any).hasPointerCapture) {
+  (Element.prototype as any).hasPointerCapture = () => false;
+}
+if (!(Element.prototype as any).setPointerCapture) {
+  (Element.prototype as any).setPointerCapture = () => {};
+}
+if (!(Element.prototype as any).releasePointerCapture) {
+  (Element.prototype as any).releasePointerCapture = () => {};
+}
+
+// Radix Select also calls `scrollIntoView` on internal option elements.
+// jsdom doesn't implement it, so provide a no-op.
+if (!(Element.prototype as any).scrollIntoView) {
+  (Element.prototype as any).scrollIntoView = () => {};
+}
+
 // App performs a setup-status fetch on startup; make it deterministic in tests.
 vi.stubGlobal(
   'fetch',
@@ -55,8 +73,8 @@ const defaultAuthState = {
 (globalThis as any).__TEST_AUTH__ = defaultAuthState;
 
 // Mock API client (provide a wide surface area so component tests don't crash)
-vi.mock('../lib/api', () => ({
-  apiClient: {
+vi.mock('../lib/api', () => {
+  const apiClient = {
     // Auth
     login: vi.fn(),
     register: vi.fn(),
@@ -72,6 +90,18 @@ vi.mock('../lib/api', () => ({
     createSite: vi.fn(),
     updateSite: vi.fn(),
     deleteSite: vi.fn(),
+
+    // Site Locations
+    getSiteLocations: vi.fn(),
+    createSiteLocation: vi.fn(),
+    updateSiteLocation: vi.fn(),
+    deleteSiteLocation: vi.fn(),
+
+    // Cable Types
+    getSiteCableTypes: vi.fn(),
+    createSiteCableType: vi.fn(),
+    updateSiteCableType: vi.fn(),
+    deleteSiteCableType: vi.fn(),
 
     // Labels
     getLabels: vi.fn(),
@@ -103,8 +133,14 @@ vi.mock('../lib/api', () => ({
     post: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),
-  },
-}));
+    downloadFile: vi.fn(),
+  };
+
+  return {
+    apiClient,
+    default: apiClient,
+  };
+});
 
 // Mock React Router
 vi.mock('react-router-dom', async () => {

@@ -162,7 +162,7 @@ const SetupPage: React.FC = () => {
 
   if (setupComplete) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
@@ -177,7 +177,7 @@ const SetupPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-2xl">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -232,7 +232,7 @@ const SetupPage: React.FC = () => {
                         {...register('database.sqlite.filename')}
                         placeholder="/app/data/cableindex.db"
                       />
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="text-sm text-muted-foreground mt-1">
                         Path where the SQLite database file will be stored
                       </p>
                     </div>
@@ -249,7 +249,7 @@ const SetupPage: React.FC = () => {
                             placeholder="localhost"
                           />
                           {errors.database?.mysql?.host && (
-                            <p className="text-sm text-red-600">{errors.database.mysql.host.message}</p>
+                            <p className="text-sm text-destructive">{errors.database.mysql.host.message}</p>
                           )}
                         </div>
                         <div>
@@ -261,7 +261,7 @@ const SetupPage: React.FC = () => {
                             placeholder="3306"
                           />
                           {errors.database?.mysql?.port && (
-                            <p className="text-sm text-red-600">{errors.database.mysql.port.message}</p>
+                            <p className="text-sm text-destructive">{errors.database.mysql.port.message}</p>
                           )}
                         </div>
                       </div>
@@ -273,7 +273,7 @@ const SetupPage: React.FC = () => {
                           placeholder="cableindex"
                         />
                         {errors.database?.mysql?.database && (
-                          <p className="text-sm text-red-600">{errors.database.mysql.database.message}</p>
+                          <p className="text-sm text-destructive">{errors.database.mysql.database.message}</p>
                         )}
                       </div>
                       <div className="grid grid-cols-2 gap-4">
@@ -285,7 +285,7 @@ const SetupPage: React.FC = () => {
                             placeholder="root"
                           />
                           {errors.database?.mysql?.user && (
-                            <p className="text-sm text-red-600">{errors.database.mysql.user.message}</p>
+                            <p className="text-sm text-destructive">{errors.database.mysql.user.message}</p>
                           )}
                         </div>
                         <div>
@@ -344,7 +344,7 @@ const SetupPage: React.FC = () => {
                       placeholder="admin@example.com"
                     />
                     {errors.admin?.email && (
-                      <p className="text-sm text-red-600">{errors.admin.email.message}</p>
+                      <p className="text-sm text-destructive">{errors.admin.email.message}</p>
                     )}
                   </div>
                   <div>
@@ -355,7 +355,7 @@ const SetupPage: React.FC = () => {
                       placeholder="Administrator"
                     />
                     {errors.admin?.fullName && (
-                      <p className="text-sm text-red-600">{errors.admin.fullName.message}</p>
+                      <p className="text-sm text-destructive">{errors.admin.fullName.message}</p>
                     )}
                   </div>
                   <div>
@@ -367,7 +367,7 @@ const SetupPage: React.FC = () => {
                       placeholder="Minimum 8 characters"
                     />
                     {errors.admin?.password && (
-                      <p className="text-sm text-red-600">{errors.admin.password.message}</p>
+                      <p className="text-sm text-destructive">{errors.admin.password.message}</p>
                     )}
                   </div>
                 </div>
@@ -388,7 +388,7 @@ const SetupPage: React.FC = () => {
                   
                   <div className="space-y-2">
                     <h4 className="font-medium">Database</h4>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       Type: {databaseType.toUpperCase()}
                       {databaseType === 'mysql' && (
                         <>
@@ -401,7 +401,7 @@ const SetupPage: React.FC = () => {
 
                   <div className="space-y-2">
                     <h4 className="font-medium">Global Admin User</h4>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       Email: {watch('admin.email')}
                       <br />Name: {watch('admin.fullName')}
                     </p>

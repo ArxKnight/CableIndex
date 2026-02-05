@@ -29,6 +29,7 @@ describe('SiteForm', () => {
     render(<SiteForm {...mockProps} />);
 
     expect(screen.getByLabelText(/site name/i)).toHaveValue('');
+    expect(screen.getByLabelText(/abbreviation/i)).toHaveValue('');
     expect(screen.getByLabelText(/location/i)).toHaveValue('');
     expect(screen.getByLabelText(/description/i)).toHaveValue('');
     expect(screen.getByText('Create Site')).toBeInTheDocument();
@@ -38,6 +39,7 @@ describe('SiteForm', () => {
     render(<SiteForm {...mockProps} site={mockSite} />);
 
     expect(screen.getByLabelText(/site name/i)).toHaveValue('Test Site');
+    expect(screen.getByLabelText(/abbreviation/i)).toHaveValue('TST');
     expect(screen.getByLabelText(/location/i)).toHaveValue('Test Location');
     expect(screen.getByLabelText(/description/i)).toHaveValue('Test Description');
     expect(screen.getByText('Update Site')).toBeInTheDocument();
@@ -46,6 +48,9 @@ describe('SiteForm', () => {
   it('should validate required site name field', async () => {
     const user = userEvent.setup();
     render(<SiteForm {...mockProps} />);
+
+    const codeInput = screen.getByLabelText(/abbreviation/i);
+    await user.type(codeInput, 'NEW');
 
     const submitButton = screen.getByText('Create Site');
     await user.click(submitButton);
@@ -61,6 +66,9 @@ describe('SiteForm', () => {
     const user = userEvent.setup();
     render(<SiteForm {...mockProps} />);
 
+    const codeInput = screen.getByLabelText(/abbreviation/i);
+    await user.type(codeInput, 'NEW');
+
     const nameInput = screen.getByLabelText(/site name/i);
     await user.type(nameInput, 'x'.repeat(101)); // Exceeds 100 character limit
 
@@ -75,6 +83,9 @@ describe('SiteForm', () => {
   it('should validate site name format', async () => {
     const user = userEvent.setup();
     render(<SiteForm {...mockProps} />);
+
+    const codeInput = screen.getByLabelText(/abbreviation/i);
+    await user.type(codeInput, 'NEW');
 
     const nameInput = screen.getByLabelText(/site name/i);
     await user.type(nameInput, 'Invalid@Name!');
@@ -92,9 +103,11 @@ describe('SiteForm', () => {
     render(<SiteForm {...mockProps} />);
 
     const nameInput = screen.getByLabelText(/site name/i);
+    const codeInput = screen.getByLabelText(/abbreviation/i);
     const locationInput = screen.getByLabelText(/location/i);
 
     await user.type(nameInput, 'Valid Site');
+    await user.type(codeInput, 'NEW');
     await user.type(locationInput, 'x'.repeat(201)); // Exceeds 200 character limit
 
     const submitButton = screen.getByText('Create Site');
@@ -110,9 +123,11 @@ describe('SiteForm', () => {
     render(<SiteForm {...mockProps} />);
 
     const nameInput = screen.getByLabelText(/site name/i);
+    const codeInput = screen.getByLabelText(/abbreviation/i);
     const descriptionInput = screen.getByLabelText(/description/i);
 
     fireEvent.change(nameInput, { target: { value: 'Valid Site' } });
+    fireEvent.change(codeInput, { target: { value: 'NEW' } });
     fireEvent.change(descriptionInput, { target: { value: 'x'.repeat(501) } }); // Exceeds 500 character limit
 
     const submitButton = screen.getByText('Create Site');
@@ -129,11 +144,13 @@ describe('SiteForm', () => {
     render(<SiteForm {...mockProps} />);
 
     const nameInput = screen.getByLabelText(/site name/i);
+    const codeInput = screen.getByLabelText(/abbreviation/i);
     const locationInput = screen.getByLabelText(/location/i);
     const descriptionInput = screen.getByLabelText(/description/i);
 
     // Use fireEvent for more reliable input
     fireEvent.change(nameInput, { target: { value: 'New Site' } });
+    fireEvent.change(codeInput, { target: { value: 'NEW' } });
     fireEvent.change(locationInput, { target: { value: 'New Location' } });
     fireEvent.change(descriptionInput, { target: { value: 'New Description' } });
 
@@ -143,6 +160,7 @@ describe('SiteForm', () => {
     await waitFor(() => {
       expect(mockProps.onSubmit).toHaveBeenCalledWith({
         name: 'New Site',
+        code: 'NEW',
         location: 'New Location',
         description: 'New Description',
       });
@@ -155,7 +173,9 @@ describe('SiteForm', () => {
     render(<SiteForm {...mockProps} />);
 
     const nameInput = screen.getByLabelText(/site name/i);
+    const codeInput = screen.getByLabelText(/abbreviation/i);
     fireEvent.change(nameInput, { target: { value: 'Minimal Site' } });
+    fireEvent.change(codeInput, { target: { value: 'MIN' } });
 
     const submitButton = screen.getByText('Create Site');
     await user.click(submitButton);
@@ -163,6 +183,7 @@ describe('SiteForm', () => {
     await waitFor(() => {
       expect(mockProps.onSubmit).toHaveBeenCalledWith({
         name: 'Minimal Site',
+        code: 'MIN',
         location: '',
         description: '',
       });
@@ -183,6 +204,7 @@ describe('SiteForm', () => {
     render(<SiteForm {...mockProps} isLoading={true} />);
 
     expect(screen.getByLabelText(/site name/i)).toBeDisabled();
+    expect(screen.getByLabelText(/abbreviation/i)).toBeDisabled();
     expect(screen.getByLabelText(/location/i)).toBeDisabled();
     expect(screen.getByLabelText(/description/i)).toBeDisabled();
     expect(screen.getByText('Creating...')).toBeInTheDocument();
@@ -200,7 +222,9 @@ describe('SiteForm', () => {
     render(<SiteForm {...mockProps} />);
 
     const nameInput = screen.getByLabelText(/site name/i);
+    const codeInput = screen.getByLabelText(/abbreviation/i);
     await user.type(nameInput, 'Test Site');
+    await user.type(codeInput, 'TST');
 
     const submitButton = screen.getByText('Create Site');
     await user.click(submitButton);

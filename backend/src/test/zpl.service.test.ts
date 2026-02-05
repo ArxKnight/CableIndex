@@ -20,11 +20,27 @@ describe('ZPLService', () => {
 
       const zpl = zplService.generateCableLabel(data);
 
-      expect(zpl).toContain('^XA');
-      expect(zpl).toContain('^XZ');
-      expect(zpl).toContain('DC1-001 Server-01 > Switch-01');
-      expect(zpl).toContain('^FD');
-      expect(zpl).toContain('^FS');
+      const expected = [
+        '^XA',
+        '^MUm^LH8,19^FS',
+        '^MUm^FO1,1',
+        '^A0N,3,3',
+        '^FB292,3,1,C',
+        '^FD#001\\& Server-01\\& Switch-01',
+        '^FS',
+        '^MUm^FO31,1',
+        '^A0N,3,3',
+        '^FB292,3,1,C',
+        '^FD#001\\& Server-01\\& Switch-01',
+        '^FS',
+        '^XZ',
+      ].join('\n');
+
+      expect(zpl).toBe(expected);
+
+      // Ensure ^FS is on its own line (never appended to ^FD).
+      expect(zpl).not.toMatch(/\^FD[^\n]*\^FS/);
+      expect(zpl.match(/\^FD[^\n]*\n\^FS/g) || []).toHaveLength(2);
     });
 
     it('should throw error for missing site', () => {
@@ -35,7 +51,7 @@ describe('ZPLService', () => {
         destination: 'Switch-01'
       };
 
-      expect(() => zplService.generateCableLabel(data)).toThrow('Site name is required');
+      expect(() => zplService.generateCableLabel(data)).toThrow('Site abbreviation is required');
     });
 
     it('should throw error for missing reference number', () => {
@@ -204,48 +220,47 @@ describe('ZPLService', () => {
 
   describe('generateFromLabel', () => {
     it('should generate ZPL from existing label and site', () => {
-      const label: Label = {
+      const label = {
         id: 1,
-        reference_number: 'DC1-001',
+        ref_string: '001',
         source: 'Server-01',
         destination: 'Switch-01',
         site_id: 1,
-        user_id: 1,
         notes: undefined,
         zpl_content: undefined,
         is_active: true,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
-      };
+      } as any;
 
-      const site: Site = {
+      const site = {
         id: 1,
         name: 'DC1',
+        code: 'DC1',
         location: 'Data Center 1',
         description: 'Main data center',
-        user_id: 1,
+        created_by: 1,
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z'
-      };
+      } as any;
 
       const zpl = zplService.generateFromLabel(label, site);
 
       expect(zpl).toContain('^XA');
       expect(zpl).toContain('^XZ');
-      expect(zpl).toContain('DC1-001 Server-01 > Switch-01');
+      expect(zpl).toContain('#001\\& Server-01\\& Switch-01');
     });
   });
 
   describe('generateBulkLabels', () => {
     it('should generate bulk ZPL for multiple labels', () => {
-      const labels: Label[] = [
+      const labels = [
         {
           id: 1,
-          reference_number: 'DC1-001',
+          ref_string: '001',
           source: 'Server-01',
           destination: 'Switch-01',
           site_id: 1,
-          user_id: 1,
           notes: undefined,
           zpl_content: undefined,
           is_active: true,
@@ -254,35 +269,35 @@ describe('ZPLService', () => {
         },
         {
           id: 2,
-          reference_number: 'DC1-002',
+          ref_string: '002',
           source: 'Server-02',
           destination: 'Switch-01',
           site_id: 1,
-          user_id: 1,
           notes: undefined,
           zpl_content: undefined,
           is_active: true,
           created_at: '2024-01-01T00:00:00Z',
           updated_at: '2024-01-01T00:00:00Z'
         }
-      ];
+      ] as any;
 
-      const sites: Site[] = [
+      const sites = [
         {
           id: 1,
           name: 'DC1',
+          code: 'DC1',
           location: 'Data Center 1',
           description: 'Main data center',
-          user_id: 1,
+          created_by: 1,
           created_at: '2024-01-01T00:00:00Z',
           updated_at: '2024-01-01T00:00:00Z'
         }
-      ];
+      ] as any;
 
       const zpl = zplService.generateBulkLabels(labels, sites);
 
-      expect(zpl).toContain('DC1-001 Server-01 > Switch-01');
-      expect(zpl).toContain('DC1-002 Server-02 > Switch-01');
+      expect(zpl).toContain('#001\\& Server-01\\& Switch-01');
+      expect(zpl).toContain('#002\\& Server-02\\& Switch-01');
       
       // Should contain multiple ZPL blocks
       const zplBlocks = zpl.split('^XZ').filter(block => block.trim().length > 0);
