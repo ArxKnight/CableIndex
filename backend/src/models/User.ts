@@ -5,14 +5,14 @@ import { hashPassword, comparePassword } from '../utils/password.js';
 
 export interface CreateUserData {
   email: string;
-  full_name: string;
+  username: string;
   password: string;
   role?: UserRole;
 }
 
 export interface UpdateUserData {
   email?: string;
-  full_name?: string;
+  username?: string;
   role?: UserRole;
 }
 
@@ -25,15 +25,15 @@ export class UserModel {
    * Create a new user
    */
   async create(userData: CreateUserData): Promise<User> {
-    const { email, full_name, password, role = 'USER' } = userData;
+    const { email, username, password, role = 'USER' } = userData;
     
     // Hash the password
     const password_hash = await hashPassword(password);
     
     const result = await this.adapter.execute(
-      `INSERT INTO users (email, full_name, password_hash, role)
+      `INSERT INTO users (email, username, password_hash, role)
        VALUES (?, ?, ?, ?)`,
-      [email, full_name, password_hash, role]
+      [email, username, password_hash, role]
     );
     
     if (!result.insertId) {
@@ -48,7 +48,7 @@ export class UserModel {
    */
   async findById(id: number): Promise<User | null> {
     const rows = await this.adapter.query(
-      `SELECT id, email, full_name, password_hash, role, is_active, created_at, updated_at
+      `SELECT id, email, username, password_hash, role, is_active, created_at, updated_at
        FROM users 
        WHERE id = ?`,
       [id]
@@ -67,9 +67,9 @@ export class UserModel {
     // MySQL is case-insensitive by default for VARCHAR, SQLite needs COLLATE NOCASE
     const rows = await this.adapter.query(
       isMySQL
-        ? `SELECT id, email, full_name, password_hash, role, is_active, created_at, updated_at
+        ? `SELECT id, email, username, password_hash, role, is_active, created_at, updated_at
            FROM users WHERE email = ?`
-        : `SELECT id, email, full_name, password_hash, role, is_active, created_at, updated_at
+        : `SELECT id, email, username, password_hash, role, is_active, created_at, updated_at
            FROM users WHERE email = ? COLLATE NOCASE`,
       [email]
     );
@@ -119,9 +119,9 @@ export class UserModel {
       values.push(userData.email);
     }
 
-    if (userData.full_name !== undefined) {
-      updates.push('full_name = ?');
-      values.push(userData.full_name);
+    if (userData.username !== undefined) {
+      updates.push('username = ?');
+      values.push(userData.username);
     }
 
     if (userData.role !== undefined) {
@@ -196,11 +196,11 @@ export class UserModel {
     const finalOffset = Math.max(0, safeOffset);
 
     const query = isMySQL
-      ? `SELECT id, email, full_name, password_hash, role, is_active, created_at, updated_at
+      ? `SELECT id, email, username, password_hash, role, is_active, created_at, updated_at
          FROM users 
          ORDER BY created_at DESC
          LIMIT ${finalLimit} OFFSET ${finalOffset}`
-      : `SELECT id, email, full_name, password_hash, role, is_active, created_at, updated_at
+      : `SELECT id, email, username, password_hash, role, is_active, created_at, updated_at
          FROM users 
          ORDER BY created_at DESC
          LIMIT ? OFFSET ?`;

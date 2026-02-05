@@ -28,7 +28,7 @@ interface AdminStatsData {
     created_this_month: number;
     created_today: number;
     most_active_user: {
-      full_name: string;
+      username: string;
       count: number;
     } | null;
   };
@@ -40,7 +40,7 @@ interface AdminStatsData {
   activity: {
     recent_registrations: Array<{
       id: number;
-      full_name: string;
+      username: string;
       email: string;
       role: string;
       created_at: string;
@@ -267,7 +267,7 @@ const AdminStats: React.FC = () => {
           <CardContent>
             <div className="flex items-center space-x-4">
               <div className="flex-1">
-                <p className="font-medium">{statsData.labels.most_active_user.full_name}</p>
+                <p className="font-medium">{statsData.labels.most_active_user.username}</p>
                 <p className="text-sm text-muted-foreground">
                   {statsData.labels.most_active_user.count} labels created
                 </p>
@@ -294,7 +294,7 @@ const AdminStats: React.FC = () => {
                 statsData.activity.recent_registrations.map((user) => (
                   <div key={user.id} className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium text-sm">{user.full_name}</p>
+                      <p className="font-medium text-sm">{user.username}</p>
                       <p className="text-xs text-muted-foreground">{user.email}</p>
                     </div>
                     <div className="text-right">

@@ -18,7 +18,7 @@ const loginSchema = z.object({
 
 const registerSchema = z.object({
   email: z.string().email('Invalid email format'),
-  full_name: z.string().min(2, 'Full name must be at least 2 characters'),
+  username: z.string().min(2, 'Username must be at least 2 characters'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
@@ -50,7 +50,7 @@ router.post('/login', async (req: Request, res: Response) => {
       console.warn(`✗ Invalid credentials for: ${email}`);
       return res.status(401).json({
         success: false,
-        error: 'Invalid email or password',
+        error: 'INVALID_CREDENTIALS',
       } as ApiResponse);
     }
 
@@ -210,11 +210,10 @@ router.put('/profile', authenticateToken, async (req: Request, res: Response) =>
     // Validation schema for profile updates
     const updateProfileSchema = z.object({
       email: z.string().email('Invalid email format').optional(),
-      full_name: z.string().min(2, 'Full name must be at least 2 characters').optional(),
     });
 
     const parsed = updateProfileSchema.parse(req.body);
-    const { email, full_name } = parsed;
+    const { email } = parsed;
 
     // Check if email is already taken (if updating email)
     if (email && await userModel.emailExists(email, req.user.userId)) {
@@ -227,7 +226,6 @@ router.put('/profile', authenticateToken, async (req: Request, res: Response) =>
     // Update user profile
     const updatePayload = {
       ...(email ? { email } : {}),
-      ...(full_name ? { full_name } : {}),
     };
     const updatedUser = await userModel.update(req.user.userId, updatePayload);
     if (!updatedUser) {

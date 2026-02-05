@@ -620,7 +620,7 @@ router.post('/bulk-zpl-range', authenticateToken, resolveSiteAccess(req => Numbe
       } as ApiResponse);
     }
 
-    const labels = await labelModel.findByRefNumberRange(req.site!.id, startNum, endNum, 1000);
+    const labels = await labelModel.findByRefNumberRange(req.site!.id, startNum, endNum);
 
     if (labels.length === 0) {
       return res.status(404).json({

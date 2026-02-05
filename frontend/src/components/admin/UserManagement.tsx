@@ -284,7 +284,7 @@ const UserManagement: React.FC = () => {
                 >
                   <TableCell>
                     <div className="flex flex-col">
-                      <span className="font-medium">{user.full_name}</span>
+                      <span className="font-medium">{user.username}</span>
                       <span className="text-sm text-muted-foreground">{user.email}</span>
                     </div>
                   </TableCell>
@@ -318,7 +318,7 @@ const UserManagement: React.FC = () => {
                     <Button
                       variant="ghost"
                       size="sm"
-                      aria-label={`Edit ${user.full_name}`}
+                      aria-label={`Edit ${user.username}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         openUserDetails(user);
@@ -343,7 +343,7 @@ const UserManagement: React.FC = () => {
           {selectedUser ? (
             <div className="space-y-4">
               <div>
-                <div className="font-medium">{selectedUser.full_name}</div>
+                <div className="font-medium">{selectedUser.username}</div>
                 <div className="text-sm text-muted-foreground">{selectedUser.email}</div>
               </div>
 
@@ -481,7 +481,7 @@ const UserManagement: React.FC = () => {
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete User</AlertDialogTitle>
                       <AlertDialogDescription>
-                        Are you sure you want to delete {selectedUser.full_name}? This action cannot be undone.
+                        Are you sure you want to delete {selectedUser.username}? This action cannot be undone.
                         All their labels and sites will also be deleted.
                       </AlertDialogDescription>
                     </AlertDialogHeader>

@@ -59,7 +59,7 @@ async function seedDatabase(): Promise<void> {
       
       // Insert default admin user (password will be hashed by the User model)
       const insertUser = await adapter.execute(
-        `INSERT INTO users (email, password_hash, full_name, role, created_at, updated_at)
+        `INSERT INTO users (email, password_hash, username, role, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
         ['admin@example.com', 'temp_hash', 'System Administrator', 'GLOBAL_ADMIN', nowIso, nowIso]
       );

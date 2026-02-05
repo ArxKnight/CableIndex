@@ -6,6 +6,8 @@ import { Migration003_RbacSiteScoping } from './003_rbac_site_scoping.js';
 import * as migration004 from './004_add_fullname_to_invitations.js';
 import { Migration005_SiteLocations } from './005_site_locations.js';
 import { Migration006_CableTypes } from './006_cable_types.js';
+import * as migration007 from './007_add_username_to_invitations.js';
+import * as migration008 from './008_add_username_to_users.js';
 
 export interface Migration {
   id: string;
@@ -21,6 +23,20 @@ const Migration004_AddFullnameToInvitations: Migration = {
   down: migration004.down,
 };
 
+const Migration007_AddUsernameToInvitations: Migration = {
+  id: '007',
+  name: 'add_username_to_invitations',
+  up: migration007.up,
+  down: migration007.down,
+};
+
+const Migration008_AddUsernameToUsers: Migration = {
+  id: '008',
+  name: 'add_username_to_users',
+  up: migration008.up,
+  down: migration008.down,
+};
+
 // List of all migrations in order
 const migrations: Migration[] = [
   Migration001_InitialSchema,
@@ -29,6 +45,8 @@ const migrations: Migration[] = [
   Migration004_AddFullnameToInvitations,
   Migration005_SiteLocations,
   Migration006_CableTypes,
+  Migration007_AddUsernameToInvitations,
+  Migration008_AddUsernameToUsers,
 ];
 
 export async function runMigrations(): Promise<void> {

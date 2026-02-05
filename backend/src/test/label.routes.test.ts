@@ -34,7 +34,7 @@ describe('Label Routes', () => {
 
     testUser = await userModel.create({
       email: 'test@example.com',
-      full_name: 'Test User',
+      username: 'Test User',
       password: 'TestPassword123!',
       role: 'ADMIN',
     });
@@ -140,7 +140,7 @@ describe('Label Routes', () => {
     it('denies access to a site without membership (403)', async () => {
       const otherUser = await userModel.create({
         email: 'other@example.com',
-        full_name: 'Other User',
+        username: 'Other User',
         password: 'TestPassword123!',
         role: 'USER',
       });

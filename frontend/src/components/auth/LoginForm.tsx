@@ -9,6 +9,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { ApiError } from '../../lib/api';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -41,7 +42,18 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess }) => {
       await login(data);
       onSuccess?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      const message = err instanceof Error ? err.message : 'Login failed';
+      const status = err instanceof ApiError ? err.status : undefined;
+
+      if (status === 401 || message === 'INVALID_CREDENTIALS' || /invalid credentials/i.test(message) || /invalid email or password/i.test(message)) {
+        setError('Incorrect email or password.');
+      } else if (message === 'Server error. Please try again later.' || /server error/i.test(message)) {
+        setError('Server error. Please try again later.');
+      } else if (message === 'Network error. Check connection.' || /network error/i.test(message)) {
+        setError('Network error. Check connection.');
+      } else {
+        setError(message);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -76,6 +88,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess }) => {
             id="email"
             type="email"
             placeholder="Enter your email"
+            autoComplete="email"
             {...register('email')}
             disabled={isLoading}
           />
@@ -91,6 +104,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess }) => {
               id="password"
               type={showPassword ? 'text' : 'password'}
               placeholder="Enter your password"
+              autoComplete="current-password"
               {...register('password')}
               disabled={isLoading}
             />
@@ -101,6 +115,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess }) => {
               className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
               onClick={() => setShowPassword(!showPassword)}
               disabled={isLoading}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
               {showPassword ? (
                 <EyeOff className="h-4 w-4" />

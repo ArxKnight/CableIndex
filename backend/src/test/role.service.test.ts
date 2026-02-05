@@ -15,7 +15,7 @@ describe('Role Service', () => {
 
     const testUser = await userModel.create({
       email: 'test@example.com',
-      full_name: 'Test User',
+      username: 'Test User',
       password: 'TestPassword123!',
       role: 'USER',
     });
@@ -52,7 +52,7 @@ describe('Role Service', () => {
   it('getAllUsersWithRoles returns users (paged)', async () => {
     await userModel.create({
       email: 'admin@example.com',
-      full_name: 'Admin User',
+      username: 'Admin User',
       password: 'AdminPassword123!',
       role: 'ADMIN',
     });
@@ -66,7 +66,7 @@ describe('Role Service', () => {
   it('countUsersByRole returns counts for known roles', async () => {
     await userModel.create({
       email: 'admin@example.com',
-      full_name: 'Admin User',
+      username: 'Admin User',
       password: 'AdminPassword123!',
       role: 'ADMIN',
     });

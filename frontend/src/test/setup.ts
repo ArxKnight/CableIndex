@@ -52,7 +52,7 @@ const defaultAuthState = {
   user: {
     id: 1,
     email: 'test@example.com',
-    full_name: 'Test User',
+    username: 'Test User',
     role: 'USER',
   },
   tokens: {

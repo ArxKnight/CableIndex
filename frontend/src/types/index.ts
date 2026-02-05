@@ -2,7 +2,7 @@
 export interface User {
   id: number;
   email: string;
-  full_name: string;
+  username: string;
   role: UserRole;
   created_at: string;
   updated_at: string;
@@ -129,13 +129,12 @@ export interface LoginCredentials {
 
 export interface RegisterData {
   email: string;
-  full_name: string;
+  username: string;
   password: string;
 }
 
 export interface UpdateProfileData {
   email?: string;
-  full_name?: string;
 }
 
 export interface ChangePasswordData {

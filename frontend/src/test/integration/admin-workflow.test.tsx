@@ -189,8 +189,8 @@ describe('Admin Workflow Integration Tests', () => {
     await user.click(inviteButton);
 
     // Fill in invitation form
-    const nameInput = screen.getByLabelText(/full name/i);
-    await user.type(nameInput, 'New User');
+    const usernameInput = screen.getByLabelText(/username/i);
+    await user.type(usernameInput, 'New User');
 
     const emailInput = screen.getByLabelText(/email address/i);
     await user.type(emailInput, 'newuser@example.com');

@@ -6,6 +6,15 @@ import App from '../../App';
 
 // Mock the API client
 vi.mock('../../lib/api', () => ({
+  ApiError: class ApiError extends Error {
+    status?: number;
+
+    constructor(message: string, status?: number) {
+      super(message);
+      this.name = 'ApiError';
+      this.status = status;
+    }
+  },
   default: {
     getCurrentUser: vi.fn(),
     login: vi.fn(),
@@ -113,7 +122,7 @@ describe('Error Scenarios Integration Tests', () => {
 
     // Fill in login form with invalid credentials
     const emailInput = screen.getByLabelText(/email/i);
-    const passwordInput = screen.getByLabelText(/password/i);
+    const passwordInput = screen.getByLabelText(/^password$/i);
     const loginButton = screen.getByRole('button', { name: /sign in/i });
 
     await user.type(emailInput, 'invalid@example.com');
@@ -122,7 +131,7 @@ describe('Error Scenarios Integration Tests', () => {
 
     // Should show inline error
     await waitFor(() => {
-      expect(screen.getByText('Invalid credentials')).toBeInTheDocument();
+      expect(screen.getByText(/incorrect email or password\./i)).toBeInTheDocument();
     });
 
     // Should remain on login page
@@ -137,7 +146,7 @@ describe('Error Scenarios Integration Tests', () => {
       user: {
         id: 1,
         email: 'test@example.com',
-        full_name: 'Test User',
+        username: 'Test User',
         role: 'USER',
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
@@ -158,7 +167,7 @@ describe('Error Scenarios Integration Tests', () => {
         user: {
           id: 1,
           email: 'test@example.com',
-          full_name: 'Test User',
+          username: 'Test User',
           role: 'user',
           created_at: '2024-01-01T00:00:00Z',
           updated_at: '2024-01-01T00:00:00Z',

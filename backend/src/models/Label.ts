@@ -80,13 +80,12 @@ export class LabelModel {
     }
   }
 
-  async findByRefNumberRange(siteId: number, startRef: number, endRef: number, limit = 1000): Promise<Label[]> {
+  async findByRefNumberRange(siteId: number, startRef: number, endRef: number): Promise<Label[]> {
     const config = connection.getConfig();
     const isMySQL = config?.type === 'mysql';
 
     const safeStart = Math.max(1, Math.floor(Number(startRef)));
     const safeEnd = Math.max(1, Math.floor(Number(endRef)));
-    const safeLimit = Math.min(1000, Math.max(1, Math.floor(Number(limit) || 1000)));
 
     if (safeStart > safeEnd) {
       throw new Error('Invalid reference range');
@@ -121,12 +120,11 @@ export class LabelModel {
 
     const params: any[] = [siteId, safeStart, safeEnd];
 
-    if (isMySQL) {
-      query += ` LIMIT ${safeLimit}`;
-    } else {
-      query += ` LIMIT ?`;
-      params.push(safeLimit);
-    }
+    // NOTE: Do NOT apply LIMIT here.
+    // Range-based bulk downloads must be based on BETWEEN semantics,
+    // not row counts. Missing reference numbers should simply be absent.
+    // Keep ordering stable.
+    void isMySQL; // retained for future query specialization
 
     const rows = await this.adapter.query(query, params);
     return (rows as any[]).map((row) => this.mapRow(row));
@@ -424,7 +422,7 @@ export class LabelModel {
       throw error;
     }
 
-    const created = await this.findByRefNumberRange(site_id, startRef, endRef, qty);
+    const created = await this.findByRefNumberRange(site_id, startRef, endRef);
     if (created.length !== qty) {
       throw new Error('Failed to load created labels');
     }
@@ -446,7 +444,7 @@ export class LabelModel {
         l.destination_location_id,
         l.created_at,
         l.updated_at,
-        u.full_name as created_by_name,
+        u.username as created_by_name,
         u.email as created_by_email,
         s.code as site_code,
         ct.id as ct_id, ct.name as ct_name, ct.description as ct_description, ct.created_at as ct_created_at, ct.updated_at as ct_updated_at,
@@ -486,7 +484,7 @@ export class LabelModel {
         l.destination_location_id,
         l.created_at,
         l.updated_at,
-        u.full_name as created_by_name,
+        u.username as created_by_name,
         u.email as created_by_email,
         s.code as site_code,
         ct.id as ct_id, ct.name as ct_name, ct.description as ct_description, ct.created_at as ct_created_at, ct.updated_at as ct_updated_at,

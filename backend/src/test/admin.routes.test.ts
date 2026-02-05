@@ -24,14 +24,14 @@ describe('Admin Routes', () => {
     // Create test users
     adminUser = await userModel.create({
       email: 'admin@example.com',
-      full_name: 'Admin User',
+      username: 'Admin User',
       password: 'AdminPassword123!',
       role: 'GLOBAL_ADMIN',
     });
 
     regularUser = await userModel.create({
       email: 'user@example.com',
-      full_name: 'Regular User',
+      username: 'Regular User',
       password: 'UserPassword123!',
       role: 'USER',
     });
@@ -65,7 +65,7 @@ describe('Admin Routes', () => {
     it('should create user invitation for admin', async () => {
       const inviteData = {
         email: 'newuser@example.com',
-        full_name: 'New User',
+        username: 'New User',
         sites: [{ site_id: testSite.id, site_role: 'USER' }],
       };
 
@@ -83,17 +83,17 @@ describe('Admin Routes', () => {
       expect(response.body.data.sites[0]).toMatchObject({ site_id: testSite.id, site_role: 'USER' });
 
       // Verify invitation was created in database
-      const rows = await db.query('SELECT id, email, full_name, used_at FROM invitations WHERE email = ?', [inviteData.email]);
+      const rows = await db.query('SELECT id, email, username, used_at FROM invitations WHERE email = ?', [inviteData.email]);
       expect(rows).toHaveLength(1);
       expect(rows[0].email).toBe(inviteData.email);
-      expect(rows[0].full_name).toBe(inviteData.full_name);
+      expect(rows[0].username).toBe(inviteData.username);
       expect(rows[0].used_at).toBeNull();
     });
 
     it('should use default role if not specified', async () => {
       const inviteData = {
         email: 'newuser@example.com',
-        full_name: 'New User',
+        username: 'New User',
         sites: [{ site_id: testSite.id }],
       };
 
@@ -111,7 +111,7 @@ describe('Admin Routes', () => {
       const response = await request(app)
         .post('/api/admin/invite')
         .set('Authorization', `Bearer ${userToken}`)
-        .send({ email: 'newuser@example.com', full_name: 'New User', sites: [{ site_id: testSite.id }] })
+        .send({ email: 'newuser@example.com', username: 'New User', sites: [{ site_id: testSite.id }] })
         .expect(403);
 
       expect(response.body.success).toBe(false);
@@ -121,7 +121,7 @@ describe('Admin Routes', () => {
       const response = await request(app)
         .post('/api/admin/invite')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ email: adminUser.email, full_name: 'Existing Admin', sites: [{ site_id: testSite.id }] })
+        .send({ email: adminUser.email, username: 'Existing Admin', sites: [{ site_id: testSite.id }] })
         .expect(409);
 
       expect(response.body.success).toBe(false);
@@ -129,7 +129,7 @@ describe('Admin Routes', () => {
     });
 
     it('should prevent duplicate invitations', async () => {
-      const inviteData = { email: 'newuser@example.com', full_name: 'New User', sites: [{ site_id: testSite.id }] };
+      const inviteData = { email: 'newuser@example.com', username: 'New User', sites: [{ site_id: testSite.id }] };
 
       // First invitation
       await request(app)
@@ -152,7 +152,7 @@ describe('Admin Routes', () => {
       const response = await request(app)
         .post('/api/admin/invite')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ email: 'invalid-email', full_name: 'New User', sites: [{ site_id: testSite.id }] })
+        .send({ email: 'invalid-email', username: 'New User', sites: [{ site_id: testSite.id }] })
         .expect(400);
 
       expect(response.body.success).toBe(false);
@@ -162,13 +162,13 @@ describe('Admin Routes', () => {
 
   describe('GET /api/admin/invitations', () => {
     beforeEach(async () => {
-      const insertInvitation = async (opts: { email: string; token: string; fullName: string; siteId: number; siteRole: 'ADMIN' | 'USER' }) => {
+      const insertInvitation = async (opts: { email: string; token: string; username: string; siteId: number; siteRole: 'ADMIN' | 'USER' }) => {
         const tokenHash = crypto.createHash('sha256').update(opts.token).digest('hex');
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
         const result = await db.execute(
-          `INSERT INTO invitations (email, full_name, token_hash, invited_by, expires_at)
+          `INSERT INTO invitations (email, username, token_hash, invited_by, expires_at)
            VALUES (?, ?, ?, ?, ?)`,
-          [opts.email, opts.fullName, tokenHash, adminUser.id, expiresAt]
+          [opts.email, opts.username, tokenHash, adminUser.id, expiresAt]
         );
         const invitationId = Number(result.insertId);
         await db.execute(
@@ -179,8 +179,8 @@ describe('Admin Routes', () => {
         return invitationId;
       };
 
-      await insertInvitation({ email: 'invite1@example.com', token: 'token1', fullName: 'Invite One', siteId: testSite.id, siteRole: 'USER' });
-      await insertInvitation({ email: 'invite2@example.com', token: 'token2', fullName: 'Invite Two', siteId: extraSite.id, siteRole: 'ADMIN' });
+      await insertInvitation({ email: 'invite1@example.com', token: 'token1', username: 'Invite One', siteId: testSite.id, siteRole: 'USER' });
+      await insertInvitation({ email: 'invite2@example.com', token: 'token2', username: 'Invite Two', siteId: extraSite.id, siteRole: 'ADMIN' });
     });
 
     it('should return pending invitations for admin', async () => {
@@ -192,7 +192,7 @@ describe('Admin Routes', () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data).toHaveLength(2);
       expect(response.body.data[0].email).toBeDefined();
-      expect(response.body.data[0].invited_by_name).toBe(adminUser.full_name);
+      expect(response.body.data[0].invited_by_name).toBe(adminUser.username);
       expect(response.body.data[0].sites).toBeDefined();
       expect(response.body.data[0].sites.length).toBeGreaterThan(0);
       expect(response.body.data[0].sites[0]).toHaveProperty('site_id');
@@ -219,7 +219,7 @@ describe('Admin Routes', () => {
       const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       const result = await db.execute(
-        `INSERT INTO invitations (email, full_name, token_hash, invited_by, expires_at)
+        `INSERT INTO invitations (email, username, token_hash, invited_by, expires_at)
          VALUES (?, ?, ?, ?, ?)`,
         ['invite@example.com', 'Invited User', tokenHash, adminUser.id, expiresAt]
       );
@@ -273,7 +273,7 @@ describe('Admin Routes', () => {
       const tokenHash = crypto.createHash('sha256').update(validToken).digest('hex');
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       const result = await db.execute(
-        `INSERT INTO invitations (email, full_name, token_hash, invited_by, expires_at)
+        `INSERT INTO invitations (email, username, token_hash, invited_by, expires_at)
          VALUES (?, ?, ?, ?, ?)`,
         ['invite@example.com', 'Invited User', tokenHash, adminUser.id, expiresAt]
       );
@@ -312,7 +312,7 @@ describe('Admin Routes', () => {
       const tokenHash = crypto.createHash('sha256').update(expiredToken).digest('hex');
       const expiredAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       const result = await db.execute(
-        `INSERT INTO invitations (email, full_name, token_hash, invited_by, expires_at)
+        `INSERT INTO invitations (email, username, token_hash, invited_by, expires_at)
          VALUES (?, ?, ?, ?, ?)`,
         ['expired@example.com', 'Expired User', tokenHash, adminUser.id, expiredAt]
       );
@@ -340,9 +340,9 @@ describe('Admin Routes', () => {
       const tokenHash = crypto.createHash('sha256').update(validToken).digest('hex');
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       const result = await db.execute(
-        `INSERT INTO invitations (email, full_name, token_hash, invited_by, expires_at)
+        `INSERT INTO invitations (email, username, token_hash, invited_by, expires_at)
          VALUES (?, ?, ?, ?, ?)`,
-        ['invite@example.com', 'Invited User', tokenHash, adminUser.id, expiresAt]
+        ['invite@example.com', 'New User', tokenHash, adminUser.id, expiresAt]
       );
       const invitationId = Number(result.insertId);
       await db.execute(
@@ -355,7 +355,6 @@ describe('Admin Routes', () => {
     it('should accept valid invitation and create account', async () => {
       const acceptData = {
         token: validToken,
-        full_name: 'New User',
         password: 'NewPassword123!',
       };
 
@@ -366,7 +365,7 @@ describe('Admin Routes', () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.email).toBe('invite@example.com');
-      expect(response.body.data.full_name).toBe(acceptData.full_name);
+      expect(response.body.data.username).toBe('New User');
       expect(response.body.data.role).toBe('ADMIN');
       expect(response.body.data.password_hash).toBeUndefined();
 
@@ -387,7 +386,6 @@ describe('Admin Routes', () => {
         .post('/api/admin/accept-invite')
         .send({
           token: 'invalid-token',
-          full_name: 'New User',
           password: 'NewPassword123!',
         })
         .expect(400);
@@ -401,7 +399,6 @@ describe('Admin Routes', () => {
         .post('/api/admin/accept-invite')
         .send({
           token: validToken,
-          full_name: '', // Invalid
           password: '123', // Too short
         })
         .expect(400);
@@ -416,7 +413,6 @@ describe('Admin Routes', () => {
         .post('/api/admin/accept-invite')
         .send({
           token: validToken,
-          full_name: 'New User',
           password: 'NewPassword123!',
         })
         .expect(201);
@@ -426,9 +422,9 @@ describe('Admin Routes', () => {
       const tokenHash = crypto.createHash('sha256').update(newToken).digest('hex');
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       const result = await db.execute(
-        `INSERT INTO invitations (email, full_name, token_hash, invited_by, expires_at)
+        `INSERT INTO invitations (email, username, token_hash, invited_by, expires_at)
          VALUES (?, ?, ?, ?, ?)`,
-        ['invite@example.com', 'Invited User Again', tokenHash, adminUser.id, expiresAt]
+        ['invite@example.com', 'Another User', tokenHash, adminUser.id, expiresAt]
       );
       const invitationId = Number(result.insertId);
       await db.execute(
@@ -442,7 +438,6 @@ describe('Admin Routes', () => {
         .post('/api/admin/accept-invite')
         .send({
           token: newToken,
-          full_name: 'Another User',
           password: 'AnotherPassword123!',
         })
         .expect(409);
@@ -457,7 +452,7 @@ describe('Admin Routes', () => {
       // Create additional test users
       await userModel.create({
         email: 'moderator@example.com',
-        full_name: 'Moderator User',
+        username: 'Moderator User',
         password: 'ModPassword123!',
         role: 'ADMIN',
       });
@@ -472,7 +467,7 @@ describe('Admin Routes', () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data.users).toHaveLength(3); // admin, regular, moderator
       expect(response.body.data.users[0]).toHaveProperty('email');
-      expect(response.body.data.users[0]).toHaveProperty('full_name');
+      expect(response.body.data.users[0]).toHaveProperty('username');
       expect(response.body.data.users[0]).toHaveProperty('role');
       expect(response.body.data.users[0]).toHaveProperty('label_count');
       expect(response.body.data.users[0]).toHaveProperty('site_count');
@@ -565,7 +560,7 @@ describe('Admin Routes', () => {
     beforeEach(async () => {
       targetUser = await userModel.create({
         email: 'delete@example.com',
-        full_name: 'Delete User',
+        username: 'Delete User',
         password: 'DeletePassword123!',
         role: 'USER',
       });

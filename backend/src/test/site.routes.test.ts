@@ -30,7 +30,7 @@ describe('Site Routes', () => {
     // Create test user and get auth token
     testUser = await userModel.create({
       email: 'test@example.com',
-      full_name: 'Test User',
+      username: 'Test User',
       password: 'TestPassword123!',
       role: 'ADMIN',
     });
@@ -181,7 +181,7 @@ describe('Site Routes', () => {
       // Create another user
       const otherUser = await userModel.create({
         email: 'other@example.com',
-        full_name: 'Other User',
+        username: 'Other User',
         password: 'TestPassword123!',
         role: 'USER',
       });
@@ -333,7 +333,7 @@ describe('Site Routes', () => {
       // Create another user
       const otherUser = await userModel.create({
         email: 'other@example.com',
-        full_name: 'Other User',
+        username: 'Other User',
         password: 'TestPassword123!',
         role: 'USER',
       });
@@ -400,7 +400,7 @@ describe('Site Routes', () => {
       // Create another user
       const otherUser = await userModel.create({
         email: 'other@example.com',
-        full_name: 'Other User',
+        username: 'Other User',
         password: 'TestPassword123!',
         role: 'USER',
       });

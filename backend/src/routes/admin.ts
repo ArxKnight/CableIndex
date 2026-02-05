@@ -111,7 +111,8 @@ router.get('/overview', authenticateToken, requireAdmin, async (req, res) => {
 // Validation schemas
 const inviteUserSchema = z.object({
   email: z.string().email(),
-  full_name: z.string().min(1, 'Name is required').max(100, 'Name must be less than 100 characters'),
+  // Admin-assigned username (display name). Email remains the login identifier.
+  username: z.string().min(1, 'Username is required').max(100, 'Username must be less than 100 characters'),
   sites: z.array(z.object({
     site_id: z.number().min(1),
     site_role: z.enum(['ADMIN', 'USER']).default('USER'),
@@ -122,7 +123,6 @@ const inviteUserSchema = z.object({
 
 const acceptInviteSchema = z.object({
   token: z.string().min(1),
-  full_name: z.string().min(1).max(100).optional(), // Optional since it can come from invitation
   password: z.string().min(8),
 });
 
@@ -148,7 +148,8 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
       });
     }
 
-    const { email, full_name, sites, expires_in_days } = validation.data;
+    const { email, sites, expires_in_days } = validation.data;
+    const username = String(validation.data.username).trim();
 
     const requesterRole = req.user!.role as string;
     if (validation.data.role === 'GLOBAL_ADMIN' && requesterRole !== 'GLOBAL_ADMIN') {
@@ -229,9 +230,9 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
     try {
       // Create invitation record
       const result = await getAdapter().execute(
-        `INSERT INTO invitations (email, full_name, token_hash, invited_by, expires_at)
+        `INSERT INTO invitations (email, username, token_hash, invited_by, expires_at)
          VALUES (?, ?, ?, ?, ?)`,
-        [email, full_name, tokenHash, req.user!.userId, dbDateParam(expiresAt)]
+        [email, username, tokenHash, req.user!.userId, dbDateParam(expiresAt)]
       );
 
       invitationId = Number(result.insertId);
@@ -261,8 +262,8 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
 
     const emailResult = await sendInviteEmailIfConfigured({
       to: email,
-      inviteeName: full_name,
-      inviterName: String((req.user as any)?.full_name || req.user?.email || 'An Admin'),
+      inviteeName: username,
+      inviterName: String(req.user?.email || 'An Admin'),
       inviteUrl: invite_url,
       expiresAtIso: expiresAt.toISOString(),
     });
@@ -279,6 +280,7 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
       data: {
         id: invitationId,
         email,
+        username,
         token, // In production, don't return the token
         invite_url,
         email_sent: emailResult.email_sent,
@@ -329,11 +331,11 @@ router.get('/invitations', authenticateToken, requireAdmin, async (req, res) => 
       `SELECT 
         i.id,
         i.email,
-        i.full_name,
+        i.username,
         i.expires_at,
         i.used_at,
         i.created_at,
-        u.full_name as invited_by_name,
+        u.username as invited_by_name,
         isites.site_id,
         isites.site_role,
         s.name as site_name,
@@ -354,7 +356,7 @@ router.get('/invitations', authenticateToken, requireAdmin, async (req, res) => 
         grouped.set(row.id, {
           id: row.id,
           email: row.email,
-          full_name: row.full_name,
+          username: row.username,
           expires_at: row.expires_at,
           used_at: row.used_at,
           created_at: row.created_at,
@@ -410,7 +412,7 @@ const assertInvitationAccess = async (invitationId: number, requester: any) => {
 
 const rotateInvitationToken = async (invitationId: number, opts: { expiresInDays?: number }) => {
   const rows = await getAdapter().query(
-    `SELECT id, email, full_name, expires_at, used_at
+    `SELECT id, email, username, expires_at, used_at
      FROM invitations
      WHERE id = ?
      LIMIT 1`,
@@ -454,7 +456,7 @@ const rotateInvitationToken = async (invitationId: number, opts: { expiresInDays
     invitation: {
       id: invitation.id,
       email: invitation.email,
-      full_name: invitation.full_name,
+      username: invitation.username,
       expires_at: nextExpiresAt,
     },
     token,
@@ -544,8 +546,8 @@ router.post('/invitations/:id/resend', authenticateToken, requireAdmin, async (r
 
     const emailResult = await sendInviteEmailIfConfigured({
       to: rotated.invitation.email,
-      inviteeName: rotated.invitation.full_name,
-      inviterName: String((req.user as any)?.full_name || req.user?.email || 'An Admin'),
+      inviteeName: rotated.invitation.username,
+      inviterName: String(req.user?.email || 'An Admin'),
       inviteUrl: invite_url,
       expiresAtIso: rotated.expires_at.toISOString(),
     });
@@ -643,13 +645,13 @@ router.post('/accept-invite', async (req, res) => {
       });
     }
 
-    const { token, full_name, password } = validation.data;
+    const { token, password } = validation.data;
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
     // Find invitation (differentiate used vs expired vs invalid)
     const now = new Date();
     const invitationRows = await getAdapter().query(
-      `SELECT id, email, full_name, expires_at, used_at
+      `SELECT id, email, username, expires_at, used_at
        FROM invitations
        WHERE token_hash = ?
        LIMIT 1`,
@@ -679,13 +681,11 @@ router.post('/accept-invite', async (req, res) => {
       });
     }
 
-    // Use full_name from request or from invitation
-    const userFullName = full_name || invitation.full_name;
-    
-    if (!userFullName) {
+    const username = String((invitation.username || '')).trim();
+    if (!username) {
       return res.status(400).json({
         success: false,
-        error: 'Full name is required',
+        error: 'Invitation is missing a username',
       });
     }
 
@@ -718,7 +718,7 @@ router.post('/accept-invite', async (req, res) => {
       // Create user account
       user = await getUserModel().create({
         email: invitation.email,
-        full_name: userFullName,
+        username,
         password,
         role: globalRole as any,
       });
@@ -773,7 +773,7 @@ router.get('/validate-invite/:token', async (req, res) => {
 
     const now = new Date();
     const invitationRows = await getAdapter().query(
-      `SELECT id, email, expires_at FROM invitations 
+      `SELECT id, email, username, expires_at FROM invitations 
        WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?`,
       [tokenHash, dbDateParam(now)]
     );
@@ -798,6 +798,7 @@ router.get('/validate-invite/:token', async (req, res) => {
       success: true,
       data: {
         email: invitation.email,
+        username: invitation.username,
         expiresAt: invitation.expires_at,
         sites: siteRows,
       },
@@ -828,7 +829,7 @@ router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
     if (requesterRole === 'GLOBAL_ADMIN') {
       users = await getAdapter().query(
         `SELECT 
-          u.id, u.email, u.full_name, u.role, u.is_active, u.created_at, u.updated_at,
+          u.id, u.email, u.username, u.role, u.is_active, u.created_at, u.updated_at,
           COUNT(DISTINCT sm.site_id) as site_count,
           COUNT(DISTINCT l.id) as label_count
         FROM users u
@@ -853,7 +854,7 @@ router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
       const placeholders = siteIds.map(() => '?').join(', ');
       users = await getAdapter().query(
         `SELECT 
-          u.id, u.email, u.full_name, u.role, u.is_active, u.created_at, u.updated_at,
+          u.id, u.email, u.username, u.role, u.is_active, u.created_at, u.updated_at,
           COUNT(DISTINCT sm.site_id) as site_count,
           COUNT(DISTINCT l.id) as label_count
         FROM users u
@@ -870,7 +871,7 @@ router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
     if (search) {
       const searchLower = (search as string).toLowerCase();
       filteredUsers = filteredUsers.filter(u =>
-        u.full_name?.toLowerCase().includes(searchLower) ||
+        u.username?.toLowerCase().includes(searchLower) ||
         u.email?.toLowerCase().includes(searchLower)
       );
     }
@@ -1608,12 +1609,12 @@ router.get('/stats', authenticateToken, requireAdmin, resolveSiteAccess(req => N
 
     const mostActiveUserRows = await getAdapter().query(
       `SELECT 
-        u.full_name,
+        u.username,
         COUNT(l.id) as count
       FROM users u
       JOIN labels l ON u.id = l.created_by
       WHERE l.site_id = ?
-      GROUP BY u.id, u.full_name
+      GROUP BY u.id, u.username
       ORDER BY count DESC
       LIMIT 1`,
       [siteId]
@@ -1636,7 +1637,7 @@ router.get('/stats', authenticateToken, requireAdmin, resolveSiteAccess(req => N
 
     // Recent activity
     const recentRegistrations = await getAdapter().query(
-      `SELECT u.id, u.full_name, u.email, u.role, u.created_at
+      `SELECT u.id, u.username, u.email, u.role, u.created_at
        FROM users u
        JOIN site_memberships sm ON sm.user_id = u.id
        WHERE sm.site_id = ?
@@ -1650,7 +1651,7 @@ router.get('/stats', authenticateToken, requireAdmin, resolveSiteAccess(req => N
         l.id,
         l.ref_string as reference_number,
         l.created_at,
-        u.full_name as user_name,
+        u.username as user_name,
         s.name as site_name
       FROM labels l
       JOIN users u ON l.created_by = u.id

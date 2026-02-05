@@ -30,7 +30,7 @@ const setupSchema = z.object({
   admin: z.object({
     email: z.string().email(),
     password: z.string().min(8),
-    fullName: z.string().min(1),
+    username: z.string().min(1),
   }),
 });
 
@@ -185,7 +185,7 @@ router.post('/complete', async (req, res) => {
       adminUser = await userModel.create({
         email: setupData.admin.email,
         password: setupData.admin.password,
-        full_name: setupData.admin.fullName,
+        username: setupData.admin.username,
         role: 'GLOBAL_ADMIN'
       });
       console.log(`✓ Admin user created: ${adminUser.id} (${adminUser.email})`);
@@ -193,7 +193,7 @@ router.post('/complete', async (req, res) => {
       // Update existing user with new credentials
       console.log(`⚠️  User already exists, updating credentials for: ${adminUser.email}`);
       adminUser = await userModel.update(adminUser.id, {
-        full_name: setupData.admin.fullName,
+        username: setupData.admin.username,
         role: 'GLOBAL_ADMIN'
       }) || adminUser;
       
@@ -315,7 +315,7 @@ router.post('/complete', async (req, res) => {
       adminUser: {
         id: adminUser.id,
         email: adminUser.email,
-        fullName: adminUser.full_name
+        username: adminUser.username
       }
     });
   } catch (error) {

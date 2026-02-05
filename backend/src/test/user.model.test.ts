@@ -19,7 +19,7 @@ describe('User Model', () => {
     it('should create a new user', async () => {
       const userData = {
         email: 'test@example.com',
-        full_name: 'Test User',
+        username: 'Test User',
         password: 'TestPassword123!',
         role: 'USER' as const,
       };
@@ -29,7 +29,7 @@ describe('User Model', () => {
       expect(user).toBeDefined();
       expect(user.id).toBeDefined();
       expect(user.email).toBe(userData.email);
-      expect(user.full_name).toBe(userData.full_name);
+      expect(user.username).toBe(userData.username);
       expect(user.role).toBe(userData.role);
       expect(user.password_hash).toBeDefined();
       expect(user.password_hash).not.toBe(userData.password);
@@ -38,7 +38,7 @@ describe('User Model', () => {
     it('should create user with default role', async () => {
       const userData = {
         email: 'test@example.com',
-        full_name: 'Test User',
+        username: 'Test User',
         password: 'TestPassword123!',
       };
 
@@ -52,7 +52,7 @@ describe('User Model', () => {
     it('should find user by ID', async () => {
       const userData = {
         email: 'test@example.com',
-        full_name: 'Test User',
+        username: 'Test User',
         password: 'TestPassword123!',
       };
 
@@ -74,7 +74,7 @@ describe('User Model', () => {
     it('should find user by email', async () => {
       const userData = {
         email: 'test@example.com',
-        full_name: 'Test User',
+        username: 'Test User',
         password: 'TestPassword123!',
       };
 
@@ -88,7 +88,7 @@ describe('User Model', () => {
     it('should be case insensitive', async () => {
       const userData = {
         email: 'test@example.com',
-        full_name: 'Test User',
+        username: 'Test User',
         password: 'TestPassword123!',
       };
 
@@ -109,7 +109,7 @@ describe('User Model', () => {
     it('should verify correct credentials', async () => {
       const userData = {
         email: 'test@example.com',
-        full_name: 'Test User',
+        username: 'Test User',
         password: 'TestPassword123!',
       };
 
@@ -123,7 +123,7 @@ describe('User Model', () => {
     it('should reject incorrect password', async () => {
       const userData = {
         email: 'test@example.com',
-        full_name: 'Test User',
+        username: 'Test User',
         password: 'TestPassword123!',
       };
 
@@ -143,7 +143,7 @@ describe('User Model', () => {
     it('should return true for existing email', async () => {
       const userData = {
         email: 'test@example.com',
-        full_name: 'Test User',
+        username: 'Test User',
         password: 'TestPassword123!',
       };
 
@@ -161,7 +161,7 @@ describe('User Model', () => {
     it('should exclude specific user ID', async () => {
       const userData = {
         email: 'test@example.com',
-        full_name: 'Test User',
+        username: 'Test User',
         password: 'TestPassword123!',
       };
 
@@ -176,24 +176,24 @@ describe('User Model', () => {
     it('should update user data', async () => {
       const userData = {
         email: 'test@example.com',
-        full_name: 'Test User',
+        username: 'Test User',
         password: 'TestPassword123!',
       };
 
       const user = await userModel.create(userData);
       const updatedUser = await userModel.update(user.id, {
-        full_name: 'Updated Name',
+        username: 'Updated Name',
         role: 'ADMIN',
       });
 
       expect(updatedUser).toBeDefined();
-      expect(updatedUser?.full_name).toBe('Updated Name');
+      expect(updatedUser?.username).toBe('Updated Name');
       expect(updatedUser?.role).toBe('ADMIN');
       expect(updatedUser?.email).toBe(userData.email); // Should remain unchanged
     });
 
     it('should return null for non-existent user', async () => {
-      const updatedUser = await userModel.update(999, { full_name: 'Updated Name' });
+      const updatedUser = await userModel.update(999, { username: 'Updated Name' });
       expect(updatedUser).toBeNull();
     });
   });
@@ -202,7 +202,7 @@ describe('User Model', () => {
     it('should update user password', async () => {
       const userData = {
         email: 'test@example.com',
-        full_name: 'Test User',
+        username: 'Test User',
         password: 'TestPassword123!',
       };
 
@@ -226,7 +226,7 @@ describe('User Model', () => {
     it('should delete user', async () => {
       const userData = {
         email: 'test@example.com',
-        full_name: 'Test User',
+        username: 'Test User',
         password: 'TestPassword123!',
       };
 

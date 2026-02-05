@@ -43,7 +43,7 @@ const mockUsers = [
   {
     id: 1,
     email: 'admin@example.com',
-    full_name: 'Admin User',
+    username: 'Admin User',
     role: 'ADMIN',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
@@ -54,7 +54,7 @@ const mockUsers = [
   {
     id: 2,
     email: 'user@example.com',
-    full_name: 'Regular User',
+    username: 'Regular User',
     role: 'USER',
     created_at: '2024-01-02T00:00:00Z',
     updated_at: '2024-01-02T00:00:00Z',

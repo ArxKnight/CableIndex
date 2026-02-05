@@ -74,9 +74,9 @@ const ProfilePage: React.FC = () => {
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-muted-foreground flex items-center">
                       <User className="w-4 h-4 mr-2" />
-                      Full Name
+                      Username
                     </label>
-                    <p className="text-foreground font-medium">{user.full_name}</p>
+                    <p className="text-foreground font-medium">{user.username}</p>
                   </div>
 
                   <div className="space-y-2">

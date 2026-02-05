@@ -2,7 +2,7 @@
 export interface User {
   id: number;
   email: string;
-  full_name: string;
+  username: string;
   password_hash: string;
   role: UserRole;
   is_active?: boolean | number;

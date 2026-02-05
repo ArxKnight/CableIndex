@@ -14,7 +14,6 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const profileSchema = z.object({
   email: z.string().email('Invalid email format'),
-  full_name: z.string().min(2, 'Full name must be at least 2 characters'),
 });
 
 type ProfileFormData = z.infer<typeof profileSchema>;
@@ -39,7 +38,6 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, onSuccess }) => {
     resolver: zodResolver(profileSchema),
     defaultValues: {
       email: user.email,
-      full_name: user.full_name,
     },
   });
 
@@ -53,9 +51,6 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, onSuccess }) => {
       const updateData: UpdateProfileData = {};
       if (data.email !== user.email) {
         updateData.email = data.email;
-      }
-      if (data.full_name !== user.full_name) {
-        updateData.full_name = data.full_name;
       }
 
       // If no changes, don't make API call
@@ -85,7 +80,6 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, onSuccess }) => {
   const handleCancel = () => {
     reset({
       email: user.email,
-      full_name: user.full_name,
     });
     setError(null);
     setSuccess(null);
@@ -114,19 +108,19 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ user, onSuccess }) => {
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="full_name" className="flex items-center">
+            <Label htmlFor="username" className="flex items-center">
               <UserIcon className="w-4 h-4 mr-2" />
-              Full Name
+              Username
             </Label>
             <Input
-              id="full_name"
-              {...register('full_name')}
-              placeholder="Enter your full name"
-              disabled={isLoading}
+              id="username"
+              value={user.username}
+              disabled
+              readOnly
             />
-            {errors.full_name && (
-              <p className="text-sm text-red-600">{errors.full_name.message}</p>
-            )}
+            <p className="text-xs text-muted-foreground">
+              Username is set by an admin.
+            </p>
           </div>
 
           <div className="space-y-2">

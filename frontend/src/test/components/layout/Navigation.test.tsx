@@ -35,7 +35,7 @@ describe('Navigation', () => {
       user: {
         id: 1,
         email: 'test@example.com',
-        full_name: 'Test User',
+        username: 'Test User',
         role: 'user',
       },
       logout: mockLogout,
@@ -95,7 +95,7 @@ describe('Navigation', () => {
     const user = userEvent.setup();
     renderNavigation();
     
-    const userButton = screen.getByRole('button');
+    const userButton = screen.getByRole('button', { name: /test user/i });
     await user.click(userButton);
     
     await waitFor(() => {
@@ -109,7 +109,7 @@ describe('Navigation', () => {
     const user = userEvent.setup();
     renderNavigation();
     
-    const userButton = screen.getByRole('button');
+    const userButton = screen.getByRole('button', { name: /test user/i });
     await user.click(userButton);
     
     await waitFor(() => {
@@ -124,7 +124,7 @@ describe('Navigation', () => {
     const user = userEvent.setup();
     renderNavigation();
     
-    const userButton = screen.getByRole('button');
+    const userButton = screen.getByRole('button', { name: /test user/i });
     await user.click(userButton);
     
     await waitFor(() => {

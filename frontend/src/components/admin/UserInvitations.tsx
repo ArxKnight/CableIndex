@@ -57,7 +57,10 @@ import { useAuth } from '../../contexts/AuthContext';
 import { copyTextToClipboard } from '../../lib/clipboard';
 
 const inviteSchema = z.object({
-  full_name: z.string().min(1, 'Name is required').max(100, 'Name must be less than 100 characters'),
+  username: z
+    .string()
+    .min(1, 'Username is required')
+    .max(100, 'Username must be less than 100 characters'),
   email: z.string().email('Please enter a valid email address'),
   expires_in_days: z.coerce.number().int().min(1).max(30).default(7),
 });
@@ -67,7 +70,7 @@ type InviteFormData = z.infer<typeof inviteSchema>;
 interface Invitation {
   id: number;
   email: string;
-  full_name?: string;
+  username?: string;
   expires_at: string;
   used_at?: string | null;
   created_at: string;
@@ -145,8 +148,8 @@ const UserInvitations: React.FC = () => {
 
   // Send invitation mutation
   const sendInviteMutation = useMutation({
-    mutationFn: async (data: { full_name: string; email: string; sites: Array<{ site_id: number; site_role: SiteRole }>; expires_in_days: number }) => {
-      return apiClient.inviteUser(data.email, data.sites, data.full_name, data.expires_in_days);
+    mutationFn: async (data: { username: string; email: string; sites: Array<{ site_id: number; site_role: SiteRole }>; expires_in_days: number }) => {
+      return apiClient.inviteUser(data.email, data.sites, data.username, data.expires_in_days);
     },
     onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
@@ -263,7 +266,7 @@ const UserInvitations: React.FC = () => {
     }
 
     sendInviteMutation.mutate({
-      full_name: data.full_name,
+      username: data.username,
       email: data.email,
       sites,
       expires_in_days: data.expires_in_days,
@@ -395,15 +398,15 @@ const UserInvitations: React.FC = () => {
 
                     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                       <div className="space-y-2">
-                        <Label htmlFor="full_name">Full Name *</Label>
+                        <Label htmlFor="username">Username *</Label>
                         <Input
-                          id="full_name"
+                          id="username"
                           type="text"
-                          placeholder="John Doe"
-                          {...register('full_name')}
+                          placeholder="jdoe"
+                          {...register('username')}
                         />
-                        {errors.full_name && (
-                          <p className="text-sm text-red-600">{errors.full_name.message}</p>
+                        {errors.username && (
+                          <p className="text-sm text-red-600">{errors.username.message}</p>
                         )}
                       </div>
                       <div className="space-y-2">
@@ -596,7 +599,7 @@ const UserInvitations: React.FC = () => {
               invitationsData.invitations.map((invitation: Invitation) => (
                 <TableRow key={invitation.id}>
                   <TableCell>
-                    <span className="font-medium">{invitation.full_name || 'N/A'}</span>
+                    <span className="font-medium">{invitation.username || 'N/A'}</span>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">

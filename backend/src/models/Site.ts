@@ -85,7 +85,8 @@ export class SiteModel {
     const finalOffset = Math.max(0, safeOffset);
     
     let query = `
-      SELECT s.id, s.name, s.code, s.created_by, s.location, s.description, s.is_active, s.created_at, s.updated_at
+      SELECT s.id, s.name, s.code, s.created_by, s.location, s.description, s.is_active, s.created_at, s.updated_at,
+             sm.site_role as site_role
       FROM sites s
       JOIN site_memberships sm ON sm.site_id = s.id
       WHERE sm.user_id = ? AND s.is_active = 1
@@ -343,12 +344,14 @@ export class SiteModel {
     const rows = await this.adapter.query(
       `SELECT 
         s.id, s.name, s.code, s.created_by, s.location, s.description, s.is_active, s.created_at, s.updated_at,
-        COUNT(l.id) as label_count
+        COUNT(l.id) as label_count,
+        sm.site_role as site_role
       FROM sites s
+      LEFT JOIN site_memberships sm ON sm.site_id = s.id AND sm.user_id = ?
       LEFT JOIN labels l ON s.id = l.site_id
       WHERE s.id = ? AND s.is_active = 1
       GROUP BY s.id`,
-      [id]
+      [userId, id]
     );
     
     return rows.length > 0 ? (rows[0] as Site & { label_count: number }) : null;
@@ -375,7 +378,8 @@ export class SiteModel {
     let query = `
       SELECT 
         s.id, s.name, s.code, s.created_by, s.location, s.description, s.is_active, s.created_at, s.updated_at,
-        COUNT(l.id) as label_count
+        COUNT(l.id) as label_count,
+        sm.site_role as site_role
       FROM sites s
       JOIN site_memberships sm ON sm.site_id = s.id
       LEFT JOIN labels l ON s.id = l.site_id

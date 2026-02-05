@@ -6,7 +6,7 @@ describe('JWT Utilities', () => {
   const mockUser: User = {
     id: 1,
     email: 'test@example.com',
-    full_name: 'Test User',
+    username: 'Test User',
     password_hash: 'hashed_password',
     role: 'USER',
     created_at: '2023-01-01T00:00:00Z',

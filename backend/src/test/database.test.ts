@@ -132,7 +132,7 @@ describe('Database Migrations', () => {
     await runMigrations();
     
     const status = await getMigrationStatus();
-    expect(status).toHaveLength(6);
+    expect(status).toHaveLength(8);
 
     const m001 = status.find((m) => m.id === '001');
     expect(m001).toBeDefined();
@@ -148,7 +148,7 @@ describe('Database Migrations', () => {
     await runMigrations();
     
     const status = await getMigrationStatus();
-    expect(status).toHaveLength(6);
+    expect(status).toHaveLength(8);
     expect(status.every((m) => m.applied)).toBe(true);
   });
 });
@@ -169,7 +169,7 @@ describe('Database Schema and Constraints', () => {
       const db = connection.getConnection();
       
       const insertUser = db.prepare(`
-        INSERT INTO users (email, password_hash, full_name)
+        INSERT INTO users (email, password_hash, username)
         VALUES (?, ?, ?)
       `);
       
@@ -185,7 +185,7 @@ describe('Database Schema and Constraints', () => {
       const db = connection.getConnection();
       
       const insertUser = db.prepare(`
-        INSERT INTO users (email, password_hash, full_name)
+        INSERT INTO users (email, password_hash, username)
         VALUES (?, ?, ?)
       `);
       
@@ -202,7 +202,7 @@ describe('Database Schema and Constraints', () => {
       const db = connection.getConnection();
       
       const insertUser = db.prepare(`
-        INSERT INTO users (email, password_hash, full_name)
+        INSERT INTO users (email, password_hash, username)
         VALUES (?, ?, ?)
       `);
       
@@ -221,7 +221,7 @@ describe('Database Schema and Constraints', () => {
       
       // First create a user
       const insertUser = db.prepare(`
-        INSERT INTO users (email, password_hash, full_name)
+        INSERT INTO users (email, password_hash, username)
         VALUES (?, ?, ?)
       `);
       const userResult = insertUser.run('test@example.com', 'hashed_password', 'Test User');
@@ -259,7 +259,7 @@ describe('Database Schema and Constraints', () => {
       
       // Create user and site first
       const insertUser = db.prepare(`
-        INSERT INTO users (email, password_hash, full_name)
+        INSERT INTO users (email, password_hash, username)
         VALUES (?, ?, ?)
       `);
       const userResult = insertUser.run('test@example.com', 'hashed_password', 'Test User');
@@ -288,7 +288,7 @@ describe('Database Schema and Constraints', () => {
       
       // Create user and site first
       const insertUser = db.prepare(`
-        INSERT INTO users (email, password_hash, full_name)
+        INSERT INTO users (email, password_hash, username)
         VALUES (?, ?, ?)
       `);
       const userResult = insertUser.run('test@example.com', 'hashed_password', 'Test User');
@@ -371,7 +371,7 @@ describe('Database Schema and Constraints', () => {
       const db = connection.getConnection();
 
       const insertUser = db.prepare(`
-        INSERT INTO users (email, password_hash, full_name)
+        INSERT INTO users (email, password_hash, username)
         VALUES (?, ?, ?)
       `);
 
@@ -382,7 +382,7 @@ describe('Database Schema and Constraints', () => {
       await new Promise((resolve) => setTimeout(resolve, 5));
       const newUpdatedAt = new Date().toISOString();
 
-      db.prepare('UPDATE users SET full_name = ?, updated_at = ? WHERE id = ?').run('Updated Test User', newUpdatedAt, userId);
+      db.prepare('UPDATE users SET username = ?, updated_at = ? WHERE id = ?').run('Updated Test User', newUpdatedAt, userId);
       const updated = db.prepare('SELECT created_at, updated_at FROM users WHERE id = ?').get(userId) as any;
 
       expect(updated.created_at).toBe(initial.created_at);

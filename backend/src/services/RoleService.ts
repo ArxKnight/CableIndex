@@ -52,7 +52,7 @@ export class RoleService {
   async getAllUsersWithRoles(limit: number = 50, offset: number = 0): Promise<Array<{
     id: number;
     email: string;
-    full_name: string;
+    username: string;
     role: UserRole;
     is_active: boolean;
     created_at: string;
@@ -66,11 +66,11 @@ export class RoleService {
     const finalOffset = Math.max(0, safeOffset);
 
     const query = isMySQL
-      ? `SELECT id, email, full_name, role, is_active, created_at, updated_at
+      ? `SELECT id, email, username, role, is_active, created_at, updated_at
          FROM users 
          ORDER BY created_at DESC
          LIMIT ${finalLimit} OFFSET ${finalOffset}`
-      : `SELECT id, email, full_name, role, is_active, created_at, updated_at
+      : `SELECT id, email, username, role, is_active, created_at, updated_at
          FROM users 
          ORDER BY created_at DESC
          LIMIT ? OFFSET ?`;
@@ -81,7 +81,7 @@ export class RoleService {
     return rows as Array<{
       id: number;
       email: string;
-      full_name: string;
+      username: string;
       role: UserRole;
       is_active: boolean;
       created_at: string;

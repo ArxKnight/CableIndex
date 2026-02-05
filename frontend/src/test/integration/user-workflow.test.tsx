@@ -153,7 +153,7 @@ describe('User Workflow Integration Tests', () => {
         user: {
           id: 1,
           email: 'test@example.com',
-          full_name: 'Test User',
+          username: 'Test User',
           role: 'user',
           created_at: '2024-01-01T00:00:00Z',
           updated_at: '2024-01-01T00:00:00Z',
@@ -179,7 +179,7 @@ describe('User Workflow Integration Tests', () => {
 
     // Fill in login form
     const emailInput = screen.getByLabelText(/email/i);
-    const passwordInput = screen.getByLabelText(/password/i);
+    const passwordInput = screen.getByLabelText(/^password$/i);
     const loginButton = screen.getByRole('button', { name: /sign in/i });
 
     await user.type(emailInput, 'test@example.com');
@@ -210,7 +210,7 @@ describe('User Workflow Integration Tests', () => {
       user: {
         id: 1,
         email: 'test@example.com',
-        full_name: 'Test User',
+        username: 'Test User',
         role: 'USER',
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',

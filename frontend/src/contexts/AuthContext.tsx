@@ -66,7 +66,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(userData);
         setTokens(authTokens);
         setAuthTokens(authTokens);
-        toast.success(`Welcome back, ${userData.full_name}!`);
+        toast.success(`Welcome back, ${userData.username}!`);
       } else {
         throw new Error(response.error || 'Login failed');
       }
@@ -81,7 +81,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const register = async (data: RegisterData) => {
     try {
       setIsLoading(true);
-      const response = await apiClient.register(data.email, data.full_name, data.password);
+      const response = await apiClient.register(data.email, data.username, data.password);
       
       if (response.success && response.data) {
         const { user: userData, accessToken, refreshToken, expiresIn } = response.data;
@@ -90,7 +90,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(userData);
         setTokens(authTokens);
         setAuthTokens(authTokens);
-        toast.success(`Welcome to CableIndex, ${userData.full_name}!`);
+        toast.success(`Welcome to CableIndex, ${userData.username}!`);
       } else {
         throw new Error(response.error || 'Registration failed');
       }

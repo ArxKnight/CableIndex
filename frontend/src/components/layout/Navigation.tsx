@@ -139,14 +139,14 @@ const Navigation: React.FC = () => {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center space-x-2">
                   <User className="w-4 h-4" />
-                  <span className="hidden sm:block">{user?.full_name}</span>
+                  <span className="hidden sm:block">{user?.username}</span>
                   <ChevronDown className="w-4 h-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium">{user?.full_name}</p>
+                    <p className="text-sm font-medium">{user?.username}</p>
                     <p className="text-xs text-muted-foreground">{user?.email}</p>
                     <p className="text-xs text-muted-foreground capitalize">
                       Role: {user?.role}

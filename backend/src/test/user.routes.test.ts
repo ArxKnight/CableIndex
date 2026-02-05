@@ -23,14 +23,14 @@ describe('User Routes', () => {
     // Create test users
     adminUser = await userModel.create({
       email: 'admin@example.com',
-      full_name: 'Admin User',
+      username: 'Admin User',
       password: 'AdminPassword123!',
       role: 'ADMIN',
     });
 
     regularUser = await userModel.create({
       email: 'user@example.com',
-      full_name: 'Regular User',
+      username: 'Regular User',
       password: 'UserPassword123!',
       role: 'USER',
     });
@@ -85,7 +85,7 @@ describe('User Routes', () => {
       for (let i = 0; i < 5; i++) {
         await userModel.create({
           email: `user${i}@example.com`,
-          full_name: `User ${i}`,
+          username: `User ${i}`,
           password: 'Password123!',
           role: 'USER',
         });
@@ -130,7 +130,6 @@ describe('User Routes', () => {
   describe('PUT /api/users/:id', () => {
     it('should update user for admin', async () => {
       const updateData = {
-        full_name: 'Updated Name',
         role: 'ADMIN',
       };
 
@@ -141,7 +140,6 @@ describe('User Routes', () => {
         .expect(200);
 
       expect(response.body.success).toBe(true);
-      expect(response.body.data.full_name).toBe(updateData.full_name);
       expect(response.body.data.role).toBe(updateData.role);
       expect(response.body.data.password_hash).toBeUndefined();
     });
@@ -150,7 +148,7 @@ describe('User Routes', () => {
       const response = await request(app)
         .put(`/api/users/${regularUser.id}`)
         .set('Authorization', `Bearer ${userToken}`)
-        .send({ full_name: 'Updated Name' })
+        .send({ role: 'ADMIN' })
         .expect(403);
 
       expect(response.body.success).toBe(false);
@@ -160,7 +158,7 @@ describe('User Routes', () => {
       const response = await request(app)
         .put('/api/users/999')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ full_name: 'Updated Name' })
+        .send({ role: 'ADMIN' })
         .expect(404);
 
       expect(response.body.success).toBe(false);

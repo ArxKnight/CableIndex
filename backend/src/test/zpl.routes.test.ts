@@ -25,7 +25,7 @@ describe('ZPL Routes', () => {
     const user = await userModel.create({
       email: 'test@example.com',
       password: 'password123',
-      full_name: 'Test User',
+      username: 'Test User',
       role: 'USER',
     });
     testUserId = user.id;

@@ -22,7 +22,7 @@ vi.mock('../../../contexts/AuthContext', () => ({
 const mockUser = {
   id: 1,
   email: 'test@example.com',
-  full_name: 'John Doe',
+  username: 'John Doe',
   role: 'USER' as const,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
@@ -46,21 +46,11 @@ describe('ProfileForm', () => {
     expect(screen.getByText('Edit Profile')).toBeInTheDocument();
   });
 
-  it('should validate required full name field', async () => {
-    const user = userEvent.setup();
+  it('should render username as read-only', () => {
     render(<ProfileForm {...mockProps} />);
 
-    const nameInput = screen.getByLabelText(/full name/i);
-    await user.clear(nameInput);
-
-    const submitButton = screen.getByText('Save Changes');
-    await user.click(submitButton);
-
-    await waitFor(() => {
-      expect(screen.getByText('Full name must be at least 2 characters')).toBeInTheDocument();
-    });
-
-    expect(vi.mocked(apiClient.updateProfile)).not.toHaveBeenCalled();
+    const usernameInput = screen.getByLabelText(/username/i);
+    expect(usernameInput).toBeDisabled();
   });
 
   it('should validate email format', async () => {
@@ -83,39 +73,12 @@ describe('ProfileForm', () => {
     const user = userEvent.setup();
     vi.mocked(apiClient.updateProfile).mockResolvedValue({
       success: true,
-      data: { user: { ...mockUser, full_name: 'Jane Doe' } },
+      data: { user: { ...mockUser, email: 'jane@example.com' } },
     });
 
     render(<ProfileForm {...mockProps} />);
 
-    const nameInput = screen.getByLabelText(/full name/i);
-    await user.clear(nameInput);
-    await user.type(nameInput, 'Jane Doe');
-
-    const submitButton = screen.getByText('Save Changes');
-    await user.click(submitButton);
-
-    await waitFor(() => {
-      expect(apiClient.updateProfile).toHaveBeenCalledWith({
-        full_name: 'Jane Doe',
-      });
-    });
-  });
-
-  it('should submit both email and name when both changed', async () => {
-    const user = userEvent.setup();
-    vi.mocked(apiClient.updateProfile).mockResolvedValue({
-      success: true,
-      data: { user: { ...mockUser, full_name: 'Jane Doe', email: 'jane@example.com' } },
-    });
-
-    render(<ProfileForm {...mockProps} />);
-
-    const nameInput = screen.getByLabelText(/full name/i);
     const emailInput = screen.getByLabelText(/email address/i);
-
-    await user.clear(nameInput);
-    await user.type(nameInput, 'Jane Doe');
     await user.clear(emailInput);
     await user.type(emailInput, 'jane@example.com');
 
@@ -124,7 +87,6 @@ describe('ProfileForm', () => {
 
     await waitFor(() => {
       expect(apiClient.updateProfile).toHaveBeenCalledWith({
-        full_name: 'Jane Doe',
         email: 'jane@example.com',
       });
     });
@@ -132,7 +94,7 @@ describe('ProfileForm', () => {
 
   it('should show success message on successful update', async () => {
     const user = userEvent.setup();
-    const updatedUser = { ...mockUser, full_name: 'Jane Doe' };
+    const updatedUser = { ...mockUser, email: 'jane@example.com' };
     vi.mocked(apiClient.updateProfile).mockResolvedValue({
       success: true,
       data: { user: updatedUser },
@@ -140,9 +102,9 @@ describe('ProfileForm', () => {
 
     render(<ProfileForm {...mockProps} />);
 
-    const nameInput = screen.getByLabelText(/full name/i);
-    await user.clear(nameInput);
-    await user.type(nameInput, 'Jane Doe');
+    const emailInput = screen.getByLabelText(/email address/i);
+    await user.clear(emailInput);
+    await user.type(emailInput, 'jane@example.com');
 
     const submitButton = screen.getByText('Save Changes');
     await user.click(submitButton);
@@ -182,9 +144,9 @@ describe('ProfileForm', () => {
 
     render(<ProfileForm {...mockProps} />);
 
-    const nameInput = screen.getByLabelText(/full name/i);
-    await user.clear(nameInput);
-    await user.type(nameInput, 'Jane Doe');
+    const emailInput = screen.getByLabelText(/email address/i);
+    await user.clear(emailInput);
+    await user.type(emailInput, 'jane@example.com');
 
     const submitButton = screen.getByText('Save Changes');
     await user.click(submitButton);
@@ -198,14 +160,14 @@ describe('ProfileForm', () => {
     const user = userEvent.setup();
     render(<ProfileForm {...mockProps} />);
 
-    const nameInput = screen.getByLabelText(/full name/i);
-    await user.clear(nameInput);
-    await user.type(nameInput, 'Changed Name');
+    const emailInput = screen.getByLabelText(/email address/i);
+    await user.clear(emailInput);
+    await user.type(emailInput, 'changed@example.com');
 
     const cancelButton = screen.getByText('Cancel');
     await user.click(cancelButton);
 
-    expect(screen.getByDisplayValue('John Doe')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('test@example.com')).toBeInTheDocument();
   });
 
   it('should disable form during submission', async () => {
@@ -216,15 +178,15 @@ describe('ProfileForm', () => {
 
     render(<ProfileForm {...mockProps} />);
 
-    const nameInput = screen.getByLabelText(/full name/i);
-    await user.clear(nameInput);
-    await user.type(nameInput, 'Jane Doe');
+    const emailInput = screen.getByLabelText(/email address/i);
+    await user.clear(emailInput);
+    await user.type(emailInput, 'jane@example.com');
 
     const submitButton = screen.getByText('Save Changes');
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(nameInput).toBeDisabled();
+      expect(emailInput).toBeDisabled();
       expect(submitButton).toBeDisabled();
     });
   });
@@ -240,8 +202,9 @@ describe('ProfileForm', () => {
     const user = userEvent.setup();
     render(<ProfileForm {...mockProps} />);
 
-    const nameInput = screen.getByLabelText(/full name/i);
-    await user.type(nameInput, ' Updated');
+    const emailInput = screen.getByLabelText(/email address/i);
+    await user.clear(emailInput);
+    await user.type(emailInput, 'updated@example.com');
 
     const submitButton = screen.getByText('Save Changes');
     expect(submitButton).toBeEnabled();

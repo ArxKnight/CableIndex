@@ -16,7 +16,7 @@ describe('Site Model', () => {
 
     const testUser = await userModel.create({
       email: 'test@example.com',
-      full_name: 'Test User',
+      username: 'Test User',
       password: 'TestPassword123!',
       role: 'USER',
     });

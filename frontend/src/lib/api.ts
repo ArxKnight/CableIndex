@@ -1,6 +1,18 @@
 import { toast } from 'sonner';
 import { ApiResponse, AuthTokens } from '../types';
 
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+
+  constructor(message: string, params: { status: number; code?: string }) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = params.status;
+    this.code = params.code;
+  }
+}
+
 // In production (Docker), frontend is served from same origin, so use relative path
 // In development, use explicit localhost URL or VITE_API_URL override
 const isProd = (import.meta as any).env?.MODE === 'production';
@@ -81,9 +93,9 @@ class ApiClient {
       
       // Handle network errors
       if (!response.ok && response.status >= 500) {
-        const errorMessage = `Server error (${response.status}). Please try again later.`;
+        const errorMessage = 'Server error. Please try again later.';
         toast.error(errorMessage);
-        throw new Error(errorMessage);
+        throw new ApiError(errorMessage, { status: response.status });
       }
 
       const data = await response.json();
@@ -118,14 +130,15 @@ class ApiClient {
       }
 
       if (!response.ok) {
-        const errorMessage = data.error || `HTTP error! status: ${response.status}`;
+        const errorCode = typeof data?.error === 'string' ? data.error : undefined;
+        const errorMessage = errorCode || `HTTP error! status: ${response.status}`;
         
         // Don't show toast for auth errors (handled by forms)
         if (response.status !== 401 && response.status !== 403) {
           toast.error(errorMessage);
         }
-        
-        throw new Error(errorMessage);
+
+        throw new ApiError(errorMessage, { status: response.status, code: errorCode });
       }
 
       return data;
@@ -136,9 +149,9 @@ class ApiClient {
       // Handle network connectivity issues
       if (error instanceof TypeError) {
         if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
-          const networkError = 'Network error. Please check your connection and try again.';
+          const networkError = 'Network error. Check connection.';
           toast.error(networkError);
-          throw new Error(networkError);
+          throw new ApiError(networkError, { status: 0 });
         }
       }
       
@@ -168,12 +181,12 @@ class ApiClient {
     }
   }
 
-  async register(email: string, full_name: string, password: string) {
+  async register(email: string, username: string, password: string) {
     console.log(`[Auth] Attempting registration for: ${email}`);
     try {
       const response = await this.request<{ user: any } & AuthTokens>('/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ email, full_name, password }),
+        body: JSON.stringify({ email, username, password }),
       });
       console.log(`[Auth] Registration successful for: ${email}`);
       return response;
@@ -200,7 +213,7 @@ class ApiClient {
     });
   }
 
-  async updateProfile(data: { email?: string; full_name?: string }) {
+  async updateProfile(data: { email?: string }) {
     return this.request<{ user: any }>('/auth/profile', {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -418,12 +431,12 @@ class ApiClient {
   async inviteUser(
     email: string,
     sites: Array<{ site_id: number; site_role: 'ADMIN' | 'USER' }>,
-    full_name: string,
+    username: string,
     expires_in_days?: number
   ) {
     return this.request('/admin/invite', {
       method: 'POST',
-      body: JSON.stringify({ email, full_name, sites, ...(expires_in_days ? { expires_in_days } : {}) }),
+      body: JSON.stringify({ email, username, sites, ...(expires_in_days ? { expires_in_days } : {}) }),
     });
   }
 
@@ -471,7 +484,7 @@ class ApiClient {
     return this.request<any>(`/admin/validate-invite/${token}`);
   }
 
-  async acceptInvite(data: { token: string; full_name: string; password: string }) {
+  async acceptInvite(data: { token: string; password: string }) {
     return this.request<any>('/admin/accept-invite', {
       method: 'POST',
       body: JSON.stringify(data),

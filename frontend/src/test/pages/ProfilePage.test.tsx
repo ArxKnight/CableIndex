@@ -10,7 +10,7 @@ const mockUseAuth = vi.fn();
 const mockUser = {
   id: 1,
   email: 'test@example.com',
-  full_name: 'John Doe',
+  username: 'John Doe',
   role: 'user' as const,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
@@ -70,6 +70,7 @@ describe('ProfilePage', () => {
 
     // Overview tab should be active by default
     expect(screen.getByText('Account Information')).toBeInTheDocument();
+    expect(screen.getByText('Username')).toBeInTheDocument();
     expect(screen.getByText('John Doe')).toBeInTheDocument();
     expect(screen.getByText('test@example.com')).toBeInTheDocument();
     expect(screen.getByText('user')).toBeInTheDocument();
@@ -165,7 +166,7 @@ describe('ProfilePage', () => {
   it('should display all required user information fields', () => {
     renderProfilePage();
 
-    expect(screen.getByText('Full Name')).toBeInTheDocument();
+    expect(screen.getByText('Username')).toBeInTheDocument();
     expect(screen.getByText('Email Address')).toBeInTheDocument();
     expect(screen.getByText('Role')).toBeInTheDocument();
     expect(screen.getByText('Member Since')).toBeInTheDocument();

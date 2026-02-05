@@ -13,7 +13,6 @@ const roleService = new RoleService();
 // Validation schemas
 const updateUserSchema = z.object({
   email: z.string().email().optional(),
-  full_name: z.string().min(1).max(100).optional(),
   role: z.enum(['GLOBAL_ADMIN', 'ADMIN', 'USER']).optional(),
 });
 
@@ -114,7 +113,6 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     const updateDataRaw = validation.data;
     const updateData = {
       ...(updateDataRaw.email ? { email: updateDataRaw.email } : {}),
-      ...(updateDataRaw.full_name ? { full_name: updateDataRaw.full_name } : {}),
       ...(updateDataRaw.role ? { role: updateDataRaw.role } : {}),
     };
 
