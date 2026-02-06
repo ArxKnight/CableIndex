@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { AuthUser, AuthTokens, LoginCredentials, RegisterData, AuthState } from '../types';
+import { AuthUser, AuthTokens, LoginCredentials, RegisterData, AuthState, SiteMembership } from '../types';
 import { apiClient, setAuthTokens, getAuthTokens, clearAuthTokens } from '../lib/api';
 import { toast } from 'sonner';
 
@@ -20,6 +20,7 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [tokens, setTokens] = useState<AuthTokens | null>(null);
+  const [memberships, setMemberships] = useState<SiteMembership[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const isAuthenticated = !!user && !!tokens;
@@ -36,16 +37,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const response = await apiClient.getCurrentUser();
           if (response.success && response.data?.user) {
             setUser(response.data.user);
+            setMemberships(response.data.memberships ?? []);
           } else {
             // Invalid token, clear storage
             clearAuthTokens();
             setTokens(null);
+            setMemberships([]);
           }
         }
       } catch (error) {
         console.error('Auth initialization error:', error);
         clearAuthTokens();
         setTokens(null);
+        setMemberships([]);
       } finally {
         setIsLoading(false);
       }
@@ -66,6 +70,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(userData);
         setTokens(authTokens);
         setAuthTokens(authTokens);
+
+        // Load memberships (and normalized role) from /me
+        const me = await apiClient.getCurrentUser();
+        if (me.success && me.data?.memberships) {
+          if (me.data.user) setUser(me.data.user);
+          setMemberships(me.data.memberships);
+        }
         toast.success(`Welcome back, ${userData.username}!`);
       } else {
         throw new Error(response.error || 'Login failed');
@@ -90,6 +101,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(userData);
         setTokens(authTokens);
         setAuthTokens(authTokens);
+
+        // Load memberships (and normalized role) from /me
+        const me = await apiClient.getCurrentUser();
+        if (me.success && me.data?.memberships) {
+          if (me.data.user) setUser(me.data.user);
+          setMemberships(me.data.memberships);
+        }
         toast.success(`Welcome to CableIndex, ${userData.username}!`);
       } else {
         throw new Error(response.error || 'Registration failed');
@@ -114,6 +132,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Clear local state regardless of API call result
       setUser(null);
       setTokens(null);
+      setMemberships([]);
       clearAuthTokens();
     }
   };
@@ -125,6 +144,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await apiClient.getCurrentUser();
       if (response.success && response.data?.user) {
         setUser(response.data.user);
+        setMemberships(response.data.memberships ?? []);
       }
     } catch (error) {
       console.error('Refresh user error:', error);
@@ -139,6 +159,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const value: AuthContextType = {
     user,
+    memberships,
     tokens,
     isAuthenticated,
     isLoading,

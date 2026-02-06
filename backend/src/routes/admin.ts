@@ -3,9 +3,11 @@ import { z } from 'zod';
 import crypto from 'crypto';
 import UserModel from '../models/User.js';
 import { authenticateToken } from '../middleware/auth.js';
-import { requireAdmin, requireGlobalRole, resolveSiteAccess } from '../middleware/permissions.js';
+import { requireAdminAccess, requireGlobalRole, resolveSiteAccess } from '../middleware/permissions.js';
 import connection from '../database/connection.js';
 import { buildInviteUrl, isSmtpConfigured, sendInviteEmailIfConfigured } from '../services/InvitationEmailService.js';
+import { validatePassword } from '../utils/password.js';
+import { normalizeUsername } from '../utils/username.js';
 
 const router = express.Router();
 const getUserModel = () => new UserModel();
@@ -16,7 +18,7 @@ const dbDateParam = (date: Date): Date => date;
 /**
  * GET /api/admin/overview - Admin notification counts (admin only)
  */
-router.get('/overview', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/overview', authenticateToken, requireAdminAccess, async (req, res) => {
   try {
     const requesterRole = req.user!.role as string;
     const now = new Date();
@@ -26,7 +28,7 @@ router.get('/overview', authenticateToken, requireAdmin, async (req, res) => {
 
     if (requesterRole !== 'GLOBAL_ADMIN') {
       const siteRows = await getAdapter().query(
-        `SELECT site_id FROM site_memberships WHERE user_id = ? AND site_role = 'ADMIN'`,
+        `SELECT site_id FROM site_memberships WHERE user_id = ? AND site_role = 'SITE_ADMIN'`,
         [req.user!.userId]
       );
       const siteIds = (siteRows as any[]).map(r => Number(r.site_id)).filter(Boolean);
@@ -70,12 +72,14 @@ router.get('/overview', authenticateToken, requireAdmin, async (req, res) => {
       [dbDateParam(now), ...siteParams]
     );
 
-    const usersWithoutSitesRows = await getAdapter().query(
-      `SELECT COUNT(*) AS count
-       FROM users u
-       LEFT JOIN site_memberships sm ON sm.user_id = u.id
-       WHERE sm.user_id IS NULL`
-    );
+    const usersWithoutSitesRows = requesterRole === 'GLOBAL_ADMIN'
+      ? await getAdapter().query(
+        `SELECT COUNT(*) AS count
+         FROM users u
+         LEFT JOIN site_memberships sm ON sm.user_id = u.id
+         WHERE sm.user_id IS NULL`
+      )
+      : [{ count: 0 }];
 
     const smtp_configured = await isSmtpConfigured();
 
@@ -107,12 +111,16 @@ router.get('/overview', authenticateToken, requireAdmin, async (req, res) => {
 const inviteUserSchema = z.object({
   email: z.string().email(),
   // Admin-assigned username (display name). Email remains the login identifier.
-  username: z.string().min(1, 'Username is required').max(100, 'Username must be less than 100 characters'),
+  username: z
+    .string()
+    .min(1, 'Username is required')
+    .max(100, 'Username must be less than 100 characters')
+    .transform((v) => normalizeUsername(v)),
   sites: z.array(z.object({
     site_id: z.number().min(1),
-    site_role: z.enum(['ADMIN', 'USER']).default('USER'),
+    site_role: z.enum(['SITE_ADMIN', 'SITE_USER']).default('SITE_USER'),
   })).optional().default([]),
-  role: z.enum(['GLOBAL_ADMIN', 'ADMIN', 'USER']).optional(),
+  role: z.enum(['GLOBAL_ADMIN', 'USER']).optional(),
   expires_in_days: z.number().int().min(1).max(30).optional().default(7),
 });
 
@@ -124,14 +132,14 @@ const acceptInviteSchema = z.object({
 const updateUserSitesSchema = z.object({
   sites: z.array(z.object({
     site_id: z.number().min(1),
-    site_role: z.enum(['ADMIN', 'USER']).default('USER'),
+    site_role: z.enum(['SITE_ADMIN', 'SITE_USER']).default('SITE_USER'),
   })).optional().default([]),
 });
 
 /**
  * POST /api/admin/invite - Invite new user (admin only)
  */
-router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/invite', authenticateToken, requireAdminAccess, async (req, res) => {
   try {
     // Validate request body
     const validation = inviteUserSchema.safeParse(req.body);
@@ -144,7 +152,7 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     const { email, sites, expires_in_days } = validation.data;
-    const username = String(validation.data.username).trim();
+    const username = validation.data.username;
 
     const requesterRole = req.user!.role as string;
     if (validation.data.role === 'GLOBAL_ADMIN' && requesterRole !== 'GLOBAL_ADMIN') {
@@ -209,7 +217,7 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
       const placeholders = siteIds.map(() => '?').join(', ');
       const rows = await getAdapter().query(
         `SELECT DISTINCT site_id FROM site_memberships
-         WHERE user_id = ? AND site_role = 'ADMIN' AND site_id IN (${placeholders})`,
+         WHERE user_id = ? AND site_role = 'SITE_ADMIN' AND site_id IN (${placeholders})`,
         [req.user!.userId, ...siteIds]
       );
 
@@ -305,28 +313,45 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
 /**
  * GET /api/admin/invitations - List pending invitations (admin only)
  */
-router.get('/invitations', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/invitations', authenticateToken, requireAdminAccess, async (req, res) => {
   try {
     const requesterRole = req.user!.role as string;
-    let siteFilter = '';
-    let params: any[] = [];
+    let adminSiteIds: number[] | null = null;
 
     if (requesterRole !== 'GLOBAL_ADMIN') {
       const siteRows = await getAdapter().query(
-        `SELECT site_id FROM site_memberships WHERE user_id = ?`,
+        `SELECT site_id FROM site_memberships WHERE user_id = ? AND site_role = 'SITE_ADMIN'`,
         [req.user!.userId]
       );
-      const siteIds = siteRows.map((row: any) => row.site_id);
-      if (siteIds.length === 0) {
+      const siteIds = (siteRows as any[]).map((row: any) => Number(row.site_id)).filter(Boolean);
+      adminSiteIds = siteIds;
+      if (adminSiteIds.length === 0) {
         return res.json({
           success: true,
           data: [],
         });
       }
+    }
 
-      const placeholders = siteIds.map(() => '?').join(', ');
-      siteFilter = `AND isites.site_id IN (${placeholders})`;
-      params = siteIds;
+    // For SITE_ADMIN callers, only return invitations where ALL invitation sites are within admin scope.
+    // This prevents a SITE_ADMIN from seeing (or acting on) multi-site invites that include out-of-scope sites.
+    let scopeClause = '';
+    let params: any[] = [];
+    if (adminSiteIds) {
+      const placeholders = adminSiteIds.map(() => '?').join(', ');
+      scopeClause = `
+        AND EXISTS (
+          SELECT 1 FROM invitation_sites s1
+          WHERE s1.invitation_id = i.id
+            AND s1.site_id IN (${placeholders})
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM invitation_sites s2
+          WHERE s2.invitation_id = i.id
+            AND s2.site_id NOT IN (${placeholders})
+        )
+      `;
+      params = [...adminSiteIds, ...adminSiteIds];
     }
 
     const invitationRows = await getAdapter().query(
@@ -344,10 +369,10 @@ router.get('/invitations', authenticateToken, requireAdmin, async (req, res) => 
         s.code as site_code
       FROM invitations i
       JOIN users u ON i.invited_by = u.id
-      JOIN invitation_sites isites ON isites.invitation_id = i.id
-      JOIN sites s ON s.id = isites.site_id
+      LEFT JOIN invitation_sites isites ON isites.invitation_id = i.id
+      LEFT JOIN sites s ON s.id = isites.site_id
       WHERE 1=1
-      ${siteFilter}
+      ${scopeClause}
       ORDER BY i.created_at DESC`,
       params
     );
@@ -367,12 +392,18 @@ router.get('/invitations', authenticateToken, requireAdmin, async (req, res) => 
         });
       }
 
-      grouped.get(row.id).sites.push({
-        site_id: row.site_id,
-        site_role: row.site_role,
-        site_name: row.site_name,
-        site_code: row.site_code,
-      });
+      if (row.site_id) {
+        grouped.get(row.id).sites.push({
+          site_id: row.site_id,
+          site_role: row.site_role === 'ADMIN'
+            ? 'SITE_ADMIN'
+            : row.site_role === 'USER'
+              ? 'SITE_USER'
+              : row.site_role,
+          site_name: row.site_name,
+          site_code: row.site_code,
+        });
+      }
     }
 
     res.json({
@@ -396,18 +427,31 @@ const assertInvitationAccess = async (invitationId: number, requester: any) => {
   const requesterRole = requester.role as string;
   if (requesterRole === 'GLOBAL_ADMIN') return;
 
-  const accessRows = await getAdapter().query(
-    `SELECT 1
-     FROM invitation_sites isites
-     JOIN site_memberships sm ON sm.site_id = isites.site_id
-     WHERE isites.invitation_id = ? AND sm.user_id = ?
-     LIMIT 1`,
-    [invitationId, requester.userId]
+  const adminSiteRows = await getAdapter().query(
+    `SELECT site_id
+     FROM site_memberships
+     WHERE user_id = ? AND site_role = 'SITE_ADMIN'`,
+    [requester.userId]
   );
-
-  if (accessRows.length === 0) {
+  const adminSiteIds = new Set((adminSiteRows as any[]).map(r => Number(r.site_id)).filter(Boolean));
+  if (adminSiteIds.size === 0) {
     const err: any = new Error('Access denied');
     err.statusCode = 403;
+    throw err;
+  }
+
+  const invitationSiteRows = await getAdapter().query(
+    `SELECT DISTINCT site_id
+     FROM invitation_sites
+     WHERE invitation_id = ?`,
+    [invitationId]
+  );
+  const invitationSiteIds = (invitationSiteRows as any[]).map(r => Number(r.site_id)).filter(Boolean);
+  const outOfScope = invitationSiteIds.some(siteId => !adminSiteIds.has(siteId));
+  if (invitationSiteIds.length === 0 || outOfScope) {
+    // Prefer 404 to avoid leaking whether an invitation exists outside the caller's scope.
+    const err: any = new Error('Invitation not found');
+    err.statusCode = 404;
     throw err;
   }
 };
@@ -469,7 +513,7 @@ const rotateInvitationToken = async (invitationId: number, opts: { expiresInDays
 /**
  * POST /api/admin/invitations/:id/link - Rotate token and return a fresh invite URL (admin only)
  */
-router.post('/invitations/:id/link', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/invitations/:id/link', authenticateToken, requireAdminAccess, async (req, res) => {
   try {
     const invitationId = parseInt(String(req.params.id));
     if (isNaN(invitationId)) {
@@ -519,7 +563,7 @@ router.post('/invitations/:id/link', authenticateToken, requireAdmin, async (req
 /**
  * POST /api/admin/invitations/:id/resend - Rotate token, optionally extend expiry, and send email (admin only)
  */
-router.post('/invitations/:id/resend', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/invitations/:id/resend', authenticateToken, requireAdminAccess, async (req, res) => {
   try {
     const invitationId = parseInt(String(req.params.id));
     if (isNaN(invitationId)) {
@@ -578,7 +622,7 @@ router.post('/invitations/:id/resend', authenticateToken, requireAdmin, async (r
 /**
  * DELETE /api/admin/invitations/:id - Cancel invitation (admin only)
  */
-router.delete('/invitations/:id', authenticateToken, requireAdmin, async (req, res) => {
+router.delete('/invitations/:id', authenticateToken, requireAdminAccess, async (req, res) => {
   try {
     const invitationId = parseInt(String(req.params.id));
     if (isNaN(invitationId)) {
@@ -588,24 +632,7 @@ router.delete('/invitations/:id', authenticateToken, requireAdmin, async (req, r
       });
     }
 
-    const requesterRole = req.user!.role as string;
-    if (requesterRole !== 'GLOBAL_ADMIN') {
-      const accessRows = await getAdapter().query(
-        `SELECT 1
-         FROM invitation_sites isites
-         JOIN site_memberships sm ON sm.site_id = isites.site_id
-         WHERE isites.invitation_id = ? AND sm.user_id = ?
-         LIMIT 1`,
-        [invitationId, req.user!.userId]
-      );
-
-      if (accessRows.length === 0) {
-        return res.status(403).json({
-          success: false,
-          error: 'Access denied',
-        });
-      }
-    }
+    await assertInvitationAccess(invitationId, req.user);
 
     const result = await getAdapter().execute(
       'DELETE FROM invitations WHERE id = ? AND used_at IS NULL',
@@ -647,6 +674,15 @@ router.post('/accept-invite', async (req, res) => {
       });
     }
 
+    const passwordValidation = validatePassword(validation.data.password);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password does not meet requirements',
+        details: passwordValidation.errors,
+      });
+    }
+
     const { token, password } = validation.data;
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
@@ -683,7 +719,7 @@ router.post('/accept-invite', async (req, res) => {
       });
     }
 
-    const username = String((invitation.username || '')).trim();
+    const username = normalizeUsername(String(invitation.username || ''));
     if (!username) {
       return res.status(400).json({
         success: false,
@@ -704,8 +740,7 @@ router.post('/accept-invite', async (req, res) => {
       [invitation.id]
     ) as Array<{ site_id: number; site_role: string }>;
 
-    const hasAdminSite = invitationSites.some(site => site.site_role === 'ADMIN');
-    const globalRole = hasAdminSite ? 'ADMIN' : 'USER';
+    const globalRole = 'USER';
 
     await getAdapter().beginTransaction();
     let user;
@@ -720,10 +755,15 @@ router.post('/accept-invite', async (req, res) => {
 
       // Create site memberships
       for (const site of invitationSites) {
+        const normalizedSiteRole = site.site_role === 'ADMIN'
+          ? 'SITE_ADMIN'
+          : site.site_role === 'USER'
+            ? 'SITE_USER'
+            : site.site_role;
         await getAdapter().execute(
           `INSERT INTO site_memberships (site_id, user_id, site_role)
            VALUES (?, ?, ?)`,
-          [site.site_id, user.id, site.site_role]
+          [site.site_id, user.id, normalizedSiteRole]
         );
       }
 
@@ -789,13 +829,22 @@ router.get('/validate-invite/:token', async (req, res) => {
       [invitation.id]
     );
 
+    const normalizedSites = (siteRows as any[]).map(row => ({
+      ...row,
+      site_role: row.site_role === 'ADMIN'
+        ? 'SITE_ADMIN'
+        : row.site_role === 'USER'
+          ? 'SITE_USER'
+          : row.site_role,
+    }));
+
     res.json({
       success: true,
       data: {
         email: invitation.email,
         username: invitation.username,
         expiresAt: invitation.expires_at,
-        sites: siteRows,
+        sites: normalizedSites,
       },
     });
   } catch (error) {
@@ -810,7 +859,7 @@ router.get('/validate-invite/:token', async (req, res) => {
 /**
  * GET /api/admin/users - List all users with statistics (admin only)
  */
-router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/users', authenticateToken, requireAdminAccess, async (req, res) => {
   try {
     const { search, role } = req.query;
     console.log(`📊 Fetching users for admin: ${req.user?.email}`);
@@ -821,7 +870,13 @@ router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
     if (requesterRole === 'GLOBAL_ADMIN') {
       users = await getAdapter().query(
         `SELECT 
-          u.id, u.email, u.username, u.role, u.is_active, u.created_at, u.updated_at,
+          u.id, u.email, u.username,
+          CASE 
+            WHEN u.role = 'ADMIN' THEN 'GLOBAL_ADMIN'
+            WHEN u.role = 'MODERATOR' THEN 'USER'
+            ELSE u.role
+          END as role,
+          u.is_active, u.created_at, u.updated_at,
           COUNT(DISTINCT sm.site_id) as site_count,
           COUNT(DISTINCT l.id) as label_count
         FROM users u
@@ -832,7 +887,7 @@ router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
       );
     } else {
       const siteRows = await getAdapter().query(
-        `SELECT site_id FROM site_memberships WHERE user_id = ? AND site_role = 'ADMIN'`,
+        `SELECT site_id FROM site_memberships WHERE user_id = ? AND site_role = 'SITE_ADMIN'`,
         [req.user!.userId]
       );
       const siteIds = siteRows.map((row: any) => row.site_id);
@@ -846,7 +901,13 @@ router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
       const placeholders = siteIds.map(() => '?').join(', ');
       users = await getAdapter().query(
         `SELECT 
-          u.id, u.email, u.username, u.role, u.is_active, u.created_at, u.updated_at,
+          u.id, u.email, u.username,
+          CASE 
+            WHEN u.role = 'ADMIN' THEN 'GLOBAL_ADMIN'
+            WHEN u.role = 'MODERATOR' THEN 'USER'
+            ELSE u.role
+          END as role,
+          u.is_active, u.created_at, u.updated_at,
           COUNT(DISTINCT sm.site_id) as site_count,
           COUNT(DISTINCT l.id) as label_count
         FROM users u
@@ -892,12 +953,10 @@ router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
 /**
  * PUT /api/admin/users/:id/role - Update user role (admin only)
  */
-router.put('/users/:id/role', authenticateToken, requireAdmin, async (req, res) => {
+router.put('/users/:id/role', authenticateToken, requireGlobalRole('GLOBAL_ADMIN'), async (req, res) => {
   try {
     const userId = parseInt(String(req.params.id));
     const { role } = req.body as { role?: string };
-
-    const requesterRole = req.user!.role as string;
 
     if (isNaN(userId)) {
       return res.status(400).json({
@@ -906,7 +965,7 @@ router.put('/users/:id/role', authenticateToken, requireAdmin, async (req, res) 
       });
     }
 
-    if (!role || !['GLOBAL_ADMIN', 'ADMIN', 'USER'].includes(role)) {
+    if (!role || !['GLOBAL_ADMIN', 'USER'].includes(role)) {
       return res.status(400).json({
         success: false,
         error: 'Invalid role',
@@ -922,50 +981,8 @@ router.put('/users/:id/role', authenticateToken, requireAdmin, async (req, res) 
       });
     }
 
-    // Site Admin restrictions
-    if (requesterRole !== 'GLOBAL_ADMIN') {
-      if (user.role === 'GLOBAL_ADMIN') {
-        return res.status(403).json({
-          success: false,
-          error: 'Site Admin cannot modify Global Admin users',
-        });
-      }
-
-      if (role === 'GLOBAL_ADMIN') {
-        return res.status(403).json({
-          success: false,
-          error: 'Site Admin cannot set role to Global Admin',
-        });
-      }
-
-      // Ensure target user is within the requester's admin site scope
-      const adminSiteRows = await getAdapter().query(
-        `SELECT site_id FROM site_memberships WHERE user_id = ? AND site_role = 'ADMIN'`,
-        [req.user!.userId]
-      );
-      const adminSiteIds = (adminSiteRows as any[]).map(r => Number(r.site_id)).filter(Boolean);
-      if (adminSiteIds.length === 0) {
-        return res.status(403).json({
-          success: false,
-          error: 'No admin site scope available',
-        });
-      }
-
-      const placeholders = adminSiteIds.map(() => '?').join(', ');
-      const inScopeRows = await getAdapter().query(
-        `SELECT 1 AS ok FROM site_memberships WHERE user_id = ? AND site_id IN (${placeholders}) LIMIT 1`,
-        [userId, ...adminSiteIds]
-      );
-      if ((inScopeRows as any[]).length === 0) {
-        return res.status(403).json({
-          success: false,
-          error: 'You can only modify users within your site scope',
-        });
-      }
-    }
-
     // Update user role
-    const validRole = role as 'GLOBAL_ADMIN' | 'ADMIN' | 'USER';
+    const validRole = role as 'GLOBAL_ADMIN' | 'USER';
     const result = await getAdapter().execute(
       'UPDATE users SET role = ?, updated_at = ? WHERE id = ?',
       [validRole, dbDateParam(new Date()), userId]
@@ -994,7 +1011,7 @@ router.put('/users/:id/role', authenticateToken, requireAdmin, async (req, res) 
 /**
  * GET /api/admin/users/:id/sites - List user site memberships
  */
-router.get('/users/:id/sites', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/users/:id/sites', authenticateToken, requireAdminAccess, async (req, res) => {
   try {
     const userId = parseInt(String(req.params.id));
     if (isNaN(userId)) {
@@ -1009,21 +1026,33 @@ router.get('/users/:id/sites', authenticateToken, requireAdmin, async (req, res)
     let siteFilter = '';
 
     if (requesterRole !== 'GLOBAL_ADMIN') {
-      const siteRows = await getAdapter().query(
-        `SELECT site_id FROM site_memberships WHERE user_id = ? AND site_role = 'ADMIN'`,
+      const adminSiteRows = await getAdapter().query(
+        `SELECT site_id FROM site_memberships WHERE user_id = ? AND site_role = 'SITE_ADMIN'`,
         [req.user!.userId]
       );
-      const siteIds = siteRows.map((row: any) => row.site_id);
-      if (siteIds.length === 0) {
+      const adminSiteIds = (adminSiteRows as any[]).map((row: any) => Number(row.site_id)).filter(Boolean);
+      if (adminSiteIds.length === 0) {
         return res.json({
           success: true,
           data: { sites: [] },
         });
       }
 
-      const placeholders = siteIds.map(() => '?').join(', ');
-      siteFilter = `AND sm.site_id IN (${placeholders})`;
-      params = [userId, ...siteIds];
+      // Ensure target user is within the requester's admin site scope; prefer 404 if not.
+      const scopePlaceholders = adminSiteIds.map(() => '?').join(', ');
+      const inScopeRows = await getAdapter().query(
+        `SELECT 1 AS ok FROM site_memberships WHERE user_id = ? AND site_id IN (${scopePlaceholders}) LIMIT 1`,
+        [userId, ...adminSiteIds]
+      );
+      if ((inScopeRows as any[]).length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: 'User not found',
+        });
+      }
+
+      siteFilter = `AND sm.site_id IN (${scopePlaceholders})`;
+      params = [userId, ...adminSiteIds];
     }
 
     const memberships = await getAdapter().query(
@@ -1036,9 +1065,18 @@ router.get('/users/:id/sites', authenticateToken, requireAdmin, async (req, res)
       params
     );
 
+    const normalizedMemberships = (memberships as any[]).map(row => ({
+      ...row,
+      site_role: row.site_role === 'ADMIN'
+        ? 'SITE_ADMIN'
+        : row.site_role === 'USER'
+          ? 'SITE_USER'
+          : row.site_role,
+    }));
+
     res.json({
       success: true,
-      data: { sites: memberships },
+      data: { sites: normalizedMemberships },
     });
   } catch (error) {
     console.error('Error fetching user sites:', error);
@@ -1052,7 +1090,7 @@ router.get('/users/:id/sites', authenticateToken, requireAdmin, async (req, res)
 /**
  * PUT /api/admin/users/:id/sites - Replace user site memberships
  */
-router.put('/users/:id/sites', authenticateToken, requireAdmin, async (req, res) => {
+router.put('/users/:id/sites', authenticateToken, requireAdminAccess, async (req, res) => {
   try {
     const userId = parseInt(String(req.params.id));
     if (isNaN(userId)) {
@@ -1095,7 +1133,7 @@ router.put('/users/:id/sites', authenticateToken, requireAdmin, async (req, res)
       }
 
       const siteRows = await getAdapter().query(
-        `SELECT site_id FROM site_memberships WHERE user_id = ? AND site_role = 'ADMIN'`,
+        `SELECT site_id FROM site_memberships WHERE user_id = ? AND site_role = 'SITE_ADMIN'`,
         [req.user!.userId]
       );
       allowedSiteIds = (siteRows as any[]).map((row: any) => Number(row.site_id)).filter(Boolean);
@@ -1114,9 +1152,9 @@ router.put('/users/:id/sites', authenticateToken, requireAdmin, async (req, res)
         [userId, ...allowedSiteIds]
       );
       if ((inScopeRows as any[]).length === 0) {
-        return res.status(403).json({
+        return res.status(404).json({
           success: false,
-          error: 'You can only modify users within your site scope',
+          error: 'User not found',
         });
       }
 
@@ -1126,6 +1164,23 @@ router.put('/users/:id/sites', authenticateToken, requireAdmin, async (req, res)
           success: false,
           error: 'You can only assign users to sites within your admin scope',
         });
+      }
+
+      // Prevent SITE_ADMIN users from modifying their own admin access.
+      // A site admin must not be able to demote/remove themselves from the sites they administer.
+      if (userId === req.user!.userId) {
+        const nextRoleBySiteId = new Map<number, string>();
+        for (const site of sites) {
+          nextRoleBySiteId.set(Number(site.site_id), String(site.site_role));
+        }
+
+        const wouldLoseAdminAccess = allowedSiteIds.some((siteId) => nextRoleBySiteId.get(siteId) !== 'SITE_ADMIN');
+        if (wouldLoseAdminAccess) {
+          return res.status(403).json({
+            success: false,
+            error: 'Site Admin cannot modify their own site admin access',
+          });
+        }
       }
     }
 
@@ -1176,7 +1231,7 @@ router.put('/users/:id/sites', authenticateToken, requireAdmin, async (req, res)
 /**
  * DELETE /api/admin/users/:id - Delete user (admin only)
  */
-router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+router.delete('/users/:id', authenticateToken, requireGlobalRole('GLOBAL_ADMIN'), async (req, res) => {
   try {
     const userId = parseInt(String(req.params.id));
 
@@ -1259,7 +1314,7 @@ router.delete('/users/:id', authenticateToken, requireAdmin, async (req, res) =>
 /**
  * GET /api/admin/settings - Get application settings (admin only)
  */
-router.get('/settings', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/settings', authenticateToken, requireGlobalRole('GLOBAL_ADMIN'), async (req, res) => {
   try {
     const defaultSettings = {
       default_user_role: 'user',
@@ -1322,7 +1377,11 @@ router.get('/settings', authenticateToken, requireAdmin, async (req, res) => {
 
     const settings = {
       ...defaultSettings,
-      default_user_role: map.get('default_user_role') || defaultSettings.default_user_role,
+      default_user_role: (() => {
+        const raw = (map.get('default_user_role') || defaultSettings.default_user_role).trim().toLowerCase();
+        // Legacy deployments may have stored 'moderator' here; global roles are now USER/GLOBAL_ADMIN only.
+        return raw === 'moderator' ? 'user' : raw;
+      })(),
       max_labels_per_user: parseNullableNumber(map.get('max_labels_per_user')),
       max_sites_per_user: parseNullableNumber(map.get('max_sites_per_user')),
       maintenance_mode: parseBoolean(map.get('maintenance_mode')),
@@ -1352,7 +1411,7 @@ router.get('/settings', authenticateToken, requireAdmin, async (req, res) => {
 /**
  * PUT /api/admin/settings - Update application settings (admin only)
  */
-router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
+router.put('/settings', authenticateToken, requireGlobalRole('GLOBAL_ADMIN'), async (req, res) => {
   try {
     const {
       default_user_role,
@@ -1380,7 +1439,8 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
     const normalizedMaxLabels = hasOwn('max_labels_per_user') ? normalizeLimit(max_labels_per_user) : undefined;
     const normalizedMaxSites = hasOwn('max_sites_per_user') ? normalizeLimit(max_sites_per_user) : undefined;
 
-    if (!['user', 'moderator'].includes(default_user_role)) {
+    const normalizedDefaultUserRole = String(default_user_role || '').trim().toLowerCase();
+    if (!['user'].includes(normalizedDefaultUserRole)) {
       return res.status(400).json({
         success: false,
         error: 'Invalid default user role',
@@ -1415,7 +1475,7 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
 
     const settingsToPersist: Array<{ key: string; value: string }> = [];
 
-    settingsToPersist.push({ key: 'default_user_role', value: String(default_user_role) });
+    settingsToPersist.push({ key: 'default_user_role', value: normalizedDefaultUserRole });
 
     if (normalizedMaxLabels !== undefined) {
       settingsToPersist.push({ key: 'max_labels_per_user', value: normalizedMaxLabels === null ? '' : String(normalizedMaxLabels) });
@@ -1494,7 +1554,7 @@ router.put('/settings', authenticateToken, requireAdmin, async (req, res) => {
 /**
  * POST /api/admin/settings/test-email - Send a test email using configured SMTP (admin only)
  */
-router.post('/settings/test-email', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/settings/test-email', authenticateToken, requireGlobalRole('GLOBAL_ADMIN'), async (req, res) => {
   try {
     const to = (req.body?.to && String(req.body.to).trim())
       ? String(req.body.to).trim()
@@ -1533,7 +1593,7 @@ router.post('/settings/test-email', authenticateToken, requireAdmin, async (req,
 /**
  * GET /api/admin/stats - Get admin statistics (admin only)
  */
-router.get('/stats', authenticateToken, requireAdmin, resolveSiteAccess(req => Number(req.query.site_id)), async (req, res) => {
+router.get('/stats', authenticateToken, requireGlobalRole('GLOBAL_ADMIN'), resolveSiteAccess(req => Number(req.query.site_id)), async (req, res) => {
   try {
     const now = new Date();
     const thirtyDaysAgo = new Date(now);
@@ -1571,14 +1631,21 @@ router.get('/stats', authenticateToken, requireAdmin, resolveSiteAccess(req => N
       [siteId]
     ) as any[];
 
-    const usersByRole = {
+    const usersByRole: { GLOBAL_ADMIN: number; USER: number } = {
       GLOBAL_ADMIN: 0,
-      ADMIN: 0,
       USER: 0,
     };
 
     roleStats.forEach(stat => {
-      usersByRole[stat.role as keyof typeof usersByRole] = stat.count;
+      const raw = String(stat.role || '').toUpperCase();
+      const normalized = raw === 'ADMIN'
+        ? 'GLOBAL_ADMIN'
+        : raw === 'MODERATOR'
+          ? 'USER'
+          : raw;
+      if (normalized === 'GLOBAL_ADMIN' || normalized === 'USER') {
+        usersByRole[normalized] += Number(stat.count || 0);
+      }
     });
 
     // Label statistics

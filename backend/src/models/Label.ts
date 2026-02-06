@@ -35,6 +35,18 @@ function makePayloadContainsPattern(value: string): string {
   return `%${value}%`;
 }
 
+function parseTrailingRefNumber(value: string): number | null {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const match = raw.match(/(\d+)\s*$/);
+  if (!match) return null;
+  const digits = match[1];
+  if (!digits) return null;
+  const num = Number.parseInt(digits, 10);
+  if (!Number.isFinite(num) || num < 1) return null;
+  return num;
+}
+
 export class LabelModel {
   private get adapter(): DatabaseAdapter {
     return connection.getAdapter();
@@ -130,14 +142,17 @@ export class LabelModel {
 
     await this.adapter.beginTransaction();
     try {
+      // Ensure a counter exists; if it's missing, seed it from existing labels.
       await this.adapter.execute(
-        `INSERT INTO site_counters (site_id, next_ref) VALUES (?, 1)
+        `INSERT INTO site_counters (site_id, next_ref)
+         VALUES (?, (SELECT COALESCE(MAX(ref_number), 0) + 1 FROM labels WHERE site_id = ?))
          ON DUPLICATE KEY UPDATE next_ref = next_ref`,
-        [siteId]
+        [siteId, siteId]
       );
 
+      // Lock the counter row so concurrent creates allocate unique ranges.
       const rows = await this.adapter.query(
-        `SELECT next_ref FROM site_counters WHERE site_id = ?`,
+        `SELECT next_ref FROM site_counters WHERE site_id = ? FOR UPDATE`,
         [siteId]
       );
 
@@ -318,8 +333,8 @@ export class LabelModel {
     if (!Number.isFinite(qty) || qty < 1) {
       throw new Error('Quantity must be at least 1');
     }
-    if (qty > 100) {
-      throw new Error('Quantity cannot exceed 100');
+    if (qty > 500) {
+      throw new Error('Quantity cannot exceed 500');
     }
 
     if (!Number.isFinite(source_location_id) || source_location_id < 1) {
@@ -351,14 +366,17 @@ export class LabelModel {
 
     await this.adapter.beginTransaction();
     try {
+      // Ensure a counter exists; if it's missing, seed it from existing labels.
       await this.adapter.execute(
-        `INSERT INTO site_counters (site_id, next_ref) VALUES (?, 1)
+        `INSERT INTO site_counters (site_id, next_ref)
+         VALUES (?, (SELECT COALESCE(MAX(ref_number), 0) + 1 FROM labels WHERE site_id = ?))
          ON DUPLICATE KEY UPDATE next_ref = next_ref`,
-        [site_id]
+        [site_id, site_id]
       );
 
+      // Lock the counter row so concurrent creates allocate unique ranges.
       const counterRows = await this.adapter.query(
-        `SELECT next_ref FROM site_counters WHERE site_id = ?`,
+        `SELECT next_ref FROM site_counters WHERE site_id = ? FOR UPDATE`,
         [site_id]
       );
 
@@ -476,8 +494,14 @@ export class LabelModel {
     const params: any[] = [siteId];
 
     if (options.reference_number) {
-      query += ` AND l.ref_string = ?`;
-      params.push(options.reference_number);
+      const refNum = parseTrailingRefNumber(options.reference_number);
+      if (refNum !== null) {
+        query += ` AND l.ref_number = ?`;
+        params.push(refNum);
+      } else {
+        query += ` AND l.ref_string = ?`;
+        params.push(options.reference_number);
+      }
     }
 
     if (options.search) {
@@ -486,7 +510,8 @@ export class LabelModel {
       params.push(searchPattern, searchPattern);
     }
 
-    query += ` ORDER BY ${sort_by === 'ref_string' ? 'l.ref_string' : 'l.created_at'} ${sort_order}`;
+    // Use numeric ordering for reference sorting so it stays correct past 9999.
+    query += ` ORDER BY ${sort_by === 'ref_string' ? 'l.ref_number' : 'l.created_at'} ${sort_order}`;
 
     query += ` LIMIT ${safeLimit} OFFSET ${safeOffset}`;
 
@@ -582,8 +607,14 @@ export class LabelModel {
     const params: any[] = [siteId];
 
     if (options.reference_number) {
-      query += ` AND ref_string = ?`;
-      params.push(options.reference_number);
+      const refNum = parseTrailingRefNumber(options.reference_number);
+      if (refNum !== null) {
+        query += ` AND ref_number = ?`;
+        params.push(refNum);
+      } else {
+        query += ` AND ref_string = ?`;
+        params.push(options.reference_number);
+      }
     }
 
     if (options.search) {

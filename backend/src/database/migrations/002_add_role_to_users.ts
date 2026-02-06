@@ -37,7 +37,7 @@ export const Migration002_AddRoleToUsers: Migration = {
         `UPDATE users
          SET role = CASE
            WHEN role IN ('admin', 'ADMIN') THEN 'GLOBAL_ADMIN'
-           WHEN role IN ('moderator', 'MODERATOR') THEN 'ADMIN'
+           WHEN role IN ('moderator', 'MODERATOR') THEN 'USER'
            WHEN role IN ('user', 'USER') THEN 'USER'
            ELSE role
          END`

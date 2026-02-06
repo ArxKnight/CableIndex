@@ -77,8 +77,8 @@ export interface SiteMembership {
   site_role: SiteRole;
 }
 
-export type UserRole = 'GLOBAL_ADMIN' | 'ADMIN' | 'USER';
-export type SiteRole = 'ADMIN' | 'USER';
+export type UserRole = 'GLOBAL_ADMIN' | 'USER';
+export type SiteRole = 'SITE_ADMIN' | 'SITE_USER';
 
 export interface AuthTokens {
   access_token: string;

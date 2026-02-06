@@ -40,7 +40,8 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
   onDelete, 
   onBack 
 }) => {
-  const { canCreate, isAdmin } = usePermissions();
+  const { canCreate, canAdministerSite, isGlobalAdmin } = usePermissions();
+  const canManageSite = canAdministerSite(siteId);
   const [site, setSite] = useState<SiteWithLabelCount | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +49,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
   const [createLabelOpen, setCreateLabelOpen] = useState(false);
   const [createSuccessOpen, setCreateSuccessOpen] = useState(false);
   const [createdLabels, setCreatedLabels] = useState<Label[]>([]);
+  const [createdMeta, setCreatedMeta] = useState<{ created_count: number; first_ref_number: number; last_ref_number: number } | null>(null);
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
   const [locationsOpen, setLocationsOpen] = useState(false);
@@ -117,10 +119,21 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
       throw new Error(resp.error || 'Failed to create label');
     }
 
-    const labels = (resp.data.labels && resp.data.labels.length)
-      ? (resp.data.labels as Label[])
-      : ([resp.data.label] as Label[]);
+    const createdCount = Number((resp.data as any)?.created_count ?? ((resp.data as any)?.labels?.length ?? 1));
+    const firstRefNumber = Number((resp.data as any)?.first_ref_number ?? (resp.data as any)?.label?.ref_number);
+    const lastRefNumber = Number((resp.data as any)?.last_ref_number ?? (resp.data as any)?.label?.ref_number);
 
+    if (Number.isFinite(createdCount) && createdCount > 0 && Number.isFinite(firstRefNumber) && Number.isFinite(lastRefNumber)) {
+      setCreatedMeta({ created_count: createdCount, first_ref_number: firstRefNumber, last_ref_number: lastRefNumber });
+    } else {
+      setCreatedMeta(null);
+    }
+
+    // Keep existing behavior if backend returned created label objects (small quantities),
+    // but do not require it (large quantities can use range download).
+    const labels = (resp.data as any)?.labels && Array.isArray((resp.data as any)?.labels)
+      ? ((resp.data as any).labels as Label[])
+      : ((resp.data as any)?.label ? ([(resp.data as any).label] as Label[]) : []);
     setCreatedLabels(labels);
     setCreateLabelOpen(false);
     setCreateSuccessOpen(true);
@@ -129,6 +142,15 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
   };
 
   const createdRange = useMemo(() => {
+    if (createdMeta) {
+      const formatRef = (n: number) => (n < 10000 ? `#${String(n).padStart(4, '0')}` : `#${n}`);
+      return {
+        from: formatRef(createdMeta.first_ref_number),
+        to: formatRef(createdMeta.last_ref_number),
+        count: createdMeta.created_count,
+      };
+    }
+
     if (!createdLabels.length) return null;
     const refs = createdLabels
       .map((l) => String(l.ref_string || l.ref_number || '').replace(/^#/, ''))
@@ -138,18 +160,17 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
     if (!refs.length) return null;
     refs.sort((a, b) => Number(a) - Number(b));
     return { from: `#${refs[0]}`, to: `#${refs[refs.length - 1]}`, count: createdLabels.length };
-  }, [createdLabels]);
+  }, [createdLabels, createdMeta]);
 
   const handleDownloadCreated = async () => {
     if (!site) return;
-    if (!createdLabels.length) return;
+    if (!createdRange) return;
 
-    const ids = createdLabels.map((l) => l.id).filter(Boolean);
-    if (!ids.length) return;
-
-    const blob = await apiClient.downloadFile('/labels/bulk-zpl', {
+    // Prefer range download so we don't need all created label IDs.
+    const blob = await apiClient.downloadFile('/labels/bulk-zpl-range', {
       site_id: site.id,
-      ids,
+      start_ref: createdRange.from,
+      end_ref: createdRange.to,
     });
 
     const filename = `crossrackref_${makeTimestampLocal()}.txt`;
@@ -270,7 +291,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
               </CardTitle>
 
               <div className="flex flex-wrap items-center justify-end gap-2">
-                {isAdmin && (
+                {canManageSite && (
                   <>
                     <Button
                       variant="outline"
@@ -291,20 +312,24 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
                   </>
                 )}
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
-                  onClick={() => onEdit(site)}
-                >
-                  <Edit className="mr-2 h-4 w-4" />
-                  Edit Site
-                </Button>
+                {canManageSite && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+                    onClick={() => onEdit(site)}
+                  >
+                    <Edit className="mr-2 h-4 w-4" />
+                    Edit Site
+                  </Button>
+                )}
 
-                <Button variant="destructive" size="sm" onClick={() => onDelete(site)}>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete Site
-                </Button>
+                {isGlobalAdmin && (
+                  <Button variant="destructive" size="sm" onClick={() => onDelete(site)}>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete Site
+                  </Button>
+                )}
               </div>
             </div>
           </CardHeader>
@@ -407,13 +432,13 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
             </div>
 
             {locationsMissing ? (
-              isAdmin ? (
+              canManageSite ? (
                 <Button aria-label="Open site locations dialog" onClick={() => setLocationsOpen(true)}>
                   Create Your First Site Location
                 </Button>
               ) : null
             ) : cableTypesMissing ? (
-              isAdmin ? (
+              canManageSite ? (
                 <Button aria-label="Open cable types dialog" onClick={() => setCableTypesOpen(true)}>
                   Create Your First Cable Type
                 </Button>
@@ -426,7 +451,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
           </div>
         </CardHeader>
         <CardContent>
-          {locationsMissing && !isAdmin && (
+          {locationsMissing && !canManageSite && (
             <Alert>
               <AlertDescription>
                 No site locations exist yet. Ask an admin to add locations for this site.
@@ -434,7 +459,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
             </Alert>
           )}
 
-          {cableTypesMissing && !isAdmin && (
+          {cableTypesMissing && !canManageSite && (
             <Alert>
               <AlertDescription>
                 No cable types exist yet. Ask an admin to add cable types for this site.
@@ -462,7 +487,10 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
             open={createSuccessOpen}
             onOpenChange={(open) => {
               setCreateSuccessOpen(open);
-              if (!open) setCreatedLabels([]);
+                      if (!open) {
+                        setCreatedLabels([]);
+                        setCreatedMeta(null);
+                      }
             }}
           >
             <DialogContent className="max-w-xl">
@@ -482,7 +510,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
                 </div>
 
                 <div className="flex items-center justify-end gap-2">
-                  <Button variant="outline" onClick={handleDownloadCreated} disabled={!createdLabels.length}>
+                  <Button variant="outline" onClick={handleDownloadCreated} disabled={!createdRange}>
                     Download Label/s.txt
                   </Button>
                   <Button
@@ -490,6 +518,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
                     onClick={() => {
                       setCreateSuccessOpen(false);
                       setCreatedLabels([]);
+                      setCreatedMeta(null);
                       setCreateLabelOpen(true);
                     }}
                   >
@@ -508,19 +537,19 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
             onCreateLabel={canCreateLabelForSite ? () => setCreateLabelOpen(true) : undefined}
             emptyStateDescription={
               locationsMissing
-                ? (isAdmin
+                ? (canManageSite
                   ? 'No site locations exist yet. Add a site location to enable labels.'
                   : 'No site locations exist yet. Ask an admin to add locations for this site.')
                 : cableTypesMissing
-                  ? (isAdmin
+                  ? (canManageSite
                     ? 'No cable types exist yet. Add a cable type to enable labels.'
                     : 'No cable types exist yet. Ask an admin to add cable types for this site.')
                   : undefined
             }
             emptyStateAction={
-              locationsMissing && isAdmin
+              locationsMissing && canManageSite
                 ? { label: 'Create Your First Site Location', onClick: () => setLocationsOpen(true) }
-                : cableTypesMissing && isAdmin
+                : cableTypesMissing && canManageSite
                   ? { label: 'Create Your First Cable Type', onClick: () => setCableTypesOpen(true) }
                   : undefined
             }
@@ -530,7 +559,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
             }}
           />
 
-          {isAdmin && (
+          {canManageSite && (
             <SiteLocationsDialog
               open={locationsOpen}
               onOpenChange={setLocationsOpen}
@@ -541,7 +570,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
             />
           )}
 
-          {isAdmin && (
+          {canManageSite && (
             <SiteCableTypesDialog
               open={cableTypesOpen}
               onOpenChange={setCableTypesOpen}

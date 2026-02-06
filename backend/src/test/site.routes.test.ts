@@ -17,7 +17,9 @@ describe('Site Routes', () => {
   let cableTypeModel: CableTypeModel;
   let db: any;
   let testUser: any;
+  let globalAdminUser: any;
   let authToken: string;
+  let globalAdminToken: string;
 
   beforeEach(async () => {
     db = await setupTestDatabase({ runMigrations: true, seedData: false });
@@ -27,16 +29,23 @@ describe('Site Routes', () => {
     labelModel = new LabelModel();
     cableTypeModel = new CableTypeModel();
 
-    // Create test user and get auth token
+    // Create test users and get auth tokens
     testUser = await userModel.create({
       email: 'test@example.com',
       username: 'Test User',
       password: 'TestPassword123!',
-      role: 'ADMIN',
+      role: 'USER',
     });
 
-    const tokens = generateTokens(testUser);
-    authToken = tokens.accessToken;
+    globalAdminUser = await userModel.create({
+      email: 'admin@example.com',
+      username: 'Global Admin',
+      password: 'AdminPassword123!',
+      role: 'GLOBAL_ADMIN',
+    });
+
+    authToken = generateTokens(testUser).accessToken;
+    globalAdminToken = generateTokens(globalAdminUser).accessToken;
   });
 
   afterEach(async () => {
@@ -206,7 +215,7 @@ describe('Site Routes', () => {
 
       const response = await request(app)
         .post('/api/sites')
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Authorization', `Bearer ${globalAdminToken}`)
         .send(siteData)
         .expect(201);
 
@@ -215,7 +224,7 @@ describe('Site Routes', () => {
       expect(response.body.data.site.code).toBe('NS');
       expect(response.body.data.site.location).toBe(siteData.location);
       expect(response.body.data.site.description).toBe(siteData.description);
-      expect(response.body.data.site.created_by).toBe(testUser.id);
+      expect(response.body.data.site.created_by).toBe(globalAdminUser.id);
     });
 
     it('should create site with minimal data', async () => {
@@ -226,7 +235,7 @@ describe('Site Routes', () => {
 
       const response = await request(app)
         .post('/api/sites')
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Authorization', `Bearer ${globalAdminToken}`)
         .send(siteData)
         .expect(201);
 
@@ -240,7 +249,7 @@ describe('Site Routes', () => {
     it('should validate required fields', async () => {
       const response = await request(app)
         .post('/api/sites')
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Authorization', `Bearer ${globalAdminToken}`)
         .send({})
         .expect(400);
 
@@ -258,7 +267,7 @@ describe('Site Routes', () => {
 
       const response = await request(app)
         .post('/api/sites')
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Authorization', `Bearer ${globalAdminToken}`)
         .send(siteData)
         .expect(400);
 
@@ -361,7 +370,7 @@ describe('Site Routes', () => {
 
       const response = await request(app)
         .delete(`/api/sites/${site.id}`)
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Authorization', `Bearer ${globalAdminToken}`)
         .expect(200);
 
       expect(response.body.success).toBe(true);
@@ -382,7 +391,7 @@ describe('Site Routes', () => {
 
       const response = await request(app)
         .delete(`/api/sites/${site.id}`)
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Authorization', `Bearer ${globalAdminToken}`)
         .expect(409);
 
       expect(response.body.success).toBe(false);
@@ -392,7 +401,7 @@ describe('Site Routes', () => {
     it('should return 404 for non-existent site', async () => {
       await request(app)
         .delete('/api/sites/999')
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Authorization', `Bearer ${globalAdminToken}`)
         .expect(404);
     });
 

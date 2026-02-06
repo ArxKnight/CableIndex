@@ -92,7 +92,6 @@ function App() {
               <Router>
                 <div className="min-h-screen bg-background text-foreground">
                   <Routes>
-                {/* Site-centric app: root lands on sites */}
                 <Route path="/" element={<Navigate to="/sites" replace />} />
                 
                 {/* Auth routes */}
@@ -169,7 +168,7 @@ function App() {
                 <Route 
                   path="/admin" 
                   element={
-                    <ProtectedRoute requiredRole="ADMIN">
+                    <ProtectedRoute requireAdminAccess>
                       <Layout>
                         <AdminPage />
                       </Layout>

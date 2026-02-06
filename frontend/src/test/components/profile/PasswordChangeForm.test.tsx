@@ -70,8 +70,8 @@ describe('PasswordChangeForm', () => {
     const confirmPasswordInput = screen.getByLabelText(/^confirm new password$/i);
 
     await user.type(currentPasswordInput, 'currentpass');
-    await user.type(newPasswordInput, 'newpassword123');
-    await user.type(confirmPasswordInput, 'differentpassword');
+    await user.type(newPasswordInput, 'Newpassword123!');
+    await user.type(confirmPasswordInput, 'Different123!');
 
     const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);
@@ -94,8 +94,8 @@ describe('PasswordChangeForm', () => {
     const confirmPasswordInput = screen.getByLabelText(/^confirm new password$/i);
 
     await user.type(currentPasswordInput, 'currentpass');
-    await user.type(newPasswordInput, 'newpassword123');
-    await user.type(confirmPasswordInput, 'newpassword123');
+    await user.type(newPasswordInput, 'Newpassword123!');
+    await user.type(confirmPasswordInput, 'Newpassword123!');
 
     const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);
@@ -103,7 +103,7 @@ describe('PasswordChangeForm', () => {
     await waitFor(() => {
       expect(apiClient.changePassword).toHaveBeenCalledWith({
         current_password: 'currentpass',
-        new_password: 'newpassword123',
+        new_password: 'Newpassword123!',
       });
     });
   });
@@ -121,8 +121,8 @@ describe('PasswordChangeForm', () => {
     const confirmPasswordInput = screen.getByLabelText(/^confirm new password$/i);
 
     await user.type(currentPasswordInput, 'currentpass');
-    await user.type(newPasswordInput, 'newpassword123');
-    await user.type(confirmPasswordInput, 'newpassword123');
+    await user.type(newPasswordInput, 'Newpassword123!');
+    await user.type(confirmPasswordInput, 'Newpassword123!');
 
     const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);
@@ -148,8 +148,8 @@ describe('PasswordChangeForm', () => {
     const confirmPasswordInput = screen.getByLabelText(/^confirm new password$/i);
 
     await user.type(currentPasswordInput, 'wrongpass');
-    await user.type(newPasswordInput, 'newpassword123');
-    await user.type(confirmPasswordInput, 'newpassword123');
+    await user.type(newPasswordInput, 'Newpassword123!');
+    await user.type(confirmPasswordInput, 'Newpassword123!');
 
     const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);
@@ -170,8 +170,8 @@ describe('PasswordChangeForm', () => {
     const confirmPasswordInput = screen.getByLabelText(/^confirm new password$/i);
 
     await user.type(currentPasswordInput, 'currentpass');
-    await user.type(newPasswordInput, 'newpassword123');
-    await user.type(confirmPasswordInput, 'newpassword123');
+    await user.type(newPasswordInput, 'Newpassword123!');
+    await user.type(confirmPasswordInput, 'Newpassword123!');
 
     const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);
@@ -194,8 +194,8 @@ describe('PasswordChangeForm', () => {
     const confirmPasswordInput = screen.getByLabelText(/^confirm new password$/i);
 
     await user.type(currentPasswordInput, 'currentpass');
-    await user.type(newPasswordInput, 'newpassword123');
-    await user.type(confirmPasswordInput, 'newpassword123');
+    await user.type(newPasswordInput, 'Newpassword123!');
+    await user.type(confirmPasswordInput, 'Newpassword123!');
 
     const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);
@@ -258,8 +258,8 @@ describe('PasswordChangeForm', () => {
     const confirmPasswordInput = screen.getByLabelText(/^confirm new password$/i);
 
     await user.type(currentPasswordInput, 'currentpass');
-    await user.type(newPasswordInput, 'newpassword123');
-    await user.type(confirmPasswordInput, 'newpassword123');
+    await user.type(newPasswordInput, 'Newpassword123!');
+    await user.type(confirmPasswordInput, 'Newpassword123!');
 
     const submitButton = screen.getByRole('button', { name: /^change password$/i });
     await user.click(submitButton);

@@ -2,6 +2,23 @@ import { Request, Response, NextFunction } from 'express';
 import connection from '../database/connection.js';
 import { SiteRole, UserRole } from '../types/index.js';
 
+function normalizeSiteRole(value: unknown): SiteRole | null {
+  const raw = String(value ?? '').toUpperCase();
+  if (raw === 'SITE_ADMIN') return 'SITE_ADMIN';
+  if (raw === 'SITE_USER') return 'SITE_USER';
+  return null;
+}
+
+async function getAdminSiteIds(userId: number): Promise<number[]> {
+  const adapter = connection.getAdapter();
+  const rows = await adapter.query(
+    `SELECT DISTINCT site_id FROM site_memberships
+     WHERE user_id = ? AND site_role = 'SITE_ADMIN'`,
+    [userId]
+  );
+  return (rows as any[]).map(r => Number(r.site_id)).filter(Boolean);
+}
+
 /**
  * Middleware to check if user has required role
  */
@@ -28,6 +45,39 @@ export const requireGlobalRole = (...allowedRoles: UserRole[]) => {
     next();
     return;
   };
+};
+
+/**
+ * Middleware for Admin UI/API access:
+ * - GLOBAL_ADMIN always allowed
+ * - otherwise allowed if user is SITE_ADMIN of at least one site
+ */
+export const requireAdminAccess = async (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    res.status(401).json({
+      success: false,
+      error: 'Authentication required',
+    });
+    return;
+  }
+
+  const userRole = req.user.role as string | undefined;
+  if (userRole === 'GLOBAL_ADMIN') {
+    next();
+    return;
+  }
+
+  const siteIds = await getAdminSiteIds(req.user.userId);
+  if (siteIds.length === 0) {
+    res.status(403).json({
+      success: false,
+      error: 'Insufficient permissions',
+    });
+    return;
+  }
+
+  next();
+  return;
 };
 
 /**
@@ -72,7 +122,7 @@ export const resolveSiteAccess = (siteIdResolver: (req: Request) => number | und
         }
 
         req.site = site;
-        req.siteRole = 'ADMIN';
+        req.siteRole = 'SITE_ADMIN';
         next();
         return;
       }
@@ -118,7 +168,16 @@ export const resolveSiteAccess = (siteIdResolver: (req: Request) => number | und
         created_at: result.created_at,
         updated_at: result.updated_at
       };
-      req.siteRole = result.site_role as SiteRole;
+      const normalized = normalizeSiteRole(result.site_role);
+      if (!normalized) {
+        res.status(403).json({
+          success: false,
+          error: 'Insufficient site permissions',
+        });
+        return;
+      }
+
+      req.siteRole = normalized;
 
       next();
       return;
@@ -163,14 +222,14 @@ export const requireSiteRole = (...allowedRoles: SiteRole[]) => {
 };
 
 /**
- * Middleware to check if user is admin
+ * Global admin only.
  */
-export const requireAdmin = requireGlobalRole('GLOBAL_ADMIN', 'ADMIN');
+export const requireAdmin = requireGlobalRole('GLOBAL_ADMIN');
 
 /**
- * Middleware to check if user is moderator or admin
+ * Global admin only.
  */
-export const requireModerator = requireGlobalRole('GLOBAL_ADMIN', 'ADMIN');
+export const requireModerator = requireGlobalRole('GLOBAL_ADMIN');
 
 /**
  * Middleware to check if user owns the resource or is admin
@@ -222,7 +281,7 @@ export const requireUserManagement = (req: Request, res: Response, next: NextFun
   }
 
   const userRole = req.user.role as UserRole | undefined;
-  if (userRole !== 'GLOBAL_ADMIN' && userRole !== 'ADMIN') {
+  if (userRole !== 'GLOBAL_ADMIN') {
     res.status(403).json({
       success: false,
       error: 'Insufficient permissions'

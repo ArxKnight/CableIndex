@@ -22,6 +22,7 @@ vi.mock('../../../lib/api', () => ({
     delete: vi.fn(),
     getSites: vi.fn(),
     getUserSites: vi.fn(),
+    updateUserRole: vi.fn(),
     updateUserSites: vi.fn(),
   },
 }));
@@ -44,7 +45,7 @@ const mockUsers = [
     id: 1,
     email: 'admin@example.com',
     username: 'Admin User',
-    role: 'ADMIN',
+    role: 'GLOBAL_ADMIN',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
     label_count: 10,
@@ -151,17 +152,17 @@ describe('UserManagement', () => {
     const roleFilter = screen.getByRole('combobox');
     fireEvent.click(roleFilter);
 
-    // Select admin role
-    const adminOption = screen.getByText('Admin');
+    // Select global admin role
+    const adminOption = screen.getByText('Global Admin');
     fireEvent.click(adminOption);
 
     await waitFor(() => {
-      expect(apiClient.get).toHaveBeenCalledWith('/admin/users?role=ADMIN');
+      expect(apiClient.get).toHaveBeenCalledWith('/admin/users?role=GLOBAL_ADMIN');
     });
   });
 
   it('handles role change', async () => {
-    vi.mocked(apiClient.put).mockResolvedValue({
+    vi.mocked(apiClient.updateUserRole).mockResolvedValue({
       success: true,
       message: 'Role updated successfully',
     });
@@ -184,10 +185,10 @@ describe('UserManagement', () => {
     const globalRoleLabel = screen.getByText('Global Role');
     const roleSelect = within(globalRoleLabel.parentElement as HTMLElement).getByRole('combobox');
     await user.click(roleSelect);
-    await user.click(await screen.findByText('Admin'));
+    await user.click(await screen.findByText('Global Admin'));
 
     await waitFor(() => {
-      expect(apiClient.put).toHaveBeenCalledWith('/admin/users/2/role', { role: 'ADMIN' });
+      expect(apiClient.updateUserRole).toHaveBeenCalledWith(2, 'GLOBAL_ADMIN');
     });
   });
 

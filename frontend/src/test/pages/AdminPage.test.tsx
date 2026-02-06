@@ -25,9 +25,11 @@ vi.mock('../../components/admin/AdminOverview', () => ({
 
 // Mock usePermissions hook
 let mockIsAdmin = true;
+let mockIsGlobalAdmin = true;
 vi.mock('../../hooks/usePermissions', () => ({
   usePermissions: () => ({
     isAdmin: mockIsAdmin,
+    isGlobalAdmin: mockIsGlobalAdmin,
     canAccess: vi.fn(() => true),
   }),
 }));
@@ -59,6 +61,7 @@ describe('AdminPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockIsAdmin = true;
+    mockIsGlobalAdmin = true;
   });
 
   it('renders admin panel with all tabs', async () => {

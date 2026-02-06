@@ -15,13 +15,15 @@ const isAdminTab = (value: string): value is AdminTab =>
   value === 'overview' || value === 'users' || value === 'invitations' || value === 'settings';
 
 const AdminPage: React.FC = () => {
-  const { isAdmin } = usePermissions();
+  const { isAdmin, isGlobalAdmin } = usePermissions();
+  const isSiteAdmin = isAdmin && !isGlobalAdmin;
   const [searchParams, setSearchParams] = useSearchParams();
 
   const initialTab = (searchParams.get('tab') || '').toLowerCase();
+  const initialTabEffective = (initialTab === 'settings' && !isGlobalAdmin) ? 'overview' : initialTab;
   const [activeTab, setActiveTab] = useState<AdminTab>(
-    initialTab === 'overview' || initialTab === 'users' || initialTab === 'invitations' || initialTab === 'settings'
-      ? (initialTab as AdminTab)
+    initialTabEffective === 'overview' || initialTabEffective === 'users' || initialTabEffective === 'invitations' || initialTabEffective === 'settings'
+      ? (initialTabEffective as AdminTab)
       : 'overview'
   );
 
@@ -32,6 +34,7 @@ const AdminPage: React.FC = () => {
 
   const handleTabChange = (tab: string) => {
     if (!isAdminTab(tab)) return;
+    if (tab === 'settings' && !isGlobalAdmin) return;
 
     setActiveTab(tab);
     const next = new URLSearchParams(searchParams);
@@ -49,7 +52,7 @@ const AdminPage: React.FC = () => {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className={isGlobalAdmin ? 'grid w-full grid-cols-4' : 'grid w-full grid-cols-3'}>
           <TabsTrigger value="overview" className="flex items-center gap-2">
             <Bell className="w-4 h-4" />
             Overview
@@ -62,10 +65,12 @@ const AdminPage: React.FC = () => {
             <UserPlus className="w-4 h-4" />
             Invitations
           </TabsTrigger>
-          <TabsTrigger value="settings" className="flex items-center gap-2">
-            <Settings className="w-4 h-4" />
-            Settings
-          </TabsTrigger>
+          {isGlobalAdmin && (
+            <TabsTrigger value="settings" className="flex items-center gap-2">
+              <Settings className="w-4 h-4" />
+              Settings
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -77,7 +82,10 @@ const AdminPage: React.FC = () => {
             <CardHeader>
               <CardTitle>User Management</CardTitle>
               <CardDescription>
-                Manage user accounts, roles, and permissions
+                <span>Manage user accounts, roles, and permissions</span>
+                {isSiteAdmin && (
+                  <span className="block">Showing users for sites you administer.</span>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -91,7 +99,10 @@ const AdminPage: React.FC = () => {
             <CardHeader>
               <CardTitle>User Invitations</CardTitle>
               <CardDescription>
-                Send invitations to new users and manage pending invites
+                <span>Send invitations to new users and manage pending invites</span>
+                {isSiteAdmin && (
+                  <span className="block">Showing invitations for sites you administer.</span>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -100,6 +111,7 @@ const AdminPage: React.FC = () => {
           </Card>
         </TabsContent>
 
+        {isGlobalAdmin && (
         <TabsContent value="settings" className="space-y-6">
           <Card>
             <CardHeader>
@@ -113,6 +125,7 @@ const AdminPage: React.FC = () => {
             </CardContent>
           </Card>
         </TabsContent>
+        )}
       </Tabs>
     </div>
   );

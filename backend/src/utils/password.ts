@@ -29,15 +29,12 @@ export function validatePassword(password: string): { isValid: boolean; errors: 
     errors.push('Password must contain at least one uppercase letter');
   }
   
-  if (!/[a-z]/.test(password)) {
-    errors.push('Password must contain at least one lowercase letter');
-  }
-  
   if (!/\d/.test(password)) {
     errors.push('Password must contain at least one number');
   }
   
-  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+  // Require at least one non-alphanumeric, non-whitespace character
+  if (!/[^A-Za-z0-9\s]/.test(password)) {
     errors.push('Password must contain at least one special character');
   }
   

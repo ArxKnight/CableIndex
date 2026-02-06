@@ -34,6 +34,31 @@ function getMySqlTestConfig() {
   return { host, port, user, password, ssl };
 }
 
+function getMySqlTestAdminConfig(base: ReturnType<typeof getMySqlTestConfig>) {
+  // For ephemeral DB-per-test, we need an admin user with CREATE DATABASE + GRANT.
+  // Keep this explicit so tests don't accidentally run destructive operations elsewhere.
+  const adminUser = process.env.MYSQL_ADMIN_USER ? String(process.env.MYSQL_ADMIN_USER) : base.user;
+  const adminPassword = process.env.MYSQL_ADMIN_PASSWORD
+    ? String(process.env.MYSQL_ADMIN_PASSWORD)
+    : base.password;
+  const adminHost = process.env.MYSQL_ADMIN_HOST ? String(process.env.MYSQL_ADMIN_HOST) : base.host;
+  const adminPort = process.env.MYSQL_ADMIN_PORT
+    ? Number.parseInt(String(process.env.MYSQL_ADMIN_PORT), 10)
+    : base.port;
+
+  if (!Number.isFinite(adminPort) || adminPort <= 0 || adminPort > 65535) {
+    throw new Error(`Invalid MYSQL_ADMIN_PORT for tests: ${process.env.MYSQL_ADMIN_PORT}`);
+  }
+
+  return {
+    host: adminHost,
+    port: adminPort,
+    user: adminUser,
+    password: adminPassword,
+    ssl: base.ssl,
+  };
+}
+
 async function clearAllTables(adapter: DatabaseAdapter): Promise<void> {
   // Keep the migrations table so we don't re-run migrations every time.
   const tables = [
@@ -82,12 +107,13 @@ export async function setupTestDatabase(options: InitOptions = {}): Promise<Data
   }
 
   if (!testDatabaseCreated) {
+    const admin = getMySqlTestAdminConfig(base);
     const adminConn = await mysql.createConnection({
-      host: base.host,
-      port: base.port,
-      user: base.user,
-      password: base.password,
-      ssl: base.ssl,
+      host: admin.host,
+      port: admin.port,
+      user: admin.user,
+      password: admin.password,
+      ssl: admin.ssl,
       multipleStatements: true,
     });
 
@@ -95,6 +121,15 @@ export async function setupTestDatabase(options: InitOptions = {}): Promise<Data
       await adminConn.query(
         `CREATE DATABASE IF NOT EXISTS \`${testDatabaseName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
       );
+
+      // Ensure the normal test user can access the per-test database.
+      if (admin.user !== base.user) {
+        const db = String(testDatabaseName).replace(/`/g, '``');
+        const userLiteral = adminConn.escape(base.user);
+        const hostLiteral = adminConn.escape(process.env.MYSQL_USER_HOST ? String(process.env.MYSQL_USER_HOST) : '%');
+        await adminConn.query(`GRANT ALL PRIVILEGES ON \`${db}\`.* TO ${userLiteral}@${hostLiteral}`);
+        await adminConn.query('FLUSH PRIVILEGES');
+      }
       testDatabaseCreated = true;
     } finally {
       await adminConn.end();

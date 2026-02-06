@@ -1,6 +1,13 @@
 import connection from '../database/connection.js';
 import { DatabaseAdapter } from '../database/adapters/base.js';
-import { Site } from '../types/index.js';
+import { Site, SiteRole } from '../types/index.js';
+
+export type SiteWithRole = Site & { site_role: SiteRole };
+export type SiteWithLabelCountAndRole = Site & {
+  label_count: number;
+  site_role: SiteRole | null;
+};
+export type SiteWithLabelCountsAndRole = Site & { label_count: number; site_role: SiteRole };
 
 export interface CreateSiteData {
   name: string;
@@ -42,7 +49,7 @@ export class SiteModel {
 
       await this.adapter.execute(
         `INSERT INTO site_memberships (site_id, user_id, site_role)
-         VALUES (?, ?, 'ADMIN')`,
+         VALUES (?, ?, 'SITE_ADMIN')`,
         [result.insertId, created_by]
       );
 
@@ -101,7 +108,7 @@ export class SiteModel {
     query += ` ORDER BY name ASC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
     
     const rows = await this.adapter.query(query, params);
-    return rows as Site[];
+    return rows as SiteWithRole[];
   }
 
   /**
@@ -312,7 +319,7 @@ export class SiteModel {
   /**
    * Get site with label count
    */
-  async findByIdWithLabelCount(id: number, userId: number): Promise<(Site & { label_count: number }) | null> {
+  async findByIdWithLabelCount(id: number, userId: number): Promise<SiteWithLabelCountAndRole | null> {
     const rows = await this.adapter.query(
       `SELECT 
         s.id, s.name, s.code, s.created_by, s.location, s.description, s.is_active, s.created_at, s.updated_at,
@@ -330,7 +337,7 @@ export class SiteModel {
       [userId, id]
     );
     
-    return rows.length > 0 ? (rows[0] as Site & { label_count: number }) : null;
+    return rows.length > 0 ? (rows[0] as SiteWithLabelCountAndRole) : null;
   }
 
   /**
@@ -340,7 +347,7 @@ export class SiteModel {
     search?: string;
     limit?: number;
     offset?: number;
-  } = {}): Promise<(Site & { label_count: number })[]> {
+  } = {}): Promise<SiteWithLabelCountsAndRole[]> {
     const { search, limit = 50, offset = 0 } = options;
     
     // Ensure limit and offset are integers for MySQL prepared statements
@@ -375,7 +382,7 @@ export class SiteModel {
     query += ` ORDER BY s.name ASC LIMIT ${finalLimit} OFFSET ${finalOffset}`;
     
     const rows = await this.adapter.query(query, params);
-    return rows as (Site & { label_count: number })[];
+    return rows as SiteWithLabelCountsAndRole[];
   }
 }
 

@@ -22,7 +22,7 @@ A professional cable labeling system for Brady printers with automatic reference
 
 ### User Management & Security
 - 👥 **Multi-User Support**: Complete user account management system
-- 🔐 **Role-Based Access**: Global roles (Global Admin, Admin, User) plus per-site roles
+- 🔐 **Role-Based Access**: Global roles (Global Admin, User) plus per-site roles
 - 🎫 **JWT Authentication**: Secure token-based authentication with refresh
 - 📧 **User Invitations**: Admin-controlled invitations with site assignments
 - 🛡️ **Data Security**: Password hashing, input validation, and secure sessions
@@ -250,7 +250,7 @@ cableindex/
 - `POST /api/labels/port-labels/zpl` - Generate port label ZPL
 - `POST /api/labels/pdu-labels/zpl` - Generate PDU label ZPL
 
-### Admin Panel (Global Admin/Admin)
+### Admin Panel (Global Admin / Site Admin)
 - `GET /api/admin/overview` - Admin overview notification counts
 - `POST /api/admin/invite` - Create invitation with site assignments
 - `GET /api/admin/invitations` - List pending invitations
@@ -573,15 +573,11 @@ CableIndex uses **global roles** for system-wide access and **site roles** for p
 - **Site management** - create, edit, delete any site
 - **Stats** - system-wide statistics endpoints
 
-**Admin**
-- **Scoped administration** - manage users and invitations within shared sites
-- **Site management** - create new sites and administer assigned sites
-- **Stats** - site-scoped statistics endpoints
-
 **User**
 - **Standard access** - work within assigned sites
 - **Label management** - create, update, and export labels in assigned sites
 - **Profile management** - update personal information
+- **Scoped admin access (when Site Admin)** - admin panel features are scoped to sites where the user is a **Site Admin**
 
 ### Site Roles (per site)
 
@@ -593,14 +589,14 @@ CableIndex uses **global roles** for system-wide access and **site roles** for p
 - **Label operations** - create, update, and export labels within the site
 
 ### Permission Matrix (Global Roles)
-| Capability              | Global Admin | Admin | User |
-|-------------------------|--------------|-------|------|
-| Access admin panel      | ✅          | ✅    | ❌   |
-| Manage users & invites  | ✅          | 🏢    | ❌   |
-| Create sites            | ✅          | ✅    | ❌   |
-| View all sites          | ✅          | 🏢    | 🏢   |
-| System settings         | ✅          | ✅    | ❌   |
-| System-wide stats       | ✅          | 🏢    | ❌   |
+| Capability              | Global Admin | User |
+|-------------------------|--------------|------|
+| Access admin panel      | ✅          | 🏢   |
+| Manage users & invites  | ✅          | 🏢   |
+| Create sites            | ✅          | ❌   |
+| View all sites          | ✅          | 🏢   |
+| System settings         | ✅          | ❌   |
+| System-wide stats       | ✅          | ❌   |
 
 ### Permission Matrix (Site Roles)
 | Capability           | Site Admin | Site User |

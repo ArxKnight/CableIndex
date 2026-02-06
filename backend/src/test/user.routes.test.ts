@@ -25,7 +25,7 @@ describe('User Routes', () => {
       email: 'admin@example.com',
       username: 'Admin User',
       password: 'AdminPassword123!',
-      role: 'ADMIN',
+      role: 'GLOBAL_ADMIN',
     });
 
     regularUser = await userModel.create({
@@ -113,7 +113,7 @@ describe('User Routes', () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data.totalUsers).toBe(2);
       expect(response.body.data.usersByRole).toBeDefined();
-      expect(response.body.data.usersByRole.ADMIN).toBe(1);
+      expect(response.body.data.usersByRole.GLOBAL_ADMIN).toBe(1);
       expect(response.body.data.usersByRole.USER).toBe(1);
     });
 
@@ -130,7 +130,7 @@ describe('User Routes', () => {
   describe('PUT /api/users/:id', () => {
     it('should update user for admin', async () => {
       const updateData = {
-        role: 'ADMIN',
+        role: 'GLOBAL_ADMIN',
       };
 
       const response = await request(app)
@@ -148,7 +148,7 @@ describe('User Routes', () => {
       const response = await request(app)
         .put(`/api/users/${regularUser.id}`)
         .set('Authorization', `Bearer ${userToken}`)
-        .send({ role: 'ADMIN' })
+        .send({ role: 'GLOBAL_ADMIN' })
         .expect(403);
 
       expect(response.body.success).toBe(false);
@@ -158,7 +158,7 @@ describe('User Routes', () => {
       const response = await request(app)
         .put('/api/users/999')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ role: 'ADMIN' })
+        .send({ role: 'GLOBAL_ADMIN' })
         .expect(404);
 
       expect(response.body.success).toBe(false);

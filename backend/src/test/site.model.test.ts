@@ -149,7 +149,7 @@ describe('Site Model', () => {
       expect(siteWithCount).toBeDefined();
       expect(siteWithCount!.id).toBe(createdSite.id);
       expect(Number(siteWithCount!.label_count)).toBe(2);
-      expect(siteWithCount!.site_role).toBe('ADMIN');
+      expect(siteWithCount!.site_role).toBe('SITE_ADMIN');
     });
 
     it('findByUserIdWithLabelCounts returns correct label_count per site', async () => {
@@ -167,11 +167,11 @@ describe('Site Model', () => {
 
       expect(byId.get(siteA.id)).toBeDefined();
       expect(Number(byId.get(siteA.id)!.label_count)).toBe(1);
-      expect(byId.get(siteA.id)!.site_role).toBe('ADMIN');
+      expect(byId.get(siteA.id)!.site_role).toBe('SITE_ADMIN');
 
       expect(byId.get(siteB.id)).toBeDefined();
       expect(Number(byId.get(siteB.id)!.label_count)).toBe(0);
-      expect(byId.get(siteB.id)!.site_role).toBe('ADMIN');
+      expect(byId.get(siteB.id)!.site_role).toBe('SITE_ADMIN');
     });
   });
 

@@ -201,7 +201,7 @@ describe('User Workflow Integration Tests', () => {
     });
   });
 
-  it('should allow authenticated users to create a site', async () => {
+  it('should allow GLOBAL_ADMIN users to create a site', async () => {
     const { apiClient } = await import('../../lib/api');
     const user = userEvent.setup();
 
@@ -211,10 +211,11 @@ describe('User Workflow Integration Tests', () => {
         id: 1,
         email: 'test@example.com',
         username: 'Test User',
-        role: 'USER',
+        role: 'GLOBAL_ADMIN',
         created_at: '2024-01-01T00:00:00Z',
         updated_at: '2024-01-01T00:00:00Z',
       },
+      memberships: [],
       tokens: {
         accessToken: 'test-access-token',
         refreshToken: 'test-refresh-token',
@@ -232,7 +233,7 @@ describe('User Workflow Integration Tests', () => {
           id: 1,
           email: 'test@example.com',
           full_name: 'Test User',
-          role: 'user',
+          role: 'GLOBAL_ADMIN',
           created_at: '2024-01-01T00:00:00Z',
           updated_at: '2024-01-01T00:00:00Z',
         },

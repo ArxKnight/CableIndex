@@ -36,7 +36,7 @@ describe('Label Routes', () => {
       email: 'test@example.com',
       username: 'Test User',
       password: 'TestPassword123!',
-      role: 'ADMIN',
+      role: 'USER',
     });
 
     const tokens = generateTokens(testUser);
@@ -197,6 +197,9 @@ describe('Label Routes', () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.label.reference_number).toBe('0001');
+      expect(response.body.data.created_count).toBe(1);
+      expect(response.body.data.first_ref_number).toBe(1);
+      expect(response.body.data.last_ref_number).toBe(1);
     });
 
     it('creates multiple labels when quantity > 1', async () => {
@@ -216,6 +219,9 @@ describe('Label Routes', () => {
       expect(response.body.data.labels).toHaveLength(3);
       expect(response.body.data.labels[0].reference_number).toBe('0001');
       expect(response.body.data.labels[2].reference_number).toBe('0003');
+      expect(response.body.data.created_count).toBe(3);
+      expect(response.body.data.first_ref_number).toBe(1);
+      expect(response.body.data.last_ref_number).toBe(3);
     });
   });
 

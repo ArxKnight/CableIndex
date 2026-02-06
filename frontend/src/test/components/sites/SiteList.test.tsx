@@ -35,6 +35,19 @@ const mockProps = {
 describe('SiteList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    // Default test persona: regular USER (cannot create sites under new RBAC)
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      user: {
+        ...(globalThis as any).__TEST_AUTH__?.user,
+        role: 'USER',
+      },
+      memberships: [],
+      isAuthenticated: true,
+      isLoading: false,
+    };
+
     vi.mocked(apiClient.getSites).mockResolvedValue({
       success: true,
       data: {
@@ -112,6 +125,17 @@ describe('SiteList', () => {
 
   it('should call onCreateSite when create button is clicked', async () => {
     const user = userEvent.setup();
+
+    // GLOBAL_ADMIN can create sites
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      user: {
+        ...(globalThis as any).__TEST_AUTH__?.user,
+        role: 'GLOBAL_ADMIN',
+      },
+      memberships: [],
+    };
+
     render(<SiteList {...mockProps} />);
 
     await waitFor(() => {
@@ -142,6 +166,33 @@ describe('SiteList', () => {
         pagination: { total: 0, limit: 50, offset: 0, has_more: false },
       },
     });
+
+    render(<SiteList {...mockProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('No sites found')).toBeInTheDocument();
+      // Regular users should not see create-site CTAs
+      expect(screen.queryByText('Create Your First Site')).not.toBeInTheDocument();
+    });
+  });
+
+  it('should show create CTA in empty state for GLOBAL_ADMIN', async () => {
+    vi.mocked(apiClient.getSites).mockResolvedValue({
+      success: true,
+      data: {
+        sites: [],
+        pagination: { total: 0, limit: 50, offset: 0, has_more: false },
+      },
+    });
+
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      user: {
+        ...(globalThis as any).__TEST_AUTH__?.user,
+        role: 'GLOBAL_ADMIN',
+      },
+      memberships: [],
+    };
 
     render(<SiteList {...mockProps} />);
 

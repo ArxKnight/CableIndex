@@ -55,12 +55,11 @@ import { Site, SiteRole } from '../../types';
 import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
 import { useAuth } from '../../contexts/AuthContext';
 import { copyTextToClipboard } from '../../lib/clipboard';
+import { usePermissions } from '../../hooks/usePermissions';
+import { normalizeUsername, usernameSchema } from '../../lib/policy';
 
 const inviteSchema = z.object({
-  username: z
-    .string()
-    .min(1, 'Username is required')
-    .max(100, 'Username must be less than 100 characters'),
+  username: usernameSchema('Username', { min: 1, max: 100 }),
   email: z.string().email('Please enter a valid email address'),
   expires_in_days: z.coerce.number().int().min(1).max(30).default(7),
 });
@@ -86,6 +85,7 @@ interface Invitation {
 
 const UserInvitations: React.FC = () => {
   const { user } = useAuth();
+  const { isAdmin, isGlobalAdmin } = usePermissions();
   const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [inviteDialogMode, setInviteDialogMode] = useState<'form' | 'success'>('form');
   const [selectedSites, setSelectedSites] = useState<Record<number, SiteRole>>({});
@@ -100,7 +100,7 @@ const UserInvitations: React.FC = () => {
   const [resendExpiresInDays, setResendExpiresInDays] = useState(7);
   const directInviteInputRef = React.useRef<HTMLInputElement | null>(null);
   const queryClient = useQueryClient();
-  const canInvite = user?.role === 'GLOBAL_ADMIN' || user?.role === 'ADMIN';
+  const canInvite = isAdmin;
 
   const {
     register,
@@ -121,6 +121,10 @@ const UserInvitations: React.FC = () => {
   // Fetch pending invitations
   const { data: invitationsData, isLoading } = useQuery<{ invitations: Invitation[] }>({
     queryKey: ['admin', 'invitations'],
+    // Global QueryClient uses a 5 minute staleTime; for invitations we prefer correctness
+    // so the list reflects newly created/cancelled invites immediately when navigating.
+    staleTime: 0,
+    refetchOnMount: 'always',
     queryFn: async (): Promise<{ invitations: Invitation[] }> => {
       // Backend returns { success: true, data: Invitation[] }
       // Normalize to { invitations: Invitation[] } for this component.
@@ -151,15 +155,61 @@ const UserInvitations: React.FC = () => {
     mutationFn: async (data: { username: string; email: string; sites: Array<{ site_id: number; site_role: SiteRole }>; expires_in_days: number }) => {
       return apiClient.inviteUser(data.email, data.sites, data.username, data.expires_in_days);
     },
-    onSuccess: (response) => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
-      queryClient.refetchQueries({ queryKey: ['admin', 'invitations'] });
-      const token = (response.data as any)?.token as string | undefined;
-      const inviteUrlFromApi = (response.data as any)?.invite_url as string | undefined;
+    onSuccess: async (response) => {
+      const responseData = (response.data as any) ?? {};
+      const token = responseData?.token as string | undefined;
+      const inviteUrlFromApi = responseData?.invite_url as string | undefined;
       const inviteUrl = inviteUrlFromApi || (token ? `${window.location.origin}/auth/register?token=${token}` : null);
 
-      const emailSent = Boolean((response.data as any)?.email_sent);
-      const emailError = (response.data as any)?.email_error as string | undefined;
+      // Optimistically insert the new invitation row so the table updates instantly.
+      // The backend invite endpoint doesn't return the same shape as the list endpoint,
+      // so we best-effort fill the missing fields and then invalidate to sync.
+      const createdId = Number(responseData?.id);
+      const createdEmail = String(responseData?.email || '').trim();
+      const createdUsername = (responseData?.username as string | undefined) ?? undefined;
+      const createdExpiresAt = (responseData?.expiresAt as string | undefined) ?? (responseData?.expires_at as string | undefined);
+      const createdSites = Array.isArray(responseData?.sites) ? responseData.sites : [];
+
+      if (Number.isFinite(createdId) && createdId > 0) {
+        queryClient.setQueryData<{ invitations: Invitation[] }>(['admin', 'invitations'], (old) => {
+          const prev = old?.invitations ?? [];
+          const inviterName = user?.username || user?.email || '—';
+
+          const sitesEnriched: Invitation['sites'] = createdSites.map((s: any) => {
+            const siteId = Number(s.site_id);
+            const siteRole = (s.site_role as SiteRole) || 'SITE_USER';
+            const siteMatch = availableSites.find((as: Site) => as.id === siteId);
+            return {
+              site_id: siteId,
+              site_role: siteRole,
+              site_name: siteMatch?.name,
+              site_code: siteMatch?.code,
+            };
+          });
+
+          const optimisticInvitation: Invitation = {
+            id: createdId,
+            email: createdEmail,
+            username: createdUsername,
+            expires_at: createdExpiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            used_at: null,
+            created_at: new Date().toISOString(),
+            invited_by_name: inviterName,
+            sites: sitesEnriched,
+            ...(token ? { token } : {}),
+          };
+
+          const next = [optimisticInvitation, ...prev.filter((i) => i.id !== createdId)];
+          return { invitations: next };
+        });
+      }
+
+      // Always sync with the backend list shortly after.
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
+      await queryClient.refetchQueries({ queryKey: ['admin', 'invitations'] });
+
+      const emailSent = Boolean(responseData?.email_sent);
+      const emailError = responseData?.email_error as string | undefined;
       setInviteEmailStatus(emailSent ? { email_sent: true } : { email_sent: false, email_error: emailError });
 
       if (inviteUrl) {
@@ -168,9 +218,7 @@ const UserInvitations: React.FC = () => {
         setCreatedInviteUrl(null);
       }
 
-      setInviteDialogMode('success');
-
-      toast.success('Invitation created successfully');
+      toast.success(`Invitation created for ${createdEmail || 'user'}`);
 
       // Best-effort auto-copy; never throw if clipboard API is unavailable
       if (inviteUrl) {
@@ -185,6 +233,10 @@ const UserInvitations: React.FC = () => {
           }
         })();
       }
+
+      // Clear form state and close dialog so the admin can immediately see the updated table.
+      resetInviteDialogState();
+      setIsInviteDialogOpen(false);
     },
     onError: (error: any) => {
       toast.error(error.message || 'Failed to send invitation');
@@ -196,7 +248,8 @@ const UserInvitations: React.FC = () => {
       return apiClient.rotateInvitationLink(invitationId);
     },
     onSuccess: async (response) => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
+      await queryClient.refetchQueries({ queryKey: ['admin', 'invitations'] });
       const inviteUrl = (response.data as any)?.invite_url as string | undefined;
       if (!inviteUrl) {
         toast.error('Failed to generate invite link');
@@ -216,7 +269,8 @@ const UserInvitations: React.FC = () => {
       return apiClient.resendInvitation(payload.invitationId, { expires_in_days: payload.expires_in_days });
     },
     onSuccess: async (response) => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
+      await queryClient.refetchQueries({ queryKey: ['admin', 'invitations'] });
       const inviteUrl = (response.data as any)?.invite_url as string | undefined;
       const emailSent = Boolean((response.data as any)?.email_sent);
       const emailError = (response.data as any)?.email_error as string | undefined;
@@ -245,8 +299,9 @@ const UserInvitations: React.FC = () => {
     mutationFn: async (invitationId: number) => {
       return apiClient.delete(`/admin/invitations/${invitationId}`);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
+      await queryClient.refetchQueries({ queryKey: ['admin', 'invitations'] });
       toast.success('Invitation cancelled successfully');
     },
     onError: (error: any) => {
@@ -260,7 +315,7 @@ const UserInvitations: React.FC = () => {
       site_role: siteRole,
     }));
 
-    if (sites.length === 0 && hasAvailableSites) {
+    if (!isGlobalAdmin && sites.length === 0 && hasAvailableSites) {
       toast.error('Select at least one site');
       return;
     }
@@ -279,7 +334,7 @@ const UserInvitations: React.FC = () => {
 
   const getRoleBadgeVariant = (role: SiteRole) => {
     switch (role) {
-      case 'ADMIN':
+      case 'SITE_ADMIN':
         return 'destructive';
       default:
         return 'outline';
@@ -403,7 +458,7 @@ const UserInvitations: React.FC = () => {
                           id="username"
                           type="text"
                           placeholder="jdoe"
-                          {...register('username')}
+                          {...register('username', { setValueAs: normalizeUsername })}
                         />
                         {errors.username && (
                           <p className="text-sm text-red-600">{errors.username.message}</p>
@@ -439,7 +494,7 @@ const UserInvitations: React.FC = () => {
                                           delete updated[site.id];
                                           return updated;
                                         }
-                                        return { ...prev, [site.id]: 'USER' };
+                                        return { ...prev, [site.id]: 'SITE_USER' };
                                       });
                                     }}
                                   />
@@ -459,8 +514,8 @@ const UserInvitations: React.FC = () => {
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      <SelectItem value="USER">User</SelectItem>
-                                      <SelectItem value="ADMIN">Admin</SelectItem>
+                                      <SelectItem value="SITE_USER">User</SelectItem>
+                                      <SelectItem value="SITE_ADMIN">Admin</SelectItem>
                                     </SelectContent>
                                   </Select>
                                 )}

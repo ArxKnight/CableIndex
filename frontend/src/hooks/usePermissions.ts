@@ -21,13 +21,14 @@ export interface UserPermissions {
 
 export interface PermissionHook {
   hasRole: (role: UserRole) => boolean;
+  canAdministerSite: (siteId: number) => boolean;
   canAccess: (tool: string) => boolean;
   canCreate: (tool: string) => boolean;
   canRead: (tool: string) => boolean;
   canUpdate: (tool: string) => boolean;
   canDelete: (tool: string) => boolean;
   isAdmin: boolean;
-  isModerator: boolean;
+  isGlobalAdmin: boolean;
   isUser: boolean;
   permissions: UserPermissions;
 }
@@ -36,7 +37,17 @@ export interface PermissionHook {
  * Hook to check user permissions based on role
  */
 export const usePermissions = (): PermissionHook => {
-  const { user } = useAuth();
+  const { user, memberships } = useAuth();
+
+  const isGlobalAdmin = user?.role === 'GLOBAL_ADMIN';
+  const adminSiteIds = useMemo(() => {
+    return (memberships ?? [])
+      .filter(m => m.site_role === 'SITE_ADMIN')
+      .map(m => m.site_id)
+      .filter((id): id is number => Number.isFinite(id));
+  }, [memberships]);
+
+  const hasAdminAccess = Boolean(isGlobalAdmin || adminSiteIds.length > 0);
 
   const permissions = useMemo((): UserPermissions => {
     if (!user) {
@@ -52,50 +63,43 @@ export const usePermissions = (): PermissionHook => {
       };
     }
 
-    // Define permissions based on role
-    switch (user.role) {
-      case 'GLOBAL_ADMIN':
-        return {
-          labels: { create: true, read: true, update: true, delete: true },
-          sites: { create: true, read: true, update: true, delete: true },
-          port_labels: { create: true, read: true, update: true, delete: true },
-          pdu_labels: { create: true, read: true, update: true, delete: true },
-          profile: { create: false, read: true, update: true, delete: false },
-          users: { create: true, read: true, update: true, delete: true },
-          admin: { create: true, read: true, update: true, delete: true },
-        };
-
-      case 'ADMIN':
-        return {
-          labels: { create: true, read: true, update: true, delete: true },
-          sites: { create: true, read: true, update: true, delete: true },
-          port_labels: { create: true, read: true, update: true, delete: false },
-          pdu_labels: { create: true, read: true, update: true, delete: false },
-          profile: { create: false, read: true, update: true, delete: false },
-          users: { create: false, read: true, update: false, delete: false },
-          admin: { create: false, read: true, update: false, delete: false },
-        };
-
-      case 'USER':
-      default:
-        return {
-          labels: { create: true, read: true, update: true, delete: true },
-          sites: { create: false, read: true, update: false, delete: false },
-          port_labels: { create: true, read: true, update: false, delete: false },
-          pdu_labels: { create: true, read: true, update: false, delete: false },
-          profile: { create: false, read: true, update: true, delete: false },
-          users: { create: false, read: false, update: false, delete: false },
-          admin: { create: false, read: false, update: false, delete: false },
-        };
+    if (isGlobalAdmin) {
+      return {
+        labels: { create: true, read: true, update: true, delete: true },
+        sites: { create: true, read: true, update: true, delete: true },
+        port_labels: { create: true, read: true, update: true, delete: true },
+        pdu_labels: { create: true, read: true, update: true, delete: true },
+        profile: { create: false, read: true, update: true, delete: false },
+        users: { create: true, read: true, update: true, delete: true },
+        admin: { create: true, read: true, update: true, delete: true },
+      };
     }
-  }, [user]);
+
+    // Default USER permissions; SITE_ADMIN gets extra access via memberships.
+    const base = {
+      labels: { create: true, read: true, update: true, delete: true },
+      sites: { create: false, read: true, update: false, delete: false },
+      port_labels: { create: true, read: true, update: false, delete: false },
+      pdu_labels: { create: true, read: true, update: false, delete: false },
+      profile: { create: false, read: true, update: true, delete: false },
+      users: { create: false, read: false, update: false, delete: false },
+      admin: { create: false, read: false, update: false, delete: false },
+    } satisfies UserPermissions;
+
+    if (!hasAdminAccess) return base;
+
+    return {
+      ...base,
+      users: { create: false, read: true, update: true, delete: false },
+      admin: { create: true, read: true, update: true, delete: false },
+    };
+  }, [user, isGlobalAdmin, hasAdminAccess]);
 
   const hasRole = (role: UserRole): boolean => {
     if (!user) return false;
 
     const roleHierarchy: Record<UserRole, number> = {
-      GLOBAL_ADMIN: 3,
-      ADMIN: 2,
+      GLOBAL_ADMIN: 2,
       USER: 1,
     };
 
@@ -130,15 +134,22 @@ export const usePermissions = (): PermissionHook => {
     return toolPermissions?.delete || false;
   };
 
+  const canAdministerSite = (siteId: number): boolean => {
+    if (!user) return false;
+    if (isGlobalAdmin) return true;
+    return adminSiteIds.includes(siteId);
+  };
+
   return {
     hasRole,
+    canAdministerSite,
     canAccess,
     canCreate,
     canRead,
     canUpdate,
     canDelete,
-    isAdmin: hasRole('ADMIN') || user?.role === 'GLOBAL_ADMIN',
-    isModerator: hasRole('ADMIN') || user?.role === 'GLOBAL_ADMIN',
+    isAdmin: hasAdminAccess,
+    isGlobalAdmin,
     isUser: user?.role === 'USER',
     permissions,
   };

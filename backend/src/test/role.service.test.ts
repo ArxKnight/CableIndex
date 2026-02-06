@@ -27,11 +27,11 @@ describe('Role Service', () => {
   });
 
   it('assignRole updates the stored role', async () => {
-    const success = await roleService.assignRole(testUserId, 'ADMIN');
+    const success = await roleService.assignRole(testUserId, 'GLOBAL_ADMIN');
     expect(success).toBe(true);
 
     const role = await roleService.getUserRole(testUserId);
-    expect(role).toBe('ADMIN');
+    expect(role).toBe('GLOBAL_ADMIN');
   });
 
   it('getUserRole returns null for unknown user', async () => {
@@ -41,12 +41,11 @@ describe('Role Service', () => {
 
   it('hasRole respects role hierarchy', async () => {
     expect(await roleService.hasRole(testUserId, 'USER')).toBe(true);
-    expect(await roleService.hasRole(testUserId, 'ADMIN')).toBe(false);
-
-    await roleService.assignRole(testUserId, 'ADMIN');
-    expect(await roleService.hasRole(testUserId, 'USER')).toBe(true);
-    expect(await roleService.hasRole(testUserId, 'ADMIN')).toBe(true);
     expect(await roleService.hasRole(testUserId, 'GLOBAL_ADMIN')).toBe(false);
+
+    await roleService.assignRole(testUserId, 'GLOBAL_ADMIN');
+    expect(await roleService.hasRole(testUserId, 'USER')).toBe(true);
+    expect(await roleService.hasRole(testUserId, 'GLOBAL_ADMIN')).toBe(true);
   });
 
   it('getAllUsersWithRoles returns users (paged)', async () => {
@@ -54,13 +53,13 @@ describe('Role Service', () => {
       email: 'admin@example.com',
       username: 'Admin User',
       password: 'AdminPassword123!',
-      role: 'ADMIN',
+      role: 'GLOBAL_ADMIN',
     });
 
     const users = await roleService.getAllUsersWithRoles(50, 0);
     expect(users.length).toBe(2);
     const admin = users.find(u => u.email === 'admin@example.com');
-    expect(admin?.role).toBe('ADMIN');
+    expect(admin?.role).toBe('GLOBAL_ADMIN');
   });
 
   it('countUsersByRole returns counts for known roles', async () => {
@@ -68,12 +67,11 @@ describe('Role Service', () => {
       email: 'admin@example.com',
       username: 'Admin User',
       password: 'AdminPassword123!',
-      role: 'ADMIN',
+      role: 'GLOBAL_ADMIN',
     });
 
     const counts = await roleService.countUsersByRole();
     expect(counts.USER).toBe(1);
-    expect(counts.ADMIN).toBe(1);
-    expect(counts.GLOBAL_ADMIN).toBe(0);
+    expect(counts.GLOBAL_ADMIN).toBe(1);
   });
 });

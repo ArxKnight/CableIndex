@@ -66,12 +66,12 @@ describe('Password Utilities', () => {
       expect(result.errors).toContain('Password must contain at least one uppercase letter');
     });
 
-    it('should reject password without lowercase', () => {
+    it('should allow password without lowercase', () => {
       const password = 'UPPERCASE123!';
       const result = validatePassword(password);
-      
-      expect(result.isValid).toBe(false);
-      expect(result.errors).toContain('Password must contain at least one lowercase letter');
+
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
     });
 
     it('should reject password without number', () => {

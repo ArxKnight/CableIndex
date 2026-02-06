@@ -13,7 +13,6 @@ import {
   ChevronRight,
   CheckSquare,
   Square,
-  Eye,
   X,
   Plus
 } from 'lucide-react';
@@ -440,19 +439,19 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
                   {showSiteColumn ? (
                     <>
                       <div className="col-span-2">Site</div>
-                      <div className={multiSelectEnabled ? 'col-span-2' : 'col-span-3'}>Cable Source</div>
-                      <div className={multiSelectEnabled ? 'col-span-2' : 'col-span-3'}>Cable Destination</div>
+                      <div className="col-span-2">Cable Source</div>
+                      <div className="col-span-2">Cable Destination</div>
+                      <div className={multiSelectEnabled ? 'col-span-1' : 'col-span-2'}>Cable Type</div>
                       <div className="col-span-2">Created By</div>
                     </>
                   ) : (
                     <>
-                      <div className={multiSelectEnabled ? 'col-span-3' : 'col-span-4'}>Cable Source</div>
-                      <div className={multiSelectEnabled ? 'col-span-3' : 'col-span-4'}>Cable Destination</div>
+                      <div className={multiSelectEnabled ? 'col-span-3' : 'col-span-3'}>Cable Source</div>
+                      <div className={multiSelectEnabled ? 'col-span-2' : 'col-span-3'}>Cable Destination</div>
+                      <div className="col-span-2">Cable Type</div>
                       <div className="col-span-2">Created By</div>
                     </>
                   )}
-
-                  {multiSelectEnabled && <div className="col-span-1 text-right">Actions</div>}
                 </div>
               </div>
 
@@ -531,17 +530,23 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
                             </div>
 
                             <div
-                              className={(multiSelectEnabled ? 'col-span-2' : 'col-span-3') + ' truncate'}
+                                className={'col-span-2 truncate'}
                               title={sourceText || undefined}
                             >
                               {sourceText || '—'}
                             </div>
                             <div
-                              className={(multiSelectEnabled ? 'col-span-2' : 'col-span-3') + ' truncate'}
+                                className={'col-span-2 truncate'}
                               title={destinationText || undefined}
                             >
                               {destinationText || '—'}
                             </div>
+                              <div
+                                className={(multiSelectEnabled ? 'col-span-1' : 'col-span-2') + ' truncate'}
+                                title={label.cable_type?.name || undefined}
+                              >
+                                {label.cable_type?.name || '—'}
+                              </div>
                             <div className="col-span-2 text-muted-foreground">
                               {formatCreatedDisplay(label)}
                             </div>
@@ -549,39 +554,27 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
                         ) : (
                           <>
                             <div
-                              className={(multiSelectEnabled ? 'col-span-3' : 'col-span-4') + ' truncate'}
+                                className={(multiSelectEnabled ? 'col-span-3' : 'col-span-3') + ' truncate'}
                               title={sourceText || undefined}
                             >
                               {sourceText || '—'}
                             </div>
                             <div
-                              className={(multiSelectEnabled ? 'col-span-3' : 'col-span-4') + ' truncate'}
+                                className={(multiSelectEnabled ? 'col-span-2' : 'col-span-3') + ' truncate'}
                               title={destinationText || undefined}
                             >
                               {destinationText || '—'}
                             </div>
+                              <div
+                                className={'col-span-2 truncate'}
+                                title={label.cable_type?.name || undefined}
+                              >
+                                {label.cable_type?.name || '—'}
+                              </div>
                             <div className="col-span-2 text-muted-foreground">
                               {formatCreatedDisplay(label)}
                             </div>
                           </>
-                        )}
-
-                        {multiSelectEnabled && (
-                          <div className="col-span-1 flex justify-end">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openDetails(label);
-                              }}
-                              aria-label="Open label details"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </div>
                         )}
                       </div>
                     </div>

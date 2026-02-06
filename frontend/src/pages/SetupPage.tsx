@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CheckCircle, Database, User, Settings, AlertCircle, Loader2 } from 'lucide-react';
+import { normalizeUsername, passwordSchema, usernameSchema } from '@/lib/policy';
 
 const setupSchema = z.object({
   database: z.object({
@@ -21,8 +22,8 @@ const setupSchema = z.object({
   }),
   admin: z.object({
     email: z.string().email('Invalid email address'),
-    password: z.string().min(8, 'Password must be at least 8 characters'),
-    username: z.string().min(1, 'Username is required'),
+    password: passwordSchema('Password'),
+    username: usernameSchema('Username', { min: 1, max: 100 }),
   }),
 });
 
@@ -303,7 +304,7 @@ const SetupPage: React.FC = () => {
                     <Label htmlFor="admin-username">Global Admin Username</Label>
                     <Input
                       id="admin-username"
-                      {...register('admin.username')}
+                      {...register('admin.username', { setValueAs: normalizeUsername })}
                       placeholder="admin"
                     />
                     {errors.admin?.username && (

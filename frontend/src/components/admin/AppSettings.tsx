@@ -27,7 +27,7 @@ const emptyToUndefined = (value: unknown) => {
 };
 
 const settingsSchema = z.object({
-  default_user_role: z.enum(['user', 'moderator']),
+  default_user_role: z.enum(['user']),
   maintenance_mode: z.boolean(),
   maintenance_message: z.string().max(200).optional(),
   smtp_host: z.preprocess(emptyToUndefined, z.string().max(255).optional()),
@@ -41,7 +41,7 @@ const settingsSchema = z.object({
 type SettingsFormData = z.infer<typeof settingsSchema>;
 
 interface AppSettingsData {
-  default_user_role: 'user' | 'moderator';
+  default_user_role: 'user';
   maintenance_mode: boolean;
   maintenance_message?: string;
   smtp_host?: string;

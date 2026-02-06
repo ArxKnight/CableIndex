@@ -219,7 +219,7 @@ router.get('/:id', authenticateToken, resolveSiteAccess(req => Number(req.params
  * POST /api/sites
  * Create a new site
  */
-router.post('/', authenticateToken, requireGlobalRole('GLOBAL_ADMIN', 'ADMIN'), async (req: Request, res: Response) => {
+router.post('/', authenticateToken, requireGlobalRole('GLOBAL_ADMIN'), async (req: Request, res: Response) => {
   try {
     // Validate request body
     const siteDataParsed = createSiteSchema.parse(req.body);
@@ -260,11 +260,12 @@ router.post('/', authenticateToken, requireGlobalRole('GLOBAL_ADMIN', 'ADMIN'), 
   }
 });
 
+
 /**
  * PUT /api/sites/:id
  * Update an existing site
  */
-router.put('/:id', authenticateToken, resolveSiteAccess(req => Number(req.params.id)), requireSiteRole('ADMIN'), async (req: Request, res: Response) => {
+router.put('/:id', authenticateToken, resolveSiteAccess(req => Number(req.params.id)), requireSiteRole('SITE_ADMIN'), async (req: Request, res: Response) => {
   try {
     // Validate site ID and request body
     const { id } = siteIdSchema.parse(req.params);
@@ -343,7 +344,7 @@ router.get('/:id/locations', authenticateToken, resolveSiteAccess(req => Number(
  * POST /api/sites/:id/locations
  * Create a structured location for a site (site admins only)
  */
-router.post('/:id/locations', authenticateToken, resolveSiteAccess(req => Number(req.params.id)), requireSiteRole('ADMIN'), async (req: Request, res: Response) => {
+router.post('/:id/locations', authenticateToken, resolveSiteAccess(req => Number(req.params.id)), requireSiteRole('SITE_ADMIN'), async (req: Request, res: Response) => {
   try {
     const { id } = siteIdSchema.parse(req.params);
     const dataParsed = createLocationSchema.parse(req.body);
@@ -401,7 +402,7 @@ router.post('/:id/locations', authenticateToken, resolveSiteAccess(req => Number
  * PUT /api/sites/:id/locations/:locationId
  * Update a structured location (site admins only)
  */
-router.put('/:id/locations/:locationId', authenticateToken, resolveSiteAccess(req => Number(req.params.id)), requireSiteRole('ADMIN'), async (req: Request, res: Response) => {
+router.put('/:id/locations/:locationId', authenticateToken, resolveSiteAccess(req => Number(req.params.id)), requireSiteRole('SITE_ADMIN'), async (req: Request, res: Response) => {
   try {
     const { id } = siteIdSchema.parse(req.params);
     const { locationId } = locationIdSchema.parse(req.params);
@@ -472,7 +473,7 @@ router.get(
   '/:id/locations/:locationId/usage',
   authenticateToken,
   resolveSiteAccess(req => Number(req.params.id)),
-  requireSiteRole('ADMIN'),
+  requireSiteRole('SITE_ADMIN'),
   async (req: Request, res: Response) => {
     try {
       const { id } = siteIdSchema.parse(req.params);
@@ -511,7 +512,7 @@ router.get(
  * DELETE /api/sites/:id/locations/:locationId
  * Delete a structured location (site admins only)
  */
-router.delete('/:id/locations/:locationId', authenticateToken, resolveSiteAccess(req => Number(req.params.id)), requireSiteRole('ADMIN'), async (req: Request, res: Response) => {
+router.delete('/:id/locations/:locationId', authenticateToken, resolveSiteAccess(req => Number(req.params.id)), requireSiteRole('SITE_ADMIN'), async (req: Request, res: Response) => {
   try {
     const { id } = siteIdSchema.parse(req.params);
     const { locationId } = locationIdSchema.parse(req.params);
@@ -609,7 +610,7 @@ router.post(
   '/:id/locations/:locationId/reassign-and-delete',
   authenticateToken,
   resolveSiteAccess(req => Number(req.params.id)),
-  requireSiteRole('ADMIN'),
+  requireSiteRole('SITE_ADMIN'),
   async (req: Request, res: Response) => {
     try {
       const { id } = siteIdSchema.parse(req.params);
@@ -719,7 +720,7 @@ router.post(
   '/:id/cable-types',
   authenticateToken,
   resolveSiteAccess(req => Number(req.params.id)),
-  requireSiteRole('ADMIN'),
+  requireSiteRole('SITE_ADMIN'),
   async (req: Request, res: Response) => {
     try {
       const { id } = siteIdSchema.parse(req.params);
@@ -777,7 +778,7 @@ router.put(
   '/:id/cable-types/:cableTypeId',
   authenticateToken,
   resolveSiteAccess(req => Number(req.params.id)),
-  requireSiteRole('ADMIN'),
+  requireSiteRole('SITE_ADMIN'),
   async (req: Request, res: Response) => {
     try {
       const { id } = siteIdSchema.parse(req.params);
@@ -842,7 +843,7 @@ router.delete(
   '/:id/cable-types/:cableTypeId',
   authenticateToken,
   resolveSiteAccess(req => Number(req.params.id)),
-  requireSiteRole('ADMIN'),
+  requireSiteRole('SITE_ADMIN'),
   async (req: Request, res: Response) => {
     try {
       const { id } = siteIdSchema.parse(req.params);
@@ -901,7 +902,7 @@ router.delete(
  * By default, deletion is blocked if the site has labels.
  * To delete the site and all associated labels, pass `?cascade=true`.
  */
-router.delete('/:id', authenticateToken, resolveSiteAccess(req => Number(req.params.id)), requireSiteRole('ADMIN'), async (req: Request, res: Response) => {
+router.delete('/:id', authenticateToken, requireGlobalRole('GLOBAL_ADMIN'), async (req: Request, res: Response) => {
   try {
     // Validate site ID
     const { id } = siteIdSchema.parse(req.params);

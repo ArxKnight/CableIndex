@@ -11,7 +11,7 @@ const mockUser = {
   id: 1,
   email: 'test@example.com',
   username: 'John Doe',
-  role: 'user' as const,
+  role: 'USER' as const,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
 };
@@ -73,7 +73,7 @@ describe('ProfilePage', () => {
     expect(screen.getByText('Username')).toBeInTheDocument();
     expect(screen.getByText('John Doe')).toBeInTheDocument();
     expect(screen.getByText('test@example.com')).toBeInTheDocument();
-    expect(screen.getByText('user')).toBeInTheDocument();
+    expect(screen.getByText('USER')).toBeInTheDocument();
   });
 
   it('should format and display member since date', () => {
@@ -86,7 +86,7 @@ describe('ProfilePage', () => {
   it('should display role with correct styling', () => {
     renderProfilePage();
 
-    const roleElement = screen.getByText('user');
+    const roleElement = screen.getByText('USER');
     expect(roleElement).toHaveClass('text-primary', 'bg-primary/10');
   });
 
@@ -126,7 +126,7 @@ describe('ProfilePage', () => {
   });
 
   it('should handle admin role styling', () => {
-    const adminUser = { ...mockUser, role: 'admin' as const };
+    const adminUser = { ...mockUser, role: 'GLOBAL_ADMIN' as const };
 
     mockUseAuth.mockReturnValue({
       user: adminUser,
@@ -135,22 +135,8 @@ describe('ProfilePage', () => {
 
     renderProfilePage();
 
-    const roleElement = screen.getByText('admin');
+    const roleElement = screen.getByText('GLOBAL_ADMIN');
     expect(roleElement).toHaveClass('text-destructive', 'bg-destructive/10');
-  });
-
-  it('should handle moderator role styling', () => {
-    const moderatorUser = { ...mockUser, role: 'moderator' as const };
-
-    mockUseAuth.mockReturnValue({
-      user: moderatorUser,
-      updateUser: vi.fn(),
-    });
-
-    renderProfilePage();
-
-    const roleElement = screen.getByText('moderator');
-    expect(roleElement).toHaveClass('text-amber-600', 'bg-amber-100');
   });
 
   it('should not render when user is null', () => {

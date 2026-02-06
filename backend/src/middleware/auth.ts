@@ -31,6 +31,12 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
     }
 
     const decoded = verifyToken(token);
+    // Backward compatibility: normalize legacy global roles.
+    if (decoded) {
+      const rawRole = String((decoded as any).role ?? '').toUpperCase();
+      if (rawRole === 'ADMIN') (decoded as any).role = 'GLOBAL_ADMIN';
+      if (rawRole === 'MODERATOR') (decoded as any).role = 'USER';
+    }
     req.user = decoded;
     req.userId = decoded.userId;
     next();
@@ -56,6 +62,12 @@ export const optionalAuth = (req: Request, res: Response, next: NextFunction) =>
     
     if (token) {
       const decoded = verifyToken(token);
+      // Backward compatibility: normalize legacy global roles.
+      if (decoded) {
+        const rawRole = String((decoded as any).role ?? '').toUpperCase();
+        if (rawRole === 'ADMIN') (decoded as any).role = 'GLOBAL_ADMIN';
+        if (rawRole === 'MODERATOR') (decoded as any).role = 'USER';
+      }
       req.user = decoded;
       req.userId = decoded.userId;
     }

@@ -38,8 +38,7 @@ export class RoleService {
     if (!userRole) return false;
 
     const roleHierarchy: Record<UserRole, number> = {
-      GLOBAL_ADMIN: 3,
-      ADMIN: 2,
+      GLOBAL_ADMIN: 2,
       USER: 1,
     };
 
@@ -63,10 +62,21 @@ export class RoleService {
     const finalLimit = Math.max(0, safeLimit);
     const finalOffset = Math.max(0, safeOffset);
 
-    const query = `SELECT id, email, username, role, is_active, created_at, updated_at
-         FROM users 
-         ORDER BY created_at DESC
-         LIMIT ${finalLimit} OFFSET ${finalOffset}`;
+    const query = `SELECT
+          id,
+          email,
+          username,
+          CASE
+            WHEN role = 'ADMIN' THEN 'GLOBAL_ADMIN'
+            WHEN role = 'MODERATOR' THEN 'USER'
+            ELSE role
+          END as role,
+          is_active,
+          created_at,
+          updated_at
+        FROM users
+        ORDER BY created_at DESC
+        LIMIT ${finalLimit} OFFSET ${finalOffset}`;
 
     const rows = await this.adapter.query(query);
     
@@ -86,19 +96,26 @@ export class RoleService {
    */
   async countUsersByRole(): Promise<Record<UserRole, number>> {
     const results = await this.adapter.query(
-      `SELECT role, COUNT(*) as count 
-       FROM users 
+      `SELECT
+          CASE
+            WHEN role = 'ADMIN' THEN 'GLOBAL_ADMIN'
+            WHEN role = 'MODERATOR' THEN 'USER'
+            ELSE role
+          END as role,
+          COUNT(*) as count
+       FROM users
        GROUP BY role`
     ) as Array<{ role: UserRole; count: number }>;
     
     const counts: Record<UserRole, number> = {
       GLOBAL_ADMIN: 0,
-      ADMIN: 0,
       USER: 0,
     };
 
     results.forEach(result => {
-      counts[result.role] = result.count;
+      if (result.role === 'GLOBAL_ADMIN' || result.role === 'USER') {
+        counts[result.role] = result.count;
+      }
     });
 
     return counts;

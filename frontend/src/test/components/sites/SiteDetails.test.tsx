@@ -55,6 +55,19 @@ const mockProps = {
 describe('SiteDetails', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    // Default to a non-admin user (no site admin memberships)
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      user: {
+        id: 1,
+        email: 'test@example.com',
+        username: 'Test User',
+        role: 'USER',
+      },
+      memberships: [],
+    };
+
     vi.mocked(apiClient.getSite).mockResolvedValue({
       success: true,
       data: { site: mockSite },
@@ -134,6 +147,12 @@ describe('SiteDetails', () => {
   });
 
   it('should call onEdit when edit button is clicked', async () => {
+    // Make viewer a SITE_ADMIN for this site
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      memberships: [{ site_id: 1, site_role: 'SITE_ADMIN' }],
+    };
+
     const user = userEvent.setup();
     render(
       <MemoryRouter>
@@ -151,7 +170,34 @@ describe('SiteDetails', () => {
     expect(mockProps.onEdit).toHaveBeenCalledWith(mockSite);
   });
 
-  it('should call onDelete when delete button is clicked', async () => {
+  it('should not show Edit Site & Delete Site buttons for non-admin user', async () => {
+    render(
+      <MemoryRouter>
+        <SiteDetails {...mockProps} />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('Edit Site')).not.toBeInTheDocument();
+    expect(screen.queryByText('Delete Site')).not.toBeInTheDocument();
+  });
+
+  it('should call onDelete when delete button is clicked (Global Admin only)', async () => {
+    // Make viewer a GLOBAL_ADMIN
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      user: {
+        id: 1,
+        email: 'admin@example.com',
+        username: 'Admin',
+        role: 'GLOBAL_ADMIN',
+      },
+      memberships: [],
+    };
+
     const user = userEvent.setup();
     const siteWithoutLabels = { ...mockSite, label_count: 0 };
     vi.mocked(apiClient.getSite).mockResolvedValue({
@@ -175,7 +221,18 @@ describe('SiteDetails', () => {
     expect(mockProps.onDelete).toHaveBeenCalledWith(siteWithoutLabels);
   });
 
-  it('should allow delete button click even when site has labels', async () => {
+  it('should allow delete button click even when site has labels (Global Admin only)', async () => {
+    (globalThis as any).__TEST_AUTH__ = {
+      ...(globalThis as any).__TEST_AUTH__,
+      user: {
+        id: 1,
+        email: 'admin@example.com',
+        username: 'Admin',
+        role: 'GLOBAL_ADMIN',
+      },
+      memberships: [],
+    };
+
     const user = userEvent.setup();
     render(
       <MemoryRouter>

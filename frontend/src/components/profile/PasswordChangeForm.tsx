@@ -10,17 +10,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import apiClient from '../../lib/api';
+import { passwordSchema as passwordPolicySchema } from '../../lib/policy';
 
-const passwordSchema = z.object({
+const formSchema = z.object({
   current_password: z.string().min(1, 'Current password is required'),
-  new_password: z.string().min(8, 'New password must be at least 8 characters'),
+  new_password: passwordPolicySchema('New password'),
   confirm_password: z.string().min(1, 'Please confirm your new password'),
 }).refine((data) => data.new_password === data.confirm_password, {
   message: "Passwords don't match",
   path: ["confirm_password"],
 });
 
-type PasswordFormData = z.infer<typeof passwordSchema>;
+type PasswordFormData = z.infer<typeof formSchema>;
 
 interface PasswordChangeFormProps {
   onSuccess?: () => void;
@@ -40,7 +41,7 @@ const PasswordChangeForm: React.FC<PasswordChangeFormProps> = ({ onSuccess }) =>
     formState: { errors },
     reset,
   } = useForm<PasswordFormData>({
-    resolver: zodResolver(passwordSchema),
+    resolver: zodResolver(formSchema),
   });
 
   const onSubmit = async (data: PasswordFormData) => {

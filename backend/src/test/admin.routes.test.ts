@@ -4,6 +4,7 @@ import app from '../app.js';
 import UserModel from '../models/User.js';
 import { SiteModel } from '../models/Site.js';
 import { generateToken } from '../utils/jwt.js';
+import { normalizeUsername } from '../utils/username.js';
 import { setupTestDatabase, cleanupTestDatabase } from './setup.js';
 import crypto from 'crypto';
 
@@ -66,7 +67,7 @@ describe('Admin Routes', () => {
       const inviteData = {
         email: 'newuser@example.com',
         username: 'New User',
-        sites: [{ site_id: testSite.id, site_role: 'USER' }],
+        sites: [{ site_id: testSite.id, site_role: 'SITE_USER' }],
       };
 
       const response = await request(app)
@@ -80,13 +81,13 @@ describe('Admin Routes', () => {
       expect(response.body.data.token).toBeDefined();
       expect(response.body.data.expiresAt).toBeDefined();
       expect(response.body.data.sites).toHaveLength(1);
-      expect(response.body.data.sites[0]).toMatchObject({ site_id: testSite.id, site_role: 'USER' });
+      expect(response.body.data.sites[0]).toMatchObject({ site_id: testSite.id, site_role: 'SITE_USER' });
 
       // Verify invitation was created in database
       const rows = await db.query('SELECT id, email, username, used_at FROM invitations WHERE email = ?', [inviteData.email]);
       expect(rows).toHaveLength(1);
       expect(rows[0].email).toBe(inviteData.email);
-      expect(rows[0].username).toBe(inviteData.username);
+      expect(rows[0].username).toBe(normalizeUsername(inviteData.username));
       expect(rows[0].used_at).toBeNull();
     });
 
@@ -139,7 +140,7 @@ describe('Admin Routes', () => {
         .expect(201);
 
       expect(response.body.data.sites).toHaveLength(1);
-      expect(response.body.data.sites[0]).toMatchObject({ site_id: testSite.id, site_role: 'USER' });
+      expect(response.body.data.sites[0]).toMatchObject({ site_id: testSite.id, site_role: 'SITE_USER' });
     });
 
     it('should deny access for regular user', async () => {
@@ -197,7 +198,7 @@ describe('Admin Routes', () => {
 
   describe('GET /api/admin/invitations', () => {
     beforeEach(async () => {
-      const insertInvitation = async (opts: { email: string; token: string; username: string; siteId: number; siteRole: 'ADMIN' | 'USER' }) => {
+      const insertInvitation = async (opts: { email: string; token: string; username: string; siteId: number; siteRole: 'SITE_ADMIN' | 'SITE_USER' }) => {
         const tokenHash = crypto.createHash('sha256').update(opts.token).digest('hex');
           const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
         const result = await db.execute(
@@ -214,8 +215,20 @@ describe('Admin Routes', () => {
         return invitationId;
       };
 
-      await insertInvitation({ email: 'invite1@example.com', token: 'token1', username: 'Invite One', siteId: testSite.id, siteRole: 'USER' });
-      await insertInvitation({ email: 'invite2@example.com', token: 'token2', username: 'Invite Two', siteId: extraSite.id, siteRole: 'ADMIN' });
+      const insertInvitationNoSites = async (opts: { email: string; token: string; username: string }) => {
+        const tokenHash = crypto.createHash('sha256').update(opts.token).digest('hex');
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        const result = await db.execute(
+          `INSERT INTO invitations (email, username, token_hash, invited_by, expires_at)
+           VALUES (?, ?, ?, ?, ?)`,
+          [opts.email, opts.username, tokenHash, adminUser.id, expiresAt]
+        );
+        return Number(result.insertId);
+      };
+
+      await insertInvitation({ email: 'invite1@example.com', token: 'token1', username: 'Invite One', siteId: testSite.id, siteRole: 'SITE_USER' });
+      await insertInvitation({ email: 'invite2@example.com', token: 'token2', username: 'Invite Two', siteId: extraSite.id, siteRole: 'SITE_ADMIN' });
+      await insertInvitationNoSites({ email: 'nosites@example.com', token: 'token3', username: 'No Sites User' });
     });
 
     it('should return pending invitations for admin', async () => {
@@ -225,15 +238,22 @@ describe('Admin Routes', () => {
         .expect(200);
 
       expect(response.body.success).toBe(true);
-      expect(response.body.data).toHaveLength(2);
+      expect(response.body.data).toHaveLength(3);
       expect(response.body.data[0].email).toBeDefined();
       expect(response.body.data[0].invited_by_name).toBe(adminUser.username);
       expect(response.body.data[0].sites).toBeDefined();
-      expect(response.body.data[0].sites.length).toBeGreaterThan(0);
-      expect(response.body.data[0].sites[0]).toHaveProperty('site_id');
-      expect(response.body.data[0].sites[0]).toHaveProperty('site_role');
-      expect(response.body.data[0].sites[0]).toHaveProperty('site_name');
-      expect(response.body.data[0].sites[0]).toHaveProperty('site_code');
+
+      const noSites = (response.body.data as any[]).find((i) => i.email === 'nosites@example.com');
+      expect(noSites).toBeDefined();
+      expect(noSites.sites).toEqual([]);
+
+      const withSites = (response.body.data as any[]).find((i) => i.email === 'invite1@example.com');
+      expect(withSites).toBeDefined();
+      expect(withSites.sites.length).toBeGreaterThan(0);
+      expect(withSites.sites[0]).toHaveProperty('site_id');
+      expect(withSites.sites[0]).toHaveProperty('site_role');
+      expect(withSites.sites[0]).toHaveProperty('site_name');
+      expect(withSites.sites[0]).toHaveProperty('site_code');
     });
 
     it('should deny access for regular user', async () => {
@@ -243,6 +263,76 @@ describe('Admin Routes', () => {
         .expect(403);
 
       expect(response.body.success).toBe(false);
+    });
+  });
+
+  describe('PUT /api/admin/users/:id/sites', () => {
+    let siteAdminUser: any;
+    let siteAdminToken: string;
+
+    beforeEach(async () => {
+      siteAdminUser = await userModel.create({
+        email: 'siteadmin@example.com',
+        username: 'Site Admin User',
+        password: 'SiteAdminPassword123!',
+        role: 'USER',
+      });
+      siteAdminToken = generateToken(siteAdminUser);
+
+      // Seed memberships: regular user is in-scope for the site admin; site admin administers testSite.
+      await db.execute(
+        `INSERT INTO site_memberships (site_id, user_id, site_role)
+         VALUES (?, ?, ?)`,
+        [testSite.id, siteAdminUser.id, 'SITE_ADMIN']
+      );
+      await db.execute(
+        `INSERT INTO site_memberships (site_id, user_id, site_role)
+         VALUES (?, ?, ?)`,
+        [testSite.id, regularUser.id, 'SITE_USER']
+      );
+    });
+
+    it('should prevent a Site Admin from demoting themselves', async () => {
+      const response = await request(app)
+        .put(`/api/admin/users/${siteAdminUser.id}/sites`)
+        .set('Authorization', `Bearer ${siteAdminToken}`)
+        .send({
+          sites: [{ site_id: testSite.id, site_role: 'SITE_USER' }],
+        })
+        .expect(403);
+
+      expect(response.body.success).toBe(false);
+      expect(String(response.body.error)).toContain('cannot modify');
+    });
+
+    it('should prevent a Site Admin from removing their own admin membership', async () => {
+      const response = await request(app)
+        .put(`/api/admin/users/${siteAdminUser.id}/sites`)
+        .set('Authorization', `Bearer ${siteAdminToken}`)
+        .send({ sites: [] })
+        .expect(403);
+
+      expect(response.body.success).toBe(false);
+      expect(String(response.body.error)).toContain('cannot modify');
+    });
+
+    it('should allow a Site Admin to update another user within their scope', async () => {
+      const response = await request(app)
+        .put(`/api/admin/users/${regularUser.id}/sites`)
+        .set('Authorization', `Bearer ${siteAdminToken}`)
+        .send({
+          sites: [{ site_id: testSite.id, site_role: 'SITE_ADMIN' }],
+        })
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+
+      const rows = await db.query(
+        'SELECT site_id, site_role FROM site_memberships WHERE user_id = ? AND site_id = ?',
+        [regularUser.id, testSite.id]
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].site_role).toBe('SITE_ADMIN');
     });
   });
 
@@ -262,7 +352,7 @@ describe('Admin Routes', () => {
       await db.execute(
         `INSERT INTO invitation_sites (invitation_id, site_id, site_role)
          VALUES (?, ?, ?)`,
-        [invitationId, testSite.id, 'USER']
+        [invitationId, testSite.id, 'SITE_USER']
       );
     });
 
@@ -316,7 +406,7 @@ describe('Admin Routes', () => {
       await db.execute(
         `INSERT INTO invitation_sites (invitation_id, site_id, site_role)
          VALUES (?, ?, ?)`,
-        [invitationId, testSite.id, 'USER']
+        [invitationId, testSite.id, 'SITE_USER']
       );
     });
 
@@ -355,7 +445,7 @@ describe('Admin Routes', () => {
       await db.execute(
         `INSERT INTO invitation_sites (invitation_id, site_id, site_role)
          VALUES (?, ?, ?)`,
-        [invitationId, testSite.id, 'USER']
+        [invitationId, testSite.id, 'SITE_USER']
       );
 
       const response = await request(app)
@@ -383,7 +473,7 @@ describe('Admin Routes', () => {
       await db.execute(
         `INSERT INTO invitation_sites (invitation_id, site_id, site_role)
          VALUES (?, ?, ?)`,
-        [invitationId, testSite.id, 'ADMIN']
+        [invitationId, testSite.id, 'SITE_ADMIN']
       );
     });
 
@@ -400,8 +490,8 @@ describe('Admin Routes', () => {
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.email).toBe('invite@example.com');
-      expect(response.body.data.username).toBe('New User');
-      expect(response.body.data.role).toBe('ADMIN');
+      expect(response.body.data.username).toBe('newuser');
+      expect(response.body.data.role).toBe('USER');
       expect(response.body.data.password_hash).toBeUndefined();
 
       // Verify invitation was marked as used
@@ -413,7 +503,7 @@ describe('Admin Routes', () => {
       // Verify user was created
       const user = await userModel.findByEmail('invite@example.com');
       expect(user).toBeDefined();
-      expect(user?.role).toBe('ADMIN');
+      expect(user?.role).toBe('USER');
     });
 
     it('should reject invalid token', async () => {
@@ -465,7 +555,7 @@ describe('Admin Routes', () => {
       await db.execute(
         `INSERT INTO invitation_sites (invitation_id, site_id, site_role)
          VALUES (?, ?, ?)`,
-        [invitationId, testSite.id, 'USER']
+        [invitationId, testSite.id, 'SITE_USER']
       );
 
       // Try to accept the new invitation
@@ -489,7 +579,7 @@ describe('Admin Routes', () => {
         email: 'moderator@example.com',
         username: 'Moderator User',
         password: 'ModPassword123!',
-        role: 'ADMIN',
+        role: 'USER',
       });
     });
 
@@ -500,7 +590,7 @@ describe('Admin Routes', () => {
         .expect(200);
 
       expect(response.body.success).toBe(true);
-      expect(response.body.data.users).toHaveLength(3); // admin, regular, moderator
+      expect(response.body.data.users).toHaveLength(3); // global admin + 2 regular users
       expect(response.body.data.users[0]).toHaveProperty('email');
       expect(response.body.data.users[0]).toHaveProperty('username');
       expect(response.body.data.users[0]).toHaveProperty('role');
@@ -521,13 +611,13 @@ describe('Admin Routes', () => {
 
     it('should filter users by role', async () => {
       const response = await request(app)
-        .get('/api/admin/users?role=ADMIN')
+        .get('/api/admin/users?role=GLOBAL_ADMIN')
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
 
       expect(response.body.success).toBe(true);
       expect(response.body.data.users).toHaveLength(1);
-      expect(response.body.data.users[0].role).toBe('ADMIN');
+      expect(response.body.data.users[0].role).toBe('GLOBAL_ADMIN');
     });
 
     it('should deny access for regular user', async () => {
@@ -545,7 +635,7 @@ describe('Admin Routes', () => {
       const response = await request(app)
         .put(`/api/admin/users/${regularUser.id}/role`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ role: 'ADMIN' })
+        .send({ role: 'GLOBAL_ADMIN' })
         .expect(200);
 
       expect(response.body.success).toBe(true);
@@ -553,14 +643,14 @@ describe('Admin Routes', () => {
 
       // Verify role was updated
       const updatedUser = await userModel.findById(regularUser.id);
-      expect(updatedUser?.role).toBe('ADMIN');
+      expect(updatedUser?.role).toBe('GLOBAL_ADMIN');
     });
 
     it('should deny access for regular user', async () => {
       const response = await request(app)
         .put(`/api/admin/users/${regularUser.id}/role`)
         .set('Authorization', `Bearer ${userToken}`)
-        .send({ role: 'ADMIN' })
+        .send({ role: 'GLOBAL_ADMIN' })
         .expect(403);
 
       expect(response.body.success).toBe(false);
@@ -581,7 +671,7 @@ describe('Admin Routes', () => {
       const response = await request(app)
         .put('/api/admin/users/999/role')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ role: 'ADMIN' })
+        .send({ role: 'GLOBAL_ADMIN' })
         .expect(404);
 
       expect(response.body.success).toBe(false);
@@ -699,7 +789,7 @@ describe('Admin Routes', () => {
 
   describe('PUT /api/admin/settings', () => {
     const validSettings = {
-      default_user_role: 'moderator',
+      default_user_role: 'user',
       max_labels_per_user: 1000,
       max_sites_per_user: 50,
       maintenance_mode: false,

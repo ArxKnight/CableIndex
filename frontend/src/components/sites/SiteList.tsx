@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
+import { usePermissions } from '../../hooks/usePermissions';
 
 import { 
   Search, 
@@ -32,6 +33,8 @@ const SiteList: React.FC<SiteListProps> = ({
   onViewDetails,
   refreshTrigger = 0
 }) => {
+  const { canCreate } = usePermissions();
+  const canCreateSites = canCreate('sites');
   const [sites, setSites] = useState<SiteWithLabelCount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -146,10 +149,12 @@ const SiteList: React.FC<SiteListProps> = ({
             Manage your cable labeling sites
           </p>
         </div>
-        <Button onClick={onCreateSite}>
-          <Plus className="mr-2 h-4 w-4" />
-          Create Site
-        </Button>
+        {canCreateSites && (
+          <Button onClick={onCreateSite}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Site
+          </Button>
+        )}
       </div>
 
       {/* Search and Filters */}
@@ -237,10 +242,12 @@ const SiteList: React.FC<SiteListProps> = ({
               }
             </p>
             {!searchTerm && (
-              <Button onClick={onCreateSite}>
-                <Plus className="mr-2 h-4 w-4" />
-                Create Your First Site
-              </Button>
+              canCreateSites ? (
+                <Button onClick={onCreateSite}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create Your First Site
+                </Button>
+              ) : null
             )}
           </CardContent>
         </Card>

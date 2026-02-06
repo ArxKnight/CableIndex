@@ -2,6 +2,7 @@ import connection from '../database/connection.js';
 import { DatabaseAdapter } from '../database/adapters/base.js';
 import { User, UserRole } from '../types/index.js';
 import { hashPassword, comparePassword } from '../utils/password.js';
+import { normalizeUsername } from '../utils/username.js';
 
 export interface CreateUserData {
   email: string;
@@ -21,11 +22,19 @@ export class UserModel {
     return connection.getAdapter();
   }
 
+  private normalizeUser(user: User): User {
+    return {
+      ...user,
+      username: normalizeUsername((user as any).username),
+    };
+  }
+
   /**
    * Create a new user
    */
   async create(userData: CreateUserData): Promise<User> {
     const { email, username, password, role = 'USER' } = userData;
+    const normalizedUsername = normalizeUsername(username);
     
     // Hash the password
     const password_hash = await hashPassword(password);
@@ -33,7 +42,7 @@ export class UserModel {
     const result = await this.adapter.execute(
       `INSERT INTO users (email, username, password_hash, role)
        VALUES (?, ?, ?, ?)`,
-      [email, username, password_hash, role]
+      [email, normalizedUsername, password_hash, role]
     );
     
     if (!result.insertId) {
@@ -54,7 +63,7 @@ export class UserModel {
       [id]
     );
     
-    return rows.length > 0 ? (rows[0] as User) : null;
+    return rows.length > 0 ? this.normalizeUser(rows[0] as User) : null;
   }
 
   /**
@@ -67,7 +76,7 @@ export class UserModel {
       [email]
     );
     
-    return rows.length > 0 ? (rows[0] as User) : null;
+    return rows.length > 0 ? this.normalizeUser(rows[0] as User) : null;
   }
 
   /**
@@ -113,8 +122,9 @@ export class UserModel {
     }
 
     if (userData.username !== undefined) {
+      const normalizedUsername = normalizeUsername(userData.username);
       updates.push('username = ?');
-      values.push(userData.username);
+      values.push(normalizedUsername);
     }
 
     if (userData.role !== undefined) {

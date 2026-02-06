@@ -106,8 +106,15 @@ export interface LabelStats {
   labels_today: number;
 }
 
-export type UserRole = 'GLOBAL_ADMIN' | 'ADMIN' | 'USER';
-export type SiteRole = 'ADMIN' | 'USER';
+export type UserRole = 'GLOBAL_ADMIN' | 'USER';
+export type SiteRole = 'SITE_ADMIN' | 'SITE_USER';
+
+export interface SiteMembership {
+  site_id: number;
+  site_role: SiteRole;
+  site_name: string;
+  site_code: string;
+}
 
 export interface AuthTokens {
   accessToken: string;
@@ -149,6 +156,7 @@ export interface AuthUser extends User {
 
 export interface AuthState {
   user: AuthUser | null;
+  memberships: SiteMembership[];
   isAuthenticated: boolean;
   isLoading: boolean;
   tokens: AuthTokens | null;

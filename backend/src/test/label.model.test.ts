@@ -32,7 +32,7 @@ describe('Label Model', () => {
       email: 'test@example.com',
       username: 'Test User',
       password: 'TestPassword123!',
-      role: 'ADMIN',
+      role: 'USER',
     });
 
     testSite = await siteModel.create({
@@ -229,9 +229,9 @@ describe('Label Model', () => {
             destination_location_id: destinationLoc.id,
             cable_type_id: cableType.id,
           },
-          101
+          501
         )
-      ).rejects.toThrow('Quantity cannot exceed 100');
+      ).rejects.toThrow('Quantity cannot exceed 500');
     });
   });
 

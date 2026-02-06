@@ -9,6 +9,8 @@ import { MySQLAdapter } from '../database/adapters/mysql.js';
 import { initializeDatabase } from '../database/init.js';
 import UserModel from '../models/User.js';
 import { isSetupComplete, setupMarkerPath } from '../utils/setup.js';
+import { validatePassword } from '../utils/password.js';
+import { normalizeUsername } from '../utils/username.js';
 
 const router = express.Router();
 
@@ -111,6 +113,23 @@ router.post('/complete', async (req, res) => {
     }
 
     const setupData = setupSchema.parse(req.body);
+
+    const normalizedAdminUsername = normalizeUsername(setupData.admin.username);
+    if (!normalizedAdminUsername) {
+      return res.status(400).json({
+        success: false,
+        error: 'Admin username is required',
+      });
+    }
+
+    const passwordValidation = validatePassword(setupData.admin.password);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password does not meet requirements',
+        details: passwordValidation.errors,
+      });
+    }
     
     // Create database configuration
     const dbConfig: MySQLConfig = {
@@ -146,7 +165,7 @@ router.post('/complete', async (req, res) => {
       adminUser = await userModel.create({
         email: setupData.admin.email,
         password: setupData.admin.password,
-        username: setupData.admin.username,
+        username: normalizedAdminUsername,
         role: 'GLOBAL_ADMIN'
       });
       console.log(`✓ Admin user created: ${adminUser.id} (${adminUser.email})`);
@@ -154,7 +173,7 @@ router.post('/complete', async (req, res) => {
       // Update existing user with new credentials
       console.log(`⚠️  User already exists, updating credentials for: ${adminUser.email}`);
       adminUser = await userModel.update(adminUser.id, {
-        username: setupData.admin.username,
+        username: normalizedAdminUsername,
         role: 'GLOBAL_ADMIN'
       }) || adminUser;
       

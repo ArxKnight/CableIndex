@@ -13,7 +13,7 @@ vi.mock('sonner', () => ({
   Toaster: () => null,
 }));
 
-const setAuthRole = (role: 'GLOBAL_ADMIN' | 'ADMIN' | 'USER') => {
+const setAuthRole = (role: 'GLOBAL_ADMIN' | 'USER') => {
   const current = (globalThis as any).__TEST_AUTH__;
   (globalThis as any).__TEST_AUTH__ = {
     ...current,
@@ -24,6 +24,7 @@ const setAuthRole = (role: 'GLOBAL_ADMIN' | 'ADMIN' | 'USER') => {
       full_name: role === 'USER' ? 'Regular User' : 'Admin User',
       role,
     },
+    memberships: [],
     isAuthenticated: true,
     isLoading: false,
   };
@@ -41,7 +42,7 @@ describe('Admin Workflow Integration Tests', () => {
 
   it('should allow admin to access admin panel', async () => {
     const { apiClient } = await import('../../lib/api');
-    setAuthRole('ADMIN');
+    setAuthRole('GLOBAL_ADMIN');
 
     vi.mocked(apiClient.getSites).mockResolvedValue({ success: true, data: { sites: [] } } as any);
 
@@ -114,7 +115,7 @@ describe('Admin Workflow Integration Tests', () => {
     const { apiClient } = await import('../../lib/api');
     const user = userEvent.setup();
 
-    setAuthRole('ADMIN');
+    setAuthRole('GLOBAL_ADMIN');
 
     const sites = [{ id: 1, name: 'Site A', code: 'A' }];
 
@@ -206,8 +207,8 @@ describe('Admin Workflow Integration Tests', () => {
     await waitFor(() => {
       expect(apiClient.inviteUser).toHaveBeenCalledWith(
         'newuser@example.com',
-        [{ site_id: 1, site_role: 'USER' }],
-        'New User',
+        [{ site_id: 1, site_role: 'SITE_USER' }],
+        'newuser',
         7
       );
     });
@@ -217,7 +218,7 @@ describe('Admin Workflow Integration Tests', () => {
     const { apiClient } = await import('../../lib/api');
     const user = userEvent.setup();
 
-    setAuthRole('ADMIN');
+    setAuthRole('GLOBAL_ADMIN');
 
     vi.mocked(apiClient.getSites).mockResolvedValue({ success: true, data: { sites: [] } } as any);
 

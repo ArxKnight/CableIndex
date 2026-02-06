@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import UserModel from '../models/User.js';
+import { normalizeUsername } from '../utils/username.js';
 import { setupTestDatabase, cleanupTestDatabase } from './setup.js';
 
 describe('User Model', () => {
@@ -29,7 +30,7 @@ describe('User Model', () => {
       expect(user).toBeDefined();
       expect(user.id).toBeDefined();
       expect(user.email).toBe(userData.email);
-      expect(user.username).toBe(userData.username);
+      expect(user.username).toBe(normalizeUsername(userData.username));
       expect(user.role).toBe(userData.role);
       expect(user.password_hash).toBeDefined();
       expect(user.password_hash).not.toBe(userData.password);
@@ -183,12 +184,12 @@ describe('User Model', () => {
       const user = await userModel.create(userData);
       const updatedUser = await userModel.update(user.id, {
         username: 'Updated Name',
-        role: 'ADMIN',
+        role: 'GLOBAL_ADMIN',
       });
 
       expect(updatedUser).toBeDefined();
-      expect(updatedUser?.username).toBe('Updated Name');
-      expect(updatedUser?.role).toBe('ADMIN');
+        expect(updatedUser?.username).toBe('updatedname');
+      expect(updatedUser?.role).toBe('GLOBAL_ADMIN');
       expect(updatedUser?.email).toBe(userData.email); // Should remain unchanged
     });
 

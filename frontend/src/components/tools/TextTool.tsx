@@ -54,7 +54,7 @@ export function TextTool() {
               value={textList}
               onChange={(e) => setTextList(e.target.value)}
               rows={10}
-              placeholder="Hello\nWorld\n..."
+              placeholder="Hello World"
               className="font-mono"
             />
             <div className="text-xs text-muted-foreground">Count: {lines.length}</div>

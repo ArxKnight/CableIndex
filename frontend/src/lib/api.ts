@@ -204,7 +204,7 @@ class ApiClient {
   }
 
   async getCurrentUser() {
-    return this.request<{ user: any }>('/auth/me');
+    return this.request<{ user: any; memberships?: any[] }>('/auth/me');
   }
 
   async logout() {
@@ -417,7 +417,7 @@ class ApiClient {
     return this.request<{ users: any[] }>(`/admin/users${query ? `?${query}` : ''}`);
   }
 
-  async updateUserRole(userId: number, role: string) {
+  async updateUserRole(userId: number, role: 'GLOBAL_ADMIN' | 'USER') {
     return this.request(`/admin/users/${userId}/role`, {
       method: 'PUT',
       body: JSON.stringify({ role }),
@@ -430,7 +430,7 @@ class ApiClient {
 
   async inviteUser(
     email: string,
-    sites: Array<{ site_id: number; site_role: 'ADMIN' | 'USER' }>,
+    sites: Array<{ site_id: number; site_role: 'SITE_ADMIN' | 'SITE_USER' }>,
     username: string,
     expires_in_days?: number
   ) {
@@ -444,7 +444,7 @@ class ApiClient {
     return this.request<{ sites: any[] }>(`/admin/users/${userId}/sites`);
   }
 
-  async updateUserSites(userId: number, sites: Array<{ site_id: number; site_role: 'ADMIN' | 'USER' }>) {
+  async updateUserSites(userId: number, sites: Array<{ site_id: number; site_role: 'SITE_ADMIN' | 'SITE_USER' }>) {
     return this.request(`/admin/users/${userId}/sites`, {
       method: 'PUT',
       body: JSON.stringify({ sites }),

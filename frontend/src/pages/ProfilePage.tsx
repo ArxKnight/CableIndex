@@ -25,12 +25,8 @@ const ProfilePage: React.FC = () => {
 
   const getRoleColor = (role: string) => {
     switch (role) {
-      case 'ADMIN':
-      case 'admin':
+      case 'GLOBAL_ADMIN':
         return 'text-destructive bg-destructive/10';
-      case 'MODERATOR':
-      case 'moderator':
-        return 'text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30';
       default:
         return 'text-primary bg-primary/10';
     }

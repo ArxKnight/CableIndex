@@ -5,7 +5,7 @@ import { generateTokens, verifyToken } from '../utils/jwt.js';
 import { validatePassword } from '../utils/password.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { ApiResponse } from '../types/index.js';
-import { default as DatabaseConnection } from '../database/connection.js';
+import connection from '../database/connection.js';
 
 const router = Router();
 const userModel = new UserModel();
@@ -177,10 +177,35 @@ router.get('/me', authenticateToken, async (req: Request, res: Response) => {
 
     // Return user data (without password hash)
     const { password_hash, ...userWithoutPassword } = user;
+
+    const normalizedUser = {
+      ...userWithoutPassword,
+      role: (userWithoutPassword as any).role === 'ADMIN' ? 'GLOBAL_ADMIN' : (userWithoutPassword as any).role,
+    };
+
+    const membershipRows = await connection.getAdapter().query(
+      `SELECT sm.site_id, sm.site_role, s.name as site_name, s.code as site_code
+       FROM site_memberships sm
+       JOIN sites s ON s.id = sm.site_id
+       WHERE sm.user_id = ?
+       ORDER BY s.name ASC`,
+      [req.user.userId]
+    );
+
+    const memberships = (membershipRows as any[]).map(row => ({
+      site_id: Number(row.site_id),
+      site_role: row.site_role === 'ADMIN'
+        ? 'SITE_ADMIN'
+        : row.site_role === 'USER'
+          ? 'SITE_USER'
+          : row.site_role,
+      site_name: String(row.site_name ?? ''),
+      site_code: String(row.site_code ?? ''),
+    }));
     
     res.json({
       success: true,
-      data: { user: userWithoutPassword },
+      data: { user: normalizedUser, memberships },
     } as ApiResponse);
 
   } catch (error) {

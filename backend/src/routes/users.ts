@@ -13,12 +13,12 @@ const roleService = new RoleService();
 // Validation schemas
 const updateUserSchema = z.object({
   email: z.string().email().optional(),
-  role: z.enum(['GLOBAL_ADMIN', 'ADMIN', 'USER']).optional(),
+  role: z.enum(['GLOBAL_ADMIN', 'USER']).optional(),
 });
 
 const inviteUserSchema = z.object({
   email: z.string().email(),
-  role: z.enum(['GLOBAL_ADMIN', 'ADMIN', 'USER']).default('USER'),
+  role: z.enum(['GLOBAL_ADMIN', 'USER']).default('USER'),
 });
 
 /**

@@ -276,9 +276,18 @@ router.post('/', authenticateToken, resolveSiteAccess(req => Number(req.body.sit
         quantity
       );
 
+      const firstRefNumber = labels[0]?.ref_number;
+      const lastRefNumber = labels[labels.length - 1]?.ref_number;
+
       res.status(201).json({
         success: true,
-        data: { label: labels[0], labels },
+        data: {
+          label: labels[0],
+          ...(labels.length <= 50 ? { labels } : {}),
+          created_count: labels.length,
+          ...(typeof firstRefNumber === 'number' ? { first_ref_number: firstRefNumber } : {}),
+          ...(typeof lastRefNumber === 'number' ? { last_ref_number: lastRefNumber } : {}),
+        },
         message: 'Labels created successfully',
       } as ApiResponse);
       return;
@@ -291,7 +300,12 @@ router.post('/', authenticateToken, resolveSiteAccess(req => Number(req.body.sit
 
     res.status(201).json({
       success: true,
-      data: { label },
+      data: {
+        label,
+        created_count: 1,
+        first_ref_number: label.ref_number,
+        last_ref_number: label.ref_number,
+      },
       message: 'Label created successfully',
     } as ApiResponse);
 

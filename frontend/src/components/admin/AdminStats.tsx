@@ -19,7 +19,6 @@ interface AdminStatsData {
     new_this_month: number;
     by_role: {
       GLOBAL_ADMIN: number;
-      ADMIN: number;
       USER: number;
     };
   };
@@ -201,18 +200,12 @@ const AdminStats: React.FC = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <div className="text-center">
               <div className="text-2xl font-bold text-red-600">
                 {statsData.users.by_role.GLOBAL_ADMIN}
               </div>
               <p className="text-sm text-muted-foreground">Global Admins</p>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-yellow-600">
-                {statsData.users.by_role.ADMIN}
-              </div>
-              <p className="text-sm text-muted-foreground">Admins</p>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-blue-600">
