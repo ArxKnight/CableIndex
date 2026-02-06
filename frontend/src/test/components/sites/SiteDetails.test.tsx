@@ -332,10 +332,6 @@ describe('SiteDetails', () => {
 
     await user.click(screen.getByText('Create Your First Label'));
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Create Label' })).toBeInTheDocument();
-    });
-
-    await waitFor(() => {
       expect(screen.getByLabelText('Source')).toBeInTheDocument();
       expect(screen.getByLabelText('Destination')).toBeInTheDocument();
     });

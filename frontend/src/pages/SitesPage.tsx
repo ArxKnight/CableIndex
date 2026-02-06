@@ -120,8 +120,6 @@ const SitesPage: React.FC = () => {
       {viewMode === 'list' ? (
         <SiteList
           onCreateSite={handleCreateSite}
-          onEditSite={handleEditSite}
-          onDeleteSite={handleDeleteSite}
           onViewDetails={handleViewSiteDetails}
           refreshTrigger={refreshTrigger}
         />

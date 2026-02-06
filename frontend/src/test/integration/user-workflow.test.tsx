@@ -420,8 +420,7 @@ describe('User Workflow Integration Tests', () => {
     });
 
     // Open site details
-    const viewDetailsButton = screen.getByRole('button', { name: /view details/i });
-    await user.click(viewDetailsButton);
+    await user.click(screen.getByText('Test Site'));
 
     // Wait for site details
     await waitFor(() => {

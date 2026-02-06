@@ -45,7 +45,7 @@ export function ZplOutput({ title = 'Output', description, zpl, prefix, disabled
             disabled={disabled || !zpl.trim()}
           >
             <Download className="h-4 w-4 mr-2" />
-            Download .txt
+            Download Label/s .txt
           </Button>
 
           <Button

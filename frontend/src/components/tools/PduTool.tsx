@@ -51,12 +51,12 @@ export function PduTool() {
       <Card>
         <CardHeader>
           <CardTitle>PDU Labels</CardTitle>
-          <CardDescription>Legacy-style PDU labels (3 per page). Format: PDU_SID/PORT (zero-padded).</CardDescription>
+          <CardDescription>PDU labels (3 per page). Format: PDU_SID/PORT (zero-padded).</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="pduSid">PDU SID</Label>
-            <Input id="pduSid" value={pduSid} onChange={(e) => setPduSid(e.target.value)} maxLength={12} placeholder="PDU123" />
+            <Input id="pduSid" value={pduSid} onChange={(e) => setPduSid(e.target.value)} maxLength={12} placeholder="12345" />
           </div>
 
           <div className="grid grid-cols-2 gap-4">

@@ -30,13 +30,14 @@ export class ZPLService {
   }
 
   private formatLocationPrint(location: {
+    effective_label?: string | null;
     label?: string | null;
     floor?: string | null;
     suite?: string | null;
     row?: string | null;
     rack?: string | null;
   }): string {
-    const label = this.safe(location.label);
+    const label = this.safe(location.effective_label ?? location.label);
     const floor = this.safe(location.floor);
     const suite = this.safe(location.suite);
     const row = this.safe(location.row);

@@ -112,7 +112,7 @@ const LabelDetailsDialog: React.FC<LabelDetailsDialogProps> = ({
             <div />
             <div className="flex items-center gap-2">
               <Button variant="outline" onClick={handleDownload} disabled={working}>
-                Download .txt
+                Download Single Label .txt
               </Button>
 
               <AlertDialog>

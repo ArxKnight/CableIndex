@@ -40,7 +40,7 @@ export function ResidTool() {
               value={sidList}
               onChange={(e) => setSidList(e.target.value)}
               rows={10}
-              placeholder="ABC123\nDEF456\n..."
+              placeholder="12345"
               className="font-mono"
             />
           </div>

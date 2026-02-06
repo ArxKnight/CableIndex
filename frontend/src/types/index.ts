@@ -27,6 +27,7 @@ export interface SiteLocation {
   row?: string | null;
   rack?: string | null;
   label?: string | null;
+  effective_label?: string | null;
   created_at: string;
   updated_at: string;
 }

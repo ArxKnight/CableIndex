@@ -60,13 +60,13 @@ export function DayWipeTool() {
               value={sidList}
               onChange={(e) => setSidList(e.target.value)}
               rows={10}
-              placeholder="ABC123\nDEF456\n..."
+              placeholder="12345"
               className="font-mono"
             />
           </div>
 
           <div className="text-sm text-muted-foreground flex items-center justify-between">
-            <span>2 disks' worth per label (legacy format)</span>
+            <span>2 disks' worth per label</span>
             <span>Count: {sids.length}</span>
           </div>
         </CardContent>

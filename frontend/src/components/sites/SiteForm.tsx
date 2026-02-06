@@ -83,14 +83,14 @@ const SiteForm: React.FC<SiteFormProps> = ({
           <Label htmlFor="name">Site Name *</Label>
           <Input
             id="name"
-            placeholder="e.g., Main Office, Data Center A, Building 1"
+            placeholder="e.g., Main Office, Data Center A, Building 1, Company Name"
             {...register('name')}
             disabled={isLoading}
           />
           {errors.name && (
             <p className="text-sm text-destructive">{errors.name.message}</p>
           )}
-          <p className="text-xs text-muted-foreground">Internal display name only (never printed on labels).</p>
+          <p className="text-xs text-muted-foreground">Internal display name only (not printed on labels).</p>
         </div>
 
         <div className="space-y-2">
@@ -106,7 +106,7 @@ const SiteForm: React.FC<SiteFormProps> = ({
             <p className="text-sm text-destructive">{errors.code.message}</p>
           )}
           <p className="text-xs text-muted-foreground">
-            This is what appears on cable labels (e.g., MAIN/1/A/R1/R42).
+            This is what appears on cable labels by default. Ideally 3-4 characters Long (e.g., MAIN/1/A/1/42).
           </p>
         </div>
 

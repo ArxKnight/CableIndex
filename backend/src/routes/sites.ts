@@ -348,13 +348,24 @@ router.post('/:id/locations', authenticateToken, resolveSiteAccess(req => Number
     const { id } = siteIdSchema.parse(req.params);
     const dataParsed = createLocationSchema.parse(req.body);
 
+    const site = await siteModel.findById(id);
+    if (!site) {
+      return res.status(404).json({
+        success: false,
+        error: 'Site not found',
+      } as ApiResponse);
+    }
+
+    const labelTrimmed = (dataParsed.label ?? '').toString().trim();
+    const label = labelTrimmed !== '' ? labelTrimmed : site.code;
+
     const location = await siteLocationModel.create({
       site_id: id,
       floor: dataParsed.floor,
       suite: dataParsed.suite,
       row: dataParsed.row,
       rack: dataParsed.rack,
-      ...(dataParsed.label ? { label: dataParsed.label } : {}),
+      label,
     });
 
     res.status(201).json({
@@ -396,12 +407,25 @@ router.put('/:id/locations/:locationId', authenticateToken, resolveSiteAccess(re
     const { locationId } = locationIdSchema.parse(req.params);
     const dataParsed = updateLocationSchema.parse(req.body);
 
+    let labelUpdate: string | undefined;
+    if (dataParsed.label !== undefined) {
+      const site = await siteModel.findById(id);
+      if (!site) {
+        return res.status(404).json({
+          success: false,
+          error: 'Site not found',
+        } as ApiResponse);
+      }
+      const labelTrimmed = (dataParsed.label ?? '').toString().trim();
+      labelUpdate = labelTrimmed !== '' ? labelTrimmed : site.code;
+    }
+
     const location = await siteLocationModel.update(locationId, id, {
       ...(dataParsed.floor !== undefined ? { floor: dataParsed.floor } : {}),
       ...(dataParsed.suite !== undefined ? { suite: dataParsed.suite } : {}),
       ...(dataParsed.row !== undefined ? { row: dataParsed.row } : {}),
       ...(dataParsed.rack !== undefined ? { rack: dataParsed.rack } : {}),
-      ...(dataParsed.label !== undefined ? { label: dataParsed.label ? dataParsed.label : null } : {}),
+      ...(labelUpdate !== undefined ? { label: labelUpdate } : {}),
     });
 
     if (!location) {
@@ -457,7 +481,13 @@ router.get(
       const usage = await siteLocationModel.getLabelUsageCounts(id, locationId);
       return res.json({
         success: true,
-        data: { usage },
+        data: {
+          usage: {
+            source_count: usage.source,
+            destination_count: usage.destination,
+            total_in_use: usage.source + usage.destination,
+          },
+        },
       } as ApiResponse);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -522,7 +552,11 @@ router.delete('/:id/locations/:locationId', authenticateToken, resolveSiteAccess
       success: true,
       data: {
         strategy: result.strategyUsed === 'none' ? 'auto' : result.strategyUsed,
-        usage: result.usage,
+        usage: {
+          source_count: result.usage.source,
+          destination_count: result.usage.destination,
+          total_in_use: result.usage.source + result.usage.destination,
+        },
         labels_deleted: result.labelsDeleted,
         labels_reassigned_source: result.labelsReassignedSource,
         labels_reassigned_destination: result.labelsReassignedDestination,
@@ -543,7 +577,11 @@ router.delete('/:id/locations/:locationId', authenticateToken, resolveSiteAccess
         success: false,
         error: error.message,
         data: {
-          usage: error.usage,
+          usage: {
+            source_count: error.usage.source,
+            destination_count: error.usage.destination,
+            total_in_use: error.usage.source + error.usage.destination,
+          },
         },
       } as ApiResponse);
     }
@@ -613,7 +651,11 @@ router.post(
           success: false,
           error: error.message,
           data: {
-            usage: error.usage,
+            usage: {
+              source_count: error.usage.source,
+              destination_count: error.usage.destination,
+              total_in_use: error.usage.source + error.usage.destination,
+            },
           },
         } as ApiResponse);
       }

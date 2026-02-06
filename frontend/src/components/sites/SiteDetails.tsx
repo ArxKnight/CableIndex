@@ -483,7 +483,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
 
                 <div className="flex items-center justify-end gap-2">
                   <Button variant="outline" onClick={handleDownloadCreated} disabled={!createdLabels.length}>
-                    Download .txt
+                    Download Label/s.txt
                   </Button>
                   <Button
                     variant="outline"

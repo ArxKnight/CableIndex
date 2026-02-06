@@ -29,8 +29,6 @@ const mockSites = [
 
 const mockProps = {
   onCreateSite: vi.fn(),
-  onEditSite: vi.fn(),
-  onDeleteSite: vi.fn(),
   onViewDetails: vi.fn(),
 };
 
@@ -124,33 +122,7 @@ describe('SiteList', () => {
     expect(mockProps.onCreateSite).toHaveBeenCalled();
   });
 
-  it('should call onEditSite when edit button is clicked', async () => {
-    const user = userEvent.setup();
-    render(<SiteList {...mockProps} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Office Site')).toBeInTheDocument();
-    });
-
-    const editButtons = screen.getAllByTitle('Edit Site');
-    await user.click(editButtons[0]);
-    expect(mockProps.onEditSite).toHaveBeenCalledWith(mockSites[0]);
-  });
-
-  it('should call onDeleteSite when delete button is clicked', async () => {
-    const user = userEvent.setup();
-    render(<SiteList {...mockProps} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Office Site')).toBeInTheDocument();
-    });
-
-    const deleteButtons = screen.getAllByTitle('Delete Site');
-    await user.click(deleteButtons[0]);
-    expect(mockProps.onDeleteSite).toHaveBeenCalledWith(mockSites[0]);
-  });
-
-  it('should call onViewDetails when site name is clicked', async () => {
+  it('should call onViewDetails when site card is clicked', async () => {
     const user = userEvent.setup();
     render(<SiteList {...mockProps} />);
 

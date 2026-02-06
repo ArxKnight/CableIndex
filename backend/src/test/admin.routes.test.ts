@@ -90,6 +90,41 @@ describe('Admin Routes', () => {
       expect(rows[0].used_at).toBeNull();
     });
 
+    it('should allow Global Admin to invite users with no sites', async () => {
+      const inviteData = {
+        email: 'nosites@example.com',
+        username: 'No Sites User',
+        sites: [],
+      };
+
+      const inviteResponse = await request(app)
+        .post('/api/admin/invite')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(inviteData)
+        .expect(201);
+
+      expect(inviteResponse.body.success).toBe(true);
+      expect(inviteResponse.body.data.email).toBe(inviteData.email);
+      expect(inviteResponse.body.data.token).toBeDefined();
+      expect(inviteResponse.body.data.sites).toEqual([]);
+
+      // Accept invite should succeed and create a user without site memberships.
+      const token = String(inviteResponse.body.data.token);
+      const acceptResponse = await request(app)
+        .post('/api/admin/accept-invite')
+        .send({ token, password: 'Password123!' })
+        .expect(201);
+
+      expect(acceptResponse.body.success).toBe(true);
+      expect(acceptResponse.body.data.email).toBe(inviteData.email);
+
+      const memberships = await db.query(
+        'SELECT site_id, site_role FROM site_memberships WHERE user_id = ?',
+        [acceptResponse.body.data.id],
+      );
+      expect(memberships).toHaveLength(0);
+    });
+
     it('should use default role if not specified', async () => {
       const inviteData = {
         email: 'newuser@example.com',

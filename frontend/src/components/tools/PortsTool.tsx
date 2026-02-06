@@ -95,13 +95,13 @@ export function PortsTool() {
         <CardHeader>
           <CardTitle>Port Labels</CardTitle>
           <CardDescription>
-            Legacy-style port labels (3 per page). First line: hostname. Second line: bank/prefix + port.
+            Port labels (3 per page). First line: hostname. Second line: bank/prefix + port.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="hostname">Hostname</Label>
-            <Input id="hostname" value={hostname} onChange={(e) => setHostname(e.target.value)} placeholder="MAN5-SW370" />
+            <Input id="hostname" value={hostname} onChange={(e) => setHostname(e.target.value)} placeholder="IVY-SW25" />
             {warning && (
               <Alert variant="destructive">
                 <AlertDescription>

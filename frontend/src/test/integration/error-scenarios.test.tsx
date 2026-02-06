@@ -99,6 +99,7 @@ describe('Error Scenarios Integration Tests', () => {
 
   it('should handle login errors gracefully', async () => {
     const { apiClient } = await import('../../lib/api');
+    const { toast } = await import('sonner');
     const user = userEvent.setup();
 
     const loginMock = vi.fn(async () => {
@@ -131,8 +132,11 @@ describe('Error Scenarios Integration Tests', () => {
 
     // Should show inline error
     await waitFor(() => {
-      expect(screen.getByText(/incorrect email or password\./i)).toBeInTheDocument();
+      expect(screen.getByText(/invalid email or password\./i)).toBeInTheDocument();
     });
+
+    // Should show destructive toast
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Invalid email or password.');
 
     // Should remain on login page
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();

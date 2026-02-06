@@ -8,6 +8,7 @@ import { Migration005_SiteLocations } from './005_site_locations.js';
 import { Migration006_CableTypes } from './006_cable_types.js';
 import * as migration007 from './007_add_username_to_invitations.js';
 import * as migration008 from './008_add_username_to_users.js';
+import { Migration009_NormalizeSiteLocationLabels } from './009_normalize_site_location_labels.js';
 
 export interface Migration {
   id: string;
@@ -47,6 +48,7 @@ const migrations: Migration[] = [
   Migration006_CableTypes,
   Migration007_AddUsernameToInvitations,
   Migration008_AddUsernameToUsers,
+  Migration009_NormalizeSiteLocationLabels,
 ];
 
 export async function runMigrations(): Promise<void> {

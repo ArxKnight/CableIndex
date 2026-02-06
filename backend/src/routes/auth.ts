@@ -48,9 +48,8 @@ router.post('/login', async (req: Request, res: Response) => {
     if (!user) {
       console.warn(`✗ Invalid credentials for: ${email}`);
       return res.status(401).json({
-        success: false,
-        error: 'INVALID_CREDENTIALS',
-      } as ApiResponse);
+        error: 'Invalid email or password',
+      });
     }
 
     console.log(`✓ Credentials verified for user: ${user.id} (${user.email})`);

@@ -260,7 +260,7 @@ const UserInvitations: React.FC = () => {
       site_role: siteRole,
     }));
 
-    if (sites.length === 0) {
+    if (sites.length === 0 && hasAvailableSites) {
       toast.error('Select at least one site');
       return;
     }
@@ -468,8 +468,8 @@ const UserInvitations: React.FC = () => {
                             ))
                           ) : (
                             <div className="space-y-1">
-                              <p className="text-sm text-muted-foreground">No sites available</p>
-                              <p className="text-xs text-muted-foreground">Create a site first before inviting users.</p>
+                              <p className="text-sm text-muted-foreground">No sites exist yet.</p>
+                              <p className="text-xs text-muted-foreground">You can invite users now and assign site access later.</p>
                             </div>
                           )}
                         </div>
@@ -508,7 +508,7 @@ const UserInvitations: React.FC = () => {
                         >
                           Cancel
                         </Button>
-                        <Button type="submit" disabled={isSubmitting || !hasAvailableSites || !hasSelectedSites}>
+                        <Button type="submit" disabled={isSubmitting || (hasAvailableSites && !hasSelectedSites)}>
                           {isSubmitting ? 'Sending...' : 'Send Invitation'}
                         </Button>
                       </DialogFooter>

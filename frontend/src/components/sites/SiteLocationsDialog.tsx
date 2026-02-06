@@ -259,15 +259,15 @@ const SiteLocationsDialog: React.FC<SiteLocationsDialogProps> = ({ open, onOpenC
               </div>
               <div className="space-y-1">
                 <Label>Suite</Label>
-                <Input value={suite} onChange={(e) => setSuite(e.target.value)} placeholder="e.g., A" disabled={working} />
+                <Input value={suite} onChange={(e) => setSuite(e.target.value)} placeholder="e.g., 1" disabled={working} />
               </div>
               <div className="space-y-1">
                 <Label>Row</Label>
-                <Input value={row} onChange={(e) => setRow(e.target.value)} placeholder="e.g., R1" disabled={working} />
+                <Input value={row} onChange={(e) => setRow(e.target.value)} placeholder="e.g., A" disabled={working} />
               </div>
               <div className="space-y-1">
                 <Label>Rack</Label>
-                <Input value={rack} onChange={(e) => setRack(e.target.value)} placeholder="e.g., R42" disabled={working} />
+                <Input value={rack} onChange={(e) => setRack(e.target.value)} placeholder="e.g., 1" disabled={working} />
               </div>
             </div>
 

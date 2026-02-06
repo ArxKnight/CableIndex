@@ -111,7 +111,7 @@ const inviteUserSchema = z.object({
   sites: z.array(z.object({
     site_id: z.number().min(1),
     site_role: z.enum(['ADMIN', 'USER']).default('USER'),
-  })).min(1),
+  })).optional().default([]),
   role: z.enum(['GLOBAL_ADMIN', 'ADMIN', 'USER']).optional(),
   expires_in_days: z.number().int().min(1).max(30).optional().default(7),
 });
@@ -181,8 +181,15 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
     // Validate site access for non-global admins
     const siteIds = sites.map(site => site.site_id);
 
+    if (requesterRole !== 'GLOBAL_ADMIN' && siteIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'At least one site is required',
+      });
+    }
+
     // Validate that all referenced sites actually exist (prevents FK errors -> 500)
-    {
+    if (siteIds.length > 0) {
       const placeholders = siteIds.map(() => '?').join(', ');
       const siteRows = await getAdapter().query(
         `SELECT id FROM sites WHERE id IN (${placeholders})`,
@@ -198,7 +205,7 @@ router.post('/invite', authenticateToken, requireAdmin, async (req, res) => {
       }
     }
 
-    if (requesterRole !== 'GLOBAL_ADMIN') {
+    if (requesterRole !== 'GLOBAL_ADMIN' && siteIds.length > 0) {
       const placeholders = siteIds.map(() => '?').join(', ');
       const rows = await getAdapter().query(
         `SELECT DISTINCT site_id FROM site_memberships
@@ -696,13 +703,6 @@ router.post('/accept-invite', async (req, res) => {
       `SELECT site_id, site_role FROM invitation_sites WHERE invitation_id = ?`,
       [invitation.id]
     ) as Array<{ site_id: number; site_role: string }>;
-
-    if (invitationSites.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invitation has no sites assigned',
-      });
-    }
 
     const hasAdminSite = invitationSites.some(site => site.site_role === 'ADMIN');
     const globalRole = hasAdminSite ? 'ADMIN' : 'USER';

@@ -10,11 +10,8 @@ import {
   Search, 
   Plus, 
   MapPin, 
-  Edit, 
-  Trash2, 
   Loader2,
   Building2,
-  Eye,
   Filter,
   SortAsc,
   SortDesc
@@ -26,16 +23,12 @@ interface SiteWithLabelCount extends Site {
 
 interface SiteListProps {
   onCreateSite: () => void;
-  onEditSite: (site: Site) => void;
-  onDeleteSite: (site: Site) => void;
   onViewDetails?: (siteId: number) => void;
   refreshTrigger?: number;
 }
 
 const SiteList: React.FC<SiteListProps> = ({ 
   onCreateSite, 
-  onEditSite, 
-  onDeleteSite,
   onViewDetails,
   refreshTrigger = 0
 }) => {
@@ -254,61 +247,29 @@ const SiteList: React.FC<SiteListProps> = ({
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {sites.map((site) => (
-            <Card key={site.id} className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-3">
-                <div className="flex justify-between items-start">
-                  <div 
-                    className="flex-1 min-w-0 cursor-pointer" 
-                    onClick={() => onViewDetails && onViewDetails(site.id)}
-                  >
-                    <CardTitle className="text-lg truncate hover:text-primary transition-colors">
-                      {site.name}
-                    </CardTitle>
-                    {site.location && (
-                      <CardDescription className="flex items-center mt-1">
-                        <MapPin className="h-3 w-3 mr-1 flex-shrink-0" />
-                        <span className="truncate">{site.location}</span>
-                      </CardDescription>
-                    )}
-                  </div>
-                  <div className="flex space-x-1 ml-2">
-                    {onViewDetails && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onViewDetails(site.id)}
-                        title="View Details"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onEditSite(site)}
-                      title="Edit Site"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onDeleteSite(site)}
-                      className="text-destructive hover:text-destructive"
-                      title="Delete Site"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
+            <Card
+              key={site.id}
+              className={onViewDetails ? 'cursor-pointer hover:shadow-md transition-shadow' : undefined}
+              onClick={() => onViewDetails && onViewDetails(site.id)}
+            >
+              <CardHeader className="pb-3 text-center">
+                <CardTitle className="text-lg truncate hover:text-primary transition-colors">
+                  {site.name}
+                </CardTitle>
+                {site.location && (
+                  <CardDescription className="flex items-center justify-center mt-1">
+                    <MapPin className="h-3 w-3 mr-1 flex-shrink-0" />
+                    <span className="truncate">{site.location}</span>
+                  </CardDescription>
+                )}
               </CardHeader>
-              <CardContent className="pt-0">
+              <CardContent className="pt-0 text-center">
                 {site.description && (
                   <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
                     {site.description}
                   </p>
                 )}
-                <div className="flex justify-between items-center text-sm text-muted-foreground">
+                <div className="flex flex-col items-center gap-1 text-sm text-muted-foreground">
                   <span>{site.label_count} labels</span>
                   <span>Created {formatDate(site.created_at)}</span>
                 </div>

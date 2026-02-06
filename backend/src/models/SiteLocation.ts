@@ -152,10 +152,21 @@ export class SiteLocationModel {
 
   async listBySiteId(siteId: number): Promise<SiteLocation[]> {
     const rows = await this.adapter.query(
-      `SELECT id, site_id, floor, suite, \`row\` as \`row\`, rack, label, created_at, updated_at
-       FROM site_locations
-       WHERE site_id = ?
-       ORDER BY floor ASC, suite ASC, \`row\` ASC, rack ASC, id ASC`,
+      `SELECT
+         sl.id,
+         sl.site_id,
+         sl.floor,
+         sl.suite,
+         sl.\`row\` as \`row\`,
+         sl.rack,
+         sl.label,
+         COALESCE(NULLIF(TRIM(sl.label), ''), s.code) AS effective_label,
+         sl.created_at,
+         sl.updated_at
+       FROM site_locations sl
+       JOIN sites s ON s.id = sl.site_id
+       WHERE sl.site_id = ?
+       ORDER BY sl.floor ASC, sl.suite ASC, sl.\`row\` ASC, sl.rack ASC, sl.id ASC`,
       [siteId]
     );
 
@@ -164,9 +175,20 @@ export class SiteLocationModel {
 
   async findById(id: number, siteId: number): Promise<SiteLocation | null> {
     const rows = await this.adapter.query(
-      `SELECT id, site_id, floor, suite, \`row\` as \`row\`, rack, label, created_at, updated_at
-       FROM site_locations
-       WHERE id = ? AND site_id = ?`,
+      `SELECT
+         sl.id,
+         sl.site_id,
+         sl.floor,
+         sl.suite,
+         sl.\`row\` as \`row\`,
+         sl.rack,
+         sl.label,
+         COALESCE(NULLIF(TRIM(sl.label), ''), s.code) AS effective_label,
+         sl.created_at,
+         sl.updated_at
+       FROM site_locations sl
+       JOIN sites s ON s.id = sl.site_id
+       WHERE sl.id = ? AND sl.site_id = ?`,
       [id, siteId]
     );
 

@@ -163,7 +163,8 @@ export class LabelModel {
     siteCode: string,
     location: { label?: string | null; floor: string; suite: string; row: string; rack: string }
   ): string {
-    const label = (location.label ?? '').toString().trim();
+    const labelRaw = (location.label ?? '').toString().trim();
+    const label = labelRaw !== '' ? labelRaw : siteCode;
     const floor = (location.floor ?? '').toString().trim();
     const suite = (location.suite ?? '').toString().trim();
     const row = (location.row ?? '').toString().trim();

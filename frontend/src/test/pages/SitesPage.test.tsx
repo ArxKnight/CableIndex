@@ -6,12 +6,9 @@ import { apiClient } from '../../lib/api';
 
 // Mock the child components
 vi.mock('../../components/sites/SiteList', () => ({
-  default: ({ onCreateSite, onEditSite, onDeleteSite, onViewDetails }: any) => (
+  default: ({ onCreateSite, onViewDetails }: any) => (
     <div data-testid="site-list">
       <button onClick={onCreateSite}>Create Site</button>
-      <button onClick={() => onEditSite({ id: 1, name: 'Test Site' })}>Edit Site</button>
-      <button onClick={() => onDeleteSite({ id: 1, name: 'Test Site', label_count: 0 })}>Delete Site</button>
-      <button onClick={() => onDeleteSite({ id: 2, name: 'Danger Site', label_count: 3 })}>Delete Site With Labels</button>
       <button onClick={() => onViewDetails(1)}>View Details</button>
     </div>
   ),
@@ -22,6 +19,7 @@ vi.mock('../../components/sites/SiteDetails', () => ({
     <div data-testid="site-details">
       <button onClick={() => onEdit({ id: 1, name: 'Test Site' })}>Edit from Details</button>
       <button onClick={() => onDelete({ id: 1, name: 'Test Site', label_count: 0 })}>Delete from Details</button>
+      <button onClick={() => onDelete({ id: 2, name: 'Danger Site', label_count: 3 })}>Delete from Details With Labels</button>
       <button onClick={onBack}>Back</button>
     </div>
   ),
@@ -59,21 +57,23 @@ describe('SitesPage', () => {
     expect(screen.getByTestId('site-form')).toBeInTheDocument();
   });
 
-  it('should open edit dialog when edit button is clicked', async () => {
+  it('should open edit dialog when edit is clicked from details', async () => {
     const user = userEvent.setup();
     render(<SitesPage />);
 
-    await user.click(screen.getByText('Edit Site'));
+    await user.click(screen.getByText('View Details'));
+    await user.click(screen.getByText('Edit from Details'));
 
     expect(screen.getByRole('heading', { name: 'Edit Site' })).toBeInTheDocument();
     expect(screen.getByTestId('site-form')).toBeInTheDocument();
   });
 
-  it('should open delete dialog when delete button is clicked', async () => {
+  it('should open delete dialog when delete is clicked from details', async () => {
     const user = userEvent.setup();
     render(<SitesPage />);
 
-    await user.click(screen.getByText('Delete Site'));
+    await user.click(screen.getByText('View Details'));
+    await user.click(screen.getByText('Delete from Details'));
 
     expect(screen.getByRole('heading', { name: /delete site/i })).toBeInTheDocument();
     expect(screen.getByText(/are you sure you want to delete/i)).toBeInTheDocument();
@@ -127,8 +127,9 @@ describe('SitesPage', () => {
     const user = userEvent.setup();
     render(<SitesPage />);
 
-    // Open edit dialog
-    await user.click(screen.getByText('Edit Site'));
+    // Open edit dialog from details
+    await user.click(screen.getByText('View Details'));
+    await user.click(screen.getByText('Edit from Details'));
 
     // Submit form
     await user.click(screen.getByText('Submit'));
@@ -148,8 +149,9 @@ describe('SitesPage', () => {
     const user = userEvent.setup();
     render(<SitesPage />);
 
-    // Open delete dialog
-    await user.click(screen.getByText('Delete Site'));
+    // Open delete dialog from details
+    await user.click(screen.getByText('View Details'));
+    await user.click(screen.getByText('Delete from Details'));
 
     // Confirm deletion
     const deleteButtons = screen.getAllByRole('button', { name: /delete site/i });
@@ -187,8 +189,9 @@ describe('SitesPage', () => {
 
     render(<SitesPage />);
 
-    // Open edit dialog
-    await user.click(screen.getByText('Edit Site'));
+    // Open edit dialog from details
+    await user.click(screen.getByText('View Details'));
+    await user.click(screen.getByText('Edit from Details'));
 
     // Submit form
     await user.click(screen.getByText('Submit'));
@@ -204,8 +207,9 @@ describe('SitesPage', () => {
 
     render(<SitesPage />);
 
-    // Open delete dialog
-    await user.click(screen.getByText('Delete Site'));
+    // Open delete dialog from details
+    await user.click(screen.getByText('View Details'));
+    await user.click(screen.getByText('Delete from Details'));
 
     // Confirm deletion
     const deleteButtons = screen.getAllByRole('button', { name: /delete site/i });
@@ -229,7 +233,8 @@ describe('SitesPage', () => {
     expect(screen.queryByText('Create New Site')).not.toBeInTheDocument();
 
     // Test delete dialog cancel
-    await user.click(screen.getByText('Delete Site'));
+    await user.click(screen.getByText('View Details'));
+    await user.click(screen.getByText('Delete from Details'));
     expect(screen.getByRole('heading', { name: /delete site/i })).toBeInTheDocument();
 
     await user.click(screen.getByText('Cancel'));
@@ -240,7 +245,8 @@ describe('SitesPage', () => {
     const user = userEvent.setup();
     render(<SitesPage />);
 
-    await user.click(screen.getByText('Delete Site With Labels'));
+    await user.click(screen.getByText('View Details'));
+    await user.click(screen.getByText('Delete from Details With Labels'));
 
     // Delete button should be disabled until confirmations are completed
     const deleteButtons = screen.getAllByRole('button', { name: /delete site/i });

@@ -4,9 +4,22 @@ function safe(value: unknown): string {
   return (value ?? '').toString().trim();
 }
 
+function effectiveLabel(loc: SiteLocation, fallbackSiteCode?: string): string {
+  const fromApi = safe((loc as any).effective_label);
+  if (fromApi) return fromApi;
+
+  const fromLabel = safe(loc.label);
+  if (fromLabel) return fromLabel;
+
+  const fallback = safe(fallbackSiteCode);
+  if (fallback) return fallback;
+
+  return 'Site';
+}
+
 // Section 4A display: field-based, fixed ordering, fixed separators.
 export function formatLocationFields(loc: SiteLocation): string {
-  const label = safe(loc.label);
+  const label = effectiveLabel(loc);
   const floor = safe(loc.floor);
   const suite = safe(loc.suite);
   const row = safe(loc.row);
@@ -18,15 +31,15 @@ export function formatLocationFields(loc: SiteLocation): string {
 // UI display format (lists, admin screens, etc):
 //   <LocationLabel> — Label: <SiteAbbrev> | Floor: <Floor> | Suite: <Suite> | Row: <Row> | Rack: <Rack>
 export function formatLocationDisplay(loc: SiteLocation, siteAbbrev: string): string {
-  const locationLabel = safe(loc.label);
   const siteCode = safe(siteAbbrev);
+  const locationLabel = effectiveLabel(loc, siteCode);
   return `${locationLabel} — Label: ${siteCode} | Floor: ${safe(loc.floor)} | Suite: ${safe(loc.suite)} | Row: ${safe(loc.row)} | Rack: ${safe(loc.rack)}`;
 }
 
 // ZPL print format (cross-rack label output):
 //   <LocationLabel>/<Floor>/<Suite>/<Row>/<Rack>
 export function formatLocationPrint(loc: SiteLocation): string {
-  return `${safe(loc.label)}/${safe(loc.floor)}/${safe(loc.suite)}/${safe(loc.row)}/${safe(loc.rack)}`;
+  return `${effectiveLabel(loc)}/${safe(loc.floor)}/${safe(loc.suite)}/${safe(loc.row)}/${safe(loc.rack)}`;
 }
 
 export function formatLocationWithPrefix(prefix: string, loc: SiteLocation): string {
@@ -42,7 +55,7 @@ export function locationHierarchyKeys(loc: SiteLocation): {
   rack: string;
 } {
   return {
-    label: safe(loc.label) || 'Unlabeled',
+    label: effectiveLabel(loc),
     floor: safe(loc.floor) || 'Unspecified',
     suite: safe(loc.suite) || 'Unspecified',
     row: safe(loc.row) || 'Unspecified',

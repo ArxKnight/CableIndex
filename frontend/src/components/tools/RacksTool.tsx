@@ -34,7 +34,7 @@ export function RacksTool() {
       <Card>
         <CardHeader>
           <CardTitle>RACK Labels</CardTitle>
-          <CardDescription>Enter rack names (one per line). Template: MAN#/FL#/S#/ROW#/R#</CardDescription>
+          <CardDescription>Enter rack names (one per line). Template: IVY#/FL#/S#/ROW#/R#</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
@@ -44,7 +44,7 @@ export function RacksTool() {
               value={rackList}
               onChange={(e) => setRackList(e.target.value)}
               rows={10}
-              placeholder="MAN5/FL1/S1/ROW2/R12\n..."
+              placeholder="IVY/FL1/S1/ROW2/R12"
               className="font-mono"
             />
             <div className="text-xs text-muted-foreground">Count: {racks.length}</div>

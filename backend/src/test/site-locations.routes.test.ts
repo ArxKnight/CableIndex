@@ -79,7 +79,36 @@ describe('Site Location Routes', () => {
       .expect(409);
 
     expect(response.body.success).toBe(false);
-    expect(response.body.data?.usage?.source).toBe(1);
+    expect(response.body.data?.usage?.source_count).toBe(1);
+    expect(response.body.data?.usage?.destination_count).toBe(0);
+    expect(response.body.data?.usage?.total_in_use).toBe(1);
+  });
+
+  it('counts destination references when blocking delete (409)', async () => {
+    const site = await siteModel.create({ name: 'Test Site', code: 'TS', created_by: testUser.id });
+    const src = await siteLocationModel.create({ site_id: site.id, floor: '1', suite: 'A', row: 'R1', rack: '1', label: 'SRC' });
+    const dst = await siteLocationModel.create({ site_id: site.id, floor: '2', suite: 'B', row: 'R2', rack: '2', label: 'DST' });
+
+    const cableType = await cableTypeModel.create({ site_id: site.id, name: 'CAT6' });
+
+    await labelModel.create({
+      site_id: site.id,
+      created_by: testUser.id,
+      source_location_id: src.id,
+      destination_location_id: dst.id,
+      cable_type_id: cableType.id,
+      type: 'cable',
+    });
+
+    const response = await request(app)
+      .delete(`/api/sites/${site.id}/locations/${dst.id}`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .expect(409);
+
+    expect(response.body.success).toBe(false);
+    expect(response.body.data?.usage?.source_count).toBe(0);
+    expect(response.body.data?.usage?.destination_count).toBe(1);
+    expect(response.body.data?.usage?.total_in_use).toBe(1);
   });
 
   it('reassigns labels then deletes the location when strategy=reassign', async () => {

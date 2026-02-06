@@ -7,9 +7,9 @@ import { LoginCredentials } from '../../types';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
-import { Alert, AlertDescription } from '../ui/alert';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { ApiError } from '../../lib/api';
+import { toast } from 'sonner';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -45,8 +45,15 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess }) => {
       const message = err instanceof Error ? err.message : 'Login failed';
       const status = err instanceof ApiError ? err.status : undefined;
 
-      if (status === 401 || message === 'INVALID_CREDENTIALS' || /invalid credentials/i.test(message) || /invalid email or password/i.test(message)) {
-        setError('Incorrect email or password.');
+      if (
+        status === 401 ||
+        message === 'INVALID_CREDENTIALS' ||
+        /invalid credentials/i.test(message) ||
+        /invalid email or password/i.test(message)
+      ) {
+        const invalidCredsMessage = 'Invalid email or password.';
+        toast.error(invalidCredsMessage);
+        setError(invalidCredsMessage);
       } else if (message === 'Server error. Please try again later.' || /server error/i.test(message)) {
         setError('Server error. Please try again later.');
       } else if (message === 'Network error. Check connection.' || /network error/i.test(message)) {
@@ -75,12 +82,6 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess }) => {
         </p>
       </div>
 
-      {error && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
@@ -89,7 +90,9 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess }) => {
             type="email"
             placeholder="Enter your email"
             autoComplete="email"
-            {...register('email')}
+            {...register('email', {
+              onChange: () => setError(null),
+            })}
             disabled={isLoading}
           />
           {errors.email && (
@@ -105,7 +108,9 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess }) => {
               type={showPassword ? 'text' : 'password'}
               placeholder="Enter your password"
               autoComplete="current-password"
-              {...register('password')}
+              {...register('password', {
+                onChange: () => setError(null),
+              })}
               disabled={isLoading}
             />
             <Button
@@ -139,6 +144,12 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess }) => {
             'Sign In'
           )}
         </Button>
+
+        {error && (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
       </form>
 
     </div>

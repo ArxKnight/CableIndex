@@ -30,6 +30,7 @@ export interface SiteLocation {
   row: string;
   rack: string;
   label?: string | null;
+  effective_label?: string;
   created_at: string;
   updated_at: string;
 }
