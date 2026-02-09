@@ -151,6 +151,265 @@ describe('Label Routes', () => {
         .set('Authorization', `Bearer ${otherTokens.accessToken}`)
         .expect(403);
     });
+
+    it('supports filtering by location fields, cable type, and created by', async () => {
+      const ivyUser = await userModel.create({
+        email: 'ivy@example.com',
+        username: 'ivy',
+        password: 'TestPassword123!',
+        role: 'USER',
+      });
+
+      const ivyLoc = await siteLocationModel.create({
+        site_id: testSite.id,
+        floor: '1',
+        suite: 'A',
+        row: 'R1',
+        rack: '03',
+        label: 'IVY',
+      });
+
+      const otherLocA = await siteLocationModel.create({
+        site_id: testSite.id,
+        floor: '2',
+        suite: 'B',
+        row: 'R2',
+        rack: '04',
+        label: 'OAK',
+      });
+
+      const otherLocB = await siteLocationModel.create({
+        site_id: testSite.id,
+        floor: '2',
+        suite: 'B',
+        row: 'R2',
+        rack: '05',
+        label: 'PINE',
+      });
+
+      const fiberType = await cableTypeModel.create({
+        site_id: testSite.id,
+        name: 'FIBER',
+      });
+
+      const ivyLabel = await labelModel.create({
+        site_id: testSite.id,
+        created_by: ivyUser.id,
+        source_location_id: ivyLoc.id,
+        destination_location_id: otherLocB.id,
+        cable_type_id: fiberType.id,
+      });
+
+      await labelModel.create({
+        site_id: testSite.id,
+        created_by: testUser.id,
+        source_location_id: otherLocA.id,
+        destination_location_id: otherLocB.id,
+        cable_type_id: cableType.id,
+      });
+
+      const response = await request(app)
+        .get('/api/labels')
+        .query({
+          site_id: testSite.id,
+          location_label: 'IVY',
+          floor: '1',
+          suite: 'A',
+          row: 'R1',
+          rack: '03',
+          cable_type: 'FIB',
+          created_by: 'ivy',
+        })
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.labels).toHaveLength(1);
+      expect(response.body.data.labels[0].id).toBe(ivyLabel.id);
+      expect(response.body.data.pagination.total).toBe(1);
+    });
+
+    it('filters by source_location_id', async () => {
+      const otherLoc = await siteLocationModel.create({
+        site_id: testSite.id,
+        floor: '9',
+        suite: 'Z',
+        row: 'R9',
+        rack: '99',
+        label: 'OTHER',
+      });
+
+      const a = await labelModel.create({
+        site_id: testSite.id,
+        created_by: testUser.id,
+        source_location_id: sourceLoc.id,
+        destination_location_id: destinationLoc.id,
+        cable_type_id: cableType.id,
+      });
+
+      await labelModel.create({
+        site_id: testSite.id,
+        created_by: testUser.id,
+        source_location_id: otherLoc.id,
+        destination_location_id: destinationLoc.id,
+        cable_type_id: cableType.id,
+      });
+
+      const response = await request(app)
+        .get('/api/labels')
+        .query({ site_id: testSite.id, source_location_id: sourceLoc.id })
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.labels).toHaveLength(1);
+      expect(response.body.data.labels[0].id).toBe(a.id);
+      expect(response.body.data.pagination.total).toBe(1);
+    });
+
+    it('filters by destination_location_id', async () => {
+      const otherLoc = await siteLocationModel.create({
+        site_id: testSite.id,
+        floor: '8',
+        suite: 'Y',
+        row: 'R8',
+        rack: '88',
+        label: 'OTHER',
+      });
+
+      const a = await labelModel.create({
+        site_id: testSite.id,
+        created_by: testUser.id,
+        source_location_id: sourceLoc.id,
+        destination_location_id: destinationLoc.id,
+        cable_type_id: cableType.id,
+      });
+
+      await labelModel.create({
+        site_id: testSite.id,
+        created_by: testUser.id,
+        source_location_id: sourceLoc.id,
+        destination_location_id: otherLoc.id,
+        cable_type_id: cableType.id,
+      });
+
+      const response = await request(app)
+        .get('/api/labels')
+        .query({ site_id: testSite.id, destination_location_id: destinationLoc.id })
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.labels).toHaveLength(1);
+      expect(response.body.data.labels[0].id).toBe(a.id);
+      expect(response.body.data.pagination.total).toBe(1);
+    });
+
+    it('supports filtering source rack to destination floor (side-specific)', async () => {
+      const srcRack = await siteLocationModel.create({
+        site_id: testSite.id,
+        floor: '1',
+        suite: 'A',
+        row: 'R1',
+        rack: '99',
+        label: 'SRC',
+      });
+
+      const dstFloor2a = await siteLocationModel.create({
+        site_id: testSite.id,
+        floor: '2',
+        suite: 'A',
+        row: 'R1',
+        rack: '01',
+        label: 'DST',
+      });
+
+      const dstFloor3 = await siteLocationModel.create({
+        site_id: testSite.id,
+        floor: '3',
+        suite: 'A',
+        row: 'R1',
+        rack: '01',
+        label: 'DST',
+      });
+
+      const match = await labelModel.create({
+        site_id: testSite.id,
+        created_by: testUser.id,
+        source_location_id: srcRack.id,
+        destination_location_id: dstFloor2a.id,
+        cable_type_id: cableType.id,
+      });
+
+      await labelModel.create({
+        site_id: testSite.id,
+        created_by: testUser.id,
+        source_location_id: srcRack.id,
+        destination_location_id: dstFloor3.id,
+        cable_type_id: cableType.id,
+      });
+
+      const response = await request(app)
+        .get('/api/labels')
+        .query({
+          site_id: testSite.id,
+          source_rack: '99',
+          destination_floor: '2',
+        })
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.labels).toHaveLength(1);
+      expect(response.body.data.labels[0].id).toBe(match.id);
+      expect(response.body.data.pagination.total).toBe(1);
+    });
+
+    it('search matches location fields like "Floor 1" and location labels like "IVY"', async () => {
+      const ivyLoc = await siteLocationModel.create({
+        site_id: testSite.id,
+        floor: '1',
+        suite: 'A',
+        row: 'R1',
+        rack: '06',
+        label: 'IVY',
+      });
+
+      const otherLoc = await siteLocationModel.create({
+        site_id: testSite.id,
+        floor: '2',
+        suite: 'B',
+        row: 'R2',
+        rack: '07',
+        label: 'OAK',
+      });
+
+      const ivyLabel = await labelModel.create({
+        site_id: testSite.id,
+        created_by: testUser.id,
+        source_location_id: ivyLoc.id,
+        destination_location_id: otherLoc.id,
+        cable_type_id: cableType.id,
+      });
+
+      const byFloor = await request(app)
+        .get('/api/labels')
+        .query({ site_id: testSite.id, search: 'Floor 1' })
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(200);
+
+      expect(byFloor.body.success).toBe(true);
+      expect(byFloor.body.data.labels.map((l: any) => l.id)).toContain(ivyLabel.id);
+
+      const byLabel = await request(app)
+        .get('/api/labels')
+        .query({ site_id: testSite.id, search: 'IVY' })
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(200);
+
+      expect(byLabel.body.success).toBe(true);
+      expect(byLabel.body.data.labels.map((l: any) => l.id)).toContain(ivyLabel.id);
+    });
   });
 
   describe('GET /api/labels/:id', () => {

@@ -38,7 +38,7 @@ export function LabelFrame({
   );
 }
 
-export function ResidPreview({ sid }: { sid: string }) {
+export function SidPreview({ sid }: { sid: string }) {
   const value = sid.trim();
   if (!value) return null;
 

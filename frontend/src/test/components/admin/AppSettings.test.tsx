@@ -70,7 +70,6 @@ describe('AppSettings', () => {
 
     // Check section headers
     expect(screen.getByText('Email (SMTP)')).toBeInTheDocument();
-    expect(screen.getByText('Maintenance Mode')).toBeInTheDocument();
   });
 
   it('shows unsaved changes alert when form is modified', async () => {
@@ -87,25 +86,6 @@ describe('AppSettings', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/You have unsaved changes/)).toBeInTheDocument();
-    });
-  });
-
-  it('shows maintenance message field when maintenance mode is enabled', async () => {
-    const Wrapper = createWrapper();
-    render(<AppSettings />, { wrapper: Wrapper });
-
-    const user = userEvent.setup();
-
-    await waitFor(() => {
-      expect(screen.queryByLabelText('Maintenance Message')).not.toBeInTheDocument();
-    });
-
-    // Enable maintenance mode
-    const maintenanceSwitch = screen.getByRole('switch', { name: /enable maintenance mode/i });
-    await user.click(maintenanceSwitch);
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('Maintenance Message')).toBeInTheDocument();
     });
   });
 

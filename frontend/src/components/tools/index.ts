@@ -1,4 +1,4 @@
-export { ResidTool } from './ResidTool';
+export { SidTool } from './SidTool';
 export { DayWipeTool } from './DayWipeTool';
 export { TextTool } from './TextTool';
 export { RacksTool } from './RacksTool';

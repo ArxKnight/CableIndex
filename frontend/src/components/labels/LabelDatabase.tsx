@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { LabelWithSiteInfo, Site, LabelSearchParams } from '../../types';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { CableType, LabelWithSiteInfo, Site, SiteLocation, LabelSearchParams } from '../../types';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Card, CardContent, CardHeader } from '../ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { 
   Search, 
   Filter, 
@@ -19,6 +20,7 @@ import {
 import apiClient from '../../lib/api';
 import { formatLocationDisplay, formatLocationFields } from '../../lib/locationFormat';
 import LabelDetailsDialog from './LabelDetailsDialog';
+import LocationHierarchyDropdown, { type LocationHierarchyScope } from '../locations/LocationHierarchyDropdown';
 
 interface LabelDatabaseProps {
   onCreateLabel?: () => void;
@@ -51,6 +53,10 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsLabel, setDetailsLabel] = useState<LabelWithSiteInfo | null>(null);
   const [multiSelectEnabled, setMultiSelectEnabled] = useState(false);
+  const [locations, setLocations] = useState<SiteLocation[]>([]);
+  const [loadingLocations, setLoadingLocations] = useState(false);
+  const [cableTypes, setCableTypes] = useState<CableType[]>([]);
+  const [loadingCableTypes, setLoadingCableTypes] = useState(false);
 
   useEffect(() => {
     if (!multiSelectEnabled && selectedLabels.size > 0) {
@@ -63,6 +69,20 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     search: '',
     site_id: fixedSiteId || 0,
     reference_number: '',
+    source_location_id: undefined,
+    destination_location_id: undefined,
+    source_location_label: '',
+    source_floor: '',
+    source_suite: '',
+    source_row: '',
+    source_rack: '',
+    destination_location_label: '',
+    destination_floor: '',
+    destination_suite: '',
+    destination_row: '',
+    destination_rack: '',
+    cable_type_id: undefined,
+    created_by: '',
     limit: 25,
     offset: 0,
     sort_by: 'created_at',
@@ -112,9 +132,88 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
       setSearchParams(prev => ({
         ...prev,
         site_id: selectedSiteId,
+        source_location_id: undefined,
+        destination_location_id: undefined,
+        source_location_label: '',
+        source_floor: '',
+        source_suite: '',
+        source_row: '',
+        source_rack: '',
+        destination_location_label: '',
+        destination_floor: '',
+        destination_suite: '',
+        destination_row: '',
+        destination_rack: '',
+        cable_type_id: undefined,
         offset: 0,
       }));
     }
+  }, [selectedSiteId]);
+
+  // Load site locations for the dropdown filters
+  useEffect(() => {
+    if (!selectedSiteId) {
+      setLocations([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        setLoadingLocations(true);
+        const resp = await apiClient.getSiteLocations(selectedSiteId);
+        if (cancelled) return;
+
+        if (resp.success && resp.data) {
+          setLocations(resp.data.locations);
+        } else {
+          setLocations([]);
+        }
+      } catch {
+        if (!cancelled) setLocations([]);
+      } finally {
+        if (!cancelled) setLoadingLocations(false);
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSiteId]);
+
+  // Load site cable types for the Cable Type dropdown filter
+  useEffect(() => {
+    if (!selectedSiteId) {
+      setCableTypes([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        setLoadingCableTypes(true);
+        const resp = await apiClient.getSiteCableTypes(selectedSiteId);
+        if (cancelled) return;
+
+        if (resp.success && resp.data) {
+          setCableTypes(resp.data.cable_types as CableType[]);
+        } else {
+          setCableTypes([]);
+        }
+      } catch {
+        if (!cancelled) setCableTypes([]);
+      } finally {
+        if (!cancelled) setLoadingCableTypes(false);
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
   }, [selectedSiteId]);
 
   // Load labels
@@ -178,6 +277,79 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
       offset: 0, // Reset to first page
     }));
   };
+
+  const sourceScope = useMemo((): LocationHierarchyScope | null => {
+    if (!searchParams.source_location_label) return null;
+    const scope: LocationHierarchyScope = { label: searchParams.source_location_label };
+    if (searchParams.source_floor) scope.floor = searchParams.source_floor;
+    if (searchParams.source_suite) scope.suite = searchParams.source_suite;
+    if (searchParams.source_row) scope.row = searchParams.source_row;
+    if (searchParams.source_rack) scope.rack = searchParams.source_rack;
+    return scope;
+  }, [
+    searchParams.source_location_label,
+    searchParams.source_floor,
+    searchParams.source_suite,
+    searchParams.source_row,
+    searchParams.source_rack,
+  ]);
+
+  const destinationScope = useMemo((): LocationHierarchyScope | null => {
+    if (!searchParams.destination_location_label) return null;
+    const scope: LocationHierarchyScope = { label: searchParams.destination_location_label };
+    if (searchParams.destination_floor) scope.floor = searchParams.destination_floor;
+    if (searchParams.destination_suite) scope.suite = searchParams.destination_suite;
+    if (searchParams.destination_row) scope.row = searchParams.destination_row;
+    if (searchParams.destination_rack) scope.rack = searchParams.destination_rack;
+    return scope;
+  }, [
+    searchParams.destination_location_label,
+    searchParams.destination_floor,
+    searchParams.destination_suite,
+    searchParams.destination_row,
+    searchParams.destination_rack,
+  ]);
+
+  const setSideScope = useCallback((side: 'source' | 'destination', scope: LocationHierarchyScope | null) => {
+    const label = scope?.label ?? '';
+    const floor = scope?.floor ?? '';
+    const suite = scope?.suite ?? '';
+    const row = scope?.row ?? '';
+    const rack = scope?.rack ?? '';
+
+    const resolved = {
+      label,
+      floor,
+      suite: floor ? suite : '',
+      row: floor && suite ? row : '',
+      rack: floor && suite && row ? rack : '',
+    };
+
+    setSearchParams((prev) => {
+      if (side === 'source') {
+        return {
+          ...prev,
+          source_location_id: undefined,
+          source_location_label: resolved.label,
+          source_floor: resolved.floor,
+          source_suite: resolved.suite,
+          source_row: resolved.row,
+          source_rack: resolved.rack,
+          offset: 0,
+        };
+      }
+      return {
+        ...prev,
+        destination_location_id: undefined,
+        destination_location_label: resolved.label,
+        destination_floor: resolved.floor,
+        destination_suite: resolved.suite,
+        destination_row: resolved.row,
+        destination_rack: resolved.rack,
+        offset: 0,
+      };
+    });
+  }, []);
 
   // Handle pagination
   const handlePageChange = (direction: 'prev' | 'next') => {
@@ -264,12 +436,43 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
       ...prev,
       search: '',
       reference_number: '',
+      source_location_id: undefined,
+      destination_location_id: undefined,
+      source_location_label: '',
+      source_floor: '',
+      source_suite: '',
+      source_row: '',
+      source_rack: '',
+      destination_location_label: '',
+      destination_floor: '',
+      destination_suite: '',
+      destination_row: '',
+      destination_rack: '',
+      cable_type_id: undefined,
+      created_by: '',
       site_id: selectedSiteId || 0,
       offset: 0,
     }));
   };
 
-  const hasActiveFilters = searchParams.search || searchParams.reference_number;
+  const hasActiveFilters = Boolean(
+    searchParams.search ||
+    searchParams.reference_number ||
+    searchParams.source_location_id ||
+    searchParams.destination_location_id ||
+    searchParams.source_location_label ||
+    searchParams.source_floor ||
+    searchParams.source_suite ||
+    searchParams.source_row ||
+    searchParams.source_rack ||
+    searchParams.destination_location_label ||
+    searchParams.destination_floor ||
+    searchParams.destination_suite ||
+    searchParams.destination_row ||
+    searchParams.destination_rack ||
+    searchParams.cable_type_id ||
+    searchParams.created_by
+  );
 
   const showSiteColumn = !fixedSiteId;
 
@@ -375,6 +578,61 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
                   placeholder="e.g., #0001"
                   value={searchParams.reference_number || ''}
                   onChange={(e) => handleFilterChange('reference_number', e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Source</Label>
+                <LocationHierarchyDropdown
+                  mode="scope"
+                  locations={locations}
+                  valueScope={sourceScope}
+                  onSelectScope={(scope) => setSideScope('source', scope)}
+                  placeholder={loadingLocations ? 'Loading...' : 'Any'}
+                  disabled={!selectedSiteId || loadingLocations || locations.length === 0}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Destination</Label>
+                <LocationHierarchyDropdown
+                  mode="scope"
+                  locations={locations}
+                  valueScope={destinationScope}
+                  onSelectScope={(scope) => setSideScope('destination', scope)}
+                  placeholder={loadingLocations ? 'Loading...' : 'Any'}
+                  disabled={!selectedSiteId || loadingLocations || locations.length === 0}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="filter-cable-type">Cable Type</Label>
+                <Select
+                  value={(searchParams.cable_type_id ? String(searchParams.cable_type_id) : '__ANY__') as string}
+                  onValueChange={(v) => handleFilterChange('cable_type_id', v === '__ANY__' ? undefined : Number(v))}
+                  disabled={!selectedSiteId || loadingCableTypes || cableTypes.length === 0}
+                >
+                  <SelectTrigger id="filter-cable-type">
+                    <SelectValue placeholder={loadingCableTypes ? 'Loading...' : 'Any'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__ANY__">Any</SelectItem>
+                    {cableTypes.map((ct) => (
+                      <SelectItem key={`ct-${ct.id}`} value={String(ct.id)}>
+                        {ct.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="filter-created-by">Created By</Label>
+                <Input
+                  id="filter-created-by"
+                  placeholder="username or email"
+                  value={searchParams.created_by || ''}
+                  onChange={(e) => handleFilterChange('created_by', e.target.value)}
                 />
               </div>
             </div>

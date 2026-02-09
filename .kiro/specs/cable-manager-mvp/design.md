@@ -100,7 +100,7 @@ graph TB
 
 - The primary workflow is **site-centric**:
   - Users land on Sites, select a site, then create/manage labels for that site.
-- A dedicated Tools page provides generator utilities (RESID, 30DAY, TEXT, RACKS, IN-RACK, PORTS, PDU).
+- A dedicated Tools page provides generator utilities (SID, 30DAY, TEXT, RACKS, IN-RACK, PORTS, PDU).
 - Admin pages are restricted based on global role.
 
 ### Theme System

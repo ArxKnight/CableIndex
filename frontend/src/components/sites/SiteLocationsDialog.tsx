@@ -95,9 +95,13 @@ const SiteLocationsDialog: React.FC<SiteLocationsDialogProps> = ({ open, onOpenC
   };
 
   const handleCreate = async () => {
-    const hasAny = [floor, suite, row, rack, label].some((v) => v.trim().length > 0);
-    if (!hasAny) {
-      setError('Enter at least one location field (floor/suite/row/rack/label).');
+    const floorV = floor.trim();
+    const suiteV = suite.trim();
+    const rowV = row.trim();
+    const rackV = rack.trim();
+
+    if (!floorV || !suiteV || !rowV || !rackV) {
+      setError('Floor, Suite, Row, and Rack are all required.');
       return;
     }
 
@@ -106,10 +110,10 @@ const SiteLocationsDialog: React.FC<SiteLocationsDialogProps> = ({ open, onOpenC
       setError(null);
       const resp = await apiClient.createSiteLocation(siteId, {
         label: label.trim() || undefined,
-        floor: floor.trim() || undefined,
-        suite: suite.trim() || undefined,
-        row: row.trim() || undefined,
-        rack: rack.trim() || undefined,
+        floor: floorV,
+        suite: suiteV,
+        row: rowV,
+        rack: rackV,
       });
       if (!resp.success) throw new Error(resp.error || 'Failed to create location');
       resetForm();

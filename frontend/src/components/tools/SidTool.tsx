@@ -4,9 +4,9 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { splitLines } from './utils';
 import { ZplOutput } from './ZplOutput';
-import { ResidPreview } from './ToolLabelPreview';
+import { SidPreview } from './ToolLabelPreview';
 
-function generateResidZpl(sids: string[]): string {
+function generateSidZpl(sids: string[]): string {
   let out = '';
   for (const sid of [...sids].reverse()) {
     if (!sid.trim()) continue;
@@ -17,26 +17,26 @@ function generateResidZpl(sids: string[]): string {
   return out.trim() + (out.trim() ? '\n' : '');
 }
 
-export function ResidTool() {
+export function SidTool() {
   const [sidList, setSidList] = useState('');
 
   const sids = useMemo(() => splitLines(sidList), [sidList]);
   const firstSid = useMemo(() => sids.find((s) => s.trim()) || '', [sids]);
-  const zpl = useMemo(() => generateResidZpl(sids), [sids]);
+  const zpl = useMemo(() => generateSidZpl(sids), [sids]);
   const searchFriendly = useMemo(() => sids.join(', '), [sids]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>RESID Labels</CardTitle>
+          <CardTitle>SID Labels</CardTitle>
           <CardDescription>Enter SIDs (one per line). Generates two labels per SID with a DataMatrix.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="resid-sids">SIDs</Label>
+            <Label htmlFor="sid-sids">SIDs</Label>
             <Textarea
-              id="resid-sids"
+              id="sid-sids"
               value={sidList}
               onChange={(e) => setSidList(e.target.value)}
               rows={10}
@@ -63,10 +63,10 @@ export function ResidTool() {
         zpl={zpl}
         prefix="SID"
         disabled={sids.length === 0}
-        preview={<ResidPreview sid={firstSid} />}
+        preview={<SidPreview sid={firstSid} />}
       />
     </div>
   );
 }
 
-export default ResidTool;
+export default SidTool;

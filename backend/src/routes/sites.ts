@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import SiteModel from '../models/Site.js';
 import SiteLocationModel from '../models/SiteLocation.js';
-import { SiteLocationInUseError } from '../models/SiteLocation.js';
+import { DuplicateSiteLocationCoordsError, SiteLocationInUseError } from '../models/SiteLocation.js';
 import CableTypeModel from '../models/CableType.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireGlobalRole, requireSiteRole, resolveSiteAccess } from '../middleware/permissions.js';
@@ -358,7 +358,7 @@ router.post('/:id/locations', authenticateToken, resolveSiteAccess(req => Number
     }
 
     const labelTrimmed = (dataParsed.label ?? '').toString().trim();
-    const label = labelTrimmed !== '' ? labelTrimmed : site.code;
+    const label = labelTrimmed !== '' ? labelTrimmed : null;
 
     const location = await siteLocationModel.create({
       site_id: id,
@@ -380,6 +380,19 @@ router.post('/:id/locations', authenticateToken, resolveSiteAccess(req => Number
         success: false,
         error: 'Validation failed',
         details: error.errors,
+      } as ApiResponse);
+    }
+
+    if (error instanceof DuplicateSiteLocationCoordsError) {
+      const existing = error.existing;
+      const extra = existing?.id
+        ? ` (existing ID ${existing.id}${existing.effective_label ? `, Label ${existing.effective_label}` : ''})`
+        : '';
+
+      return res.status(409).json({
+        success: false,
+        error: `A location with the same Floor/Suite/Row/Rack already exists for this site${extra}. Update the existing location instead of creating a duplicate.`,
+        data: existing ? { existing } : undefined,
       } as ApiResponse);
     }
 
@@ -408,17 +421,10 @@ router.put('/:id/locations/:locationId', authenticateToken, resolveSiteAccess(re
     const { locationId } = locationIdSchema.parse(req.params);
     const dataParsed = updateLocationSchema.parse(req.body);
 
-    let labelUpdate: string | undefined;
+    let labelUpdate: string | null | undefined;
     if (dataParsed.label !== undefined) {
-      const site = await siteModel.findById(id);
-      if (!site) {
-        return res.status(404).json({
-          success: false,
-          error: 'Site not found',
-        } as ApiResponse);
-      }
       const labelTrimmed = (dataParsed.label ?? '').toString().trim();
-      labelUpdate = labelTrimmed !== '' ? labelTrimmed : site.code;
+      labelUpdate = labelTrimmed !== '' ? labelTrimmed : null;
     }
 
     const location = await siteLocationModel.update(locationId, id, {

@@ -344,6 +344,20 @@ class ApiClient {
     site_id: number;
     search?: string;
     reference_number?: string;
+    source_location_id?: number;
+    destination_location_id?: number;
+    source_location_label?: string;
+    source_floor?: string;
+    source_suite?: string;
+    source_row?: string;
+    source_rack?: string;
+    destination_location_label?: string;
+    destination_floor?: string;
+    destination_suite?: string;
+    destination_row?: string;
+    destination_rack?: string;
+    cable_type_id?: number;
+    created_by?: string;
     limit?: number;
     offset?: number;
     sort_by?: 'created_at' | 'ref_string';
@@ -353,6 +367,29 @@ class ApiClient {
     if (params?.search) searchParams.append('search', params.search);
     if (params?.site_id) searchParams.append('site_id', params.site_id.toString());
     if (params?.reference_number) searchParams.append('reference_number', params.reference_number);
+    if (Number.isFinite(params?.source_location_id) && (params!.source_location_id as number) > 0) {
+      searchParams.append('source_location_id', String(params!.source_location_id));
+    }
+    if (Number.isFinite(params?.destination_location_id) && (params!.destination_location_id as number) > 0) {
+      searchParams.append('destination_location_id', String(params!.destination_location_id));
+    }
+
+    if (params?.source_location_label) searchParams.append('source_location_label', params.source_location_label);
+    if (params?.source_floor) searchParams.append('source_floor', params.source_floor);
+    if (params?.source_suite) searchParams.append('source_suite', params.source_suite);
+    if (params?.source_row) searchParams.append('source_row', params.source_row);
+    if (params?.source_rack) searchParams.append('source_rack', params.source_rack);
+
+    if (params?.destination_location_label) searchParams.append('destination_location_label', params.destination_location_label);
+    if (params?.destination_floor) searchParams.append('destination_floor', params.destination_floor);
+    if (params?.destination_suite) searchParams.append('destination_suite', params.destination_suite);
+    if (params?.destination_row) searchParams.append('destination_row', params.destination_row);
+    if (params?.destination_rack) searchParams.append('destination_rack', params.destination_rack);
+
+    if (Number.isFinite(params?.cable_type_id) && (params!.cable_type_id as number) > 0) {
+      searchParams.append('cable_type_id', String(params!.cable_type_id));
+    }
+    if (params?.created_by) searchParams.append('created_by', params.created_by);
     if (params?.limit) searchParams.append('limit', params.limit.toString());
     if (params?.offset) searchParams.append('offset', params.offset.toString());
     if (params?.sort_by) searchParams.append('sort_by', params.sort_by);

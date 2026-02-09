@@ -14,13 +14,23 @@ export class SiteLocationInUseError extends Error {
   }
 }
 
+export class DuplicateSiteLocationCoordsError extends Error {
+  readonly existing: SiteLocation | null;
+
+  constructor(existing: SiteLocation | null) {
+    super('A location with these coordinates already exists');
+    this.name = 'DuplicateSiteLocationCoordsError';
+    this.existing = existing;
+  }
+}
+
 export interface CreateSiteLocationData {
   site_id: number;
   floor: string;
   suite: string;
   row: string;
   rack: string;
-  label?: string;
+  label?: string | null;
 }
 
 export interface UpdateSiteLocationData {
@@ -34,6 +44,60 @@ export interface UpdateSiteLocationData {
 export class SiteLocationModel {
   private get adapter(): DatabaseAdapter {
     return connection.getAdapter();
+  }
+
+  private async findByCoords(siteId: number, floor: string, suite: string, row: string, rack: string): Promise<SiteLocation | null> {
+    const rows = await this.adapter.query(
+      `SELECT
+         sl.id,
+         sl.site_id,
+         sl.floor,
+         sl.suite,
+         sl.\`row\` as \`row\`,
+         sl.rack,
+         sl.label,
+         COALESCE(NULLIF(TRIM(sl.label), ''), s.code) AS effective_label,
+         sl.created_at,
+         sl.updated_at
+       FROM site_locations sl
+       JOIN sites s ON s.id = sl.site_id
+       WHERE sl.site_id = ? AND sl.floor = ? AND sl.suite = ? AND sl.\`row\` = ? AND sl.rack = ?
+       LIMIT 1`,
+      [siteId, floor, suite, row, rack]
+    );
+
+    return rows.length ? (rows[0] as SiteLocation) : null;
+  }
+
+  private async findByCoordsAndLabelKey(
+    siteId: number,
+    floor: string,
+    suite: string,
+    row: string,
+    rack: string,
+    labelKey: string
+  ): Promise<SiteLocation | null> {
+    const rows = await this.adapter.query(
+      `SELECT
+         sl.id,
+         sl.site_id,
+         sl.floor,
+         sl.suite,
+         sl.\`row\` as \`row\`,
+         sl.rack,
+         sl.label,
+         COALESCE(NULLIF(TRIM(sl.label), ''), s.code) AS effective_label,
+         sl.created_at,
+         sl.updated_at
+       FROM site_locations sl
+       JOIN sites s ON s.id = sl.site_id
+       WHERE sl.site_id = ? AND sl.floor = ? AND sl.suite = ? AND sl.\`row\` = ? AND sl.rack = ?
+         AND sl.label_key = ?
+       LIMIT 1`,
+      [siteId, floor, suite, row, rack, labelKey]
+    );
+
+    return rows.length ? (rows[0] as SiteLocation) : null;
   }
 
   async getLabelUsageCounts(siteId: number, locationId: number): Promise<{ source: number; destination: number }> {
@@ -196,24 +260,73 @@ export class SiteLocationModel {
   }
 
   async create(data: CreateSiteLocationData): Promise<SiteLocation> {
+    const labelRaw = data.label;
+    const labelTrimmed = typeof labelRaw === 'string' ? labelRaw.trim() : '';
+
     const payload = {
       site_id: data.site_id,
       floor: data.floor.trim(),
       suite: data.suite.trim(),
       row: data.row.trim(),
       rack: data.rack.trim(),
-      label: data.label?.trim() || null,
+      label: labelTrimmed !== '' ? labelTrimmed : null,
     };
 
     if (!payload.floor || !payload.suite || !payload.row || !payload.rack) {
       throw new Error('All location fields are required');
     }
 
-    const result = await this.adapter.execute(
-      `INSERT INTO site_locations (site_id, floor, suite, \`row\`, rack, label)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [payload.site_id, payload.floor, payload.suite, payload.row, payload.rack, payload.label]
-    );
+    let result: { insertId?: number; affectedRows: number };
+    try {
+      result = await this.adapter.execute(
+        `INSERT INTO site_locations (site_id, floor, suite, \`row\`, rack, label)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [payload.site_id, payload.floor, payload.suite, payload.row, payload.rack, payload.label]
+      );
+    } catch (error: any) {
+      const msg = (error?.message ?? '').toString();
+      const isDup = error?.code === 'ER_DUP_ENTRY' || error?.errno === 1062;
+      const isCoordsIndex = msg.includes('idx_site_locations_unique_coords');
+      const isCoordsLabelIndex = msg.includes('idx_site_locations_unique_coords_label');
+
+      if (isDup && (isCoordsIndex || isCoordsLabelIndex)) {
+        let existing: SiteLocation | null = null;
+        if (isCoordsLabelIndex) {
+          const labelKey = payload.label ? payload.label : '__UNLABELED__';
+          try {
+            existing = await this.findByCoordsAndLabelKey(
+              payload.site_id,
+              payload.floor,
+              payload.suite,
+              payload.row,
+              payload.rack,
+              labelKey
+            );
+          } catch {
+            // If the column isn't present yet for some reason, fall back.
+            existing = await this.findByCoords(
+              payload.site_id,
+              payload.floor,
+              payload.suite,
+              payload.row,
+              payload.rack
+            );
+          }
+        } else {
+          existing = await this.findByCoords(
+            payload.site_id,
+            payload.floor,
+            payload.suite,
+            payload.row,
+            payload.rack
+          );
+        }
+
+        throw new DuplicateSiteLocationCoordsError(existing);
+      }
+
+      throw error;
+    }
 
     if (!result.insertId) {
       throw new Error('Failed to create site location');

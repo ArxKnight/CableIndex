@@ -10,6 +10,7 @@ import * as migration007 from './007_add_username_to_invitations.js';
 import * as migration008 from './008_add_username_to_users.js';
 import { Migration009_NormalizeSiteLocationLabels } from './009_normalize_site_location_labels.js';
 import { Migration010_NormalizeLegacyRoles } from './010_normalize_legacy_roles.js';
+import { Migration011_SiteLocationLabelKeyUnique } from './011_site_location_label_key_unique.js';
 
 export interface Migration {
   id: string;
@@ -51,6 +52,7 @@ const migrations: Migration[] = [
   Migration008_AddUsernameToUsers,
   Migration009_NormalizeSiteLocationLabels,
   Migration010_NormalizeLegacyRoles,
+  Migration011_SiteLocationLabelKeyUnique,
 ];
 
 export async function runMigrations(): Promise<void> {

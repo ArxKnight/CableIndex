@@ -32,7 +32,7 @@ This file tracks what is implemented in CableIndex today and the next logical ro
   - [x] Bulk export
   - [x] Reference-range export
   - [x] Port and PDU generators
-- [x] Tools page generators (RESID, 30DAY, TEXT, RACKS, IN-RACK, PORTS, PDU)
+- [x] Tools page generators (SID, 30DAY, TEXT, RACKS, IN-RACK, PORTS, PDU)
 - [x] Global Day/Night theme toggle with persistence (`cableindex-theme`)
 - [x] Docker deployment (single container serving UI + API)
 - [x] Frontend/backend automated tests (Vitest)

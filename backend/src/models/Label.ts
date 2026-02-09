@@ -25,6 +25,26 @@ export interface UpdateLabelData {
 export interface LabelSearchOptions {
   search?: string;
   reference_number?: string;
+  source_location_id?: number;
+  destination_location_id?: number;
+  source_location_label?: string;
+  source_floor?: string;
+  source_suite?: string;
+  source_row?: string;
+  source_rack?: string;
+  destination_location_label?: string;
+  destination_floor?: string;
+  destination_suite?: string;
+  destination_row?: string;
+  destination_rack?: string;
+  location_label?: string;
+  floor?: string;
+  suite?: string;
+  row?: string;
+  rack?: string;
+  cable_type_id?: number;
+  cable_type?: string;
+  created_by?: string;
   limit?: number;
   offset?: number;
   sort_by?: 'created_at' | 'ref_string';
@@ -504,10 +524,165 @@ export class LabelModel {
       }
     }
 
+    if (options.source_location_id) {
+      query += ` AND l.source_location_id = ?`;
+      params.push(Number(options.source_location_id));
+    }
+
+    if (options.destination_location_id) {
+      query += ` AND l.destination_location_id = ?`;
+      params.push(Number(options.destination_location_id));
+    }
+
+    if (options.source_location_label) {
+      query += ` AND (COALESCE(sls.label, s.code) LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.source_location_label)));
+    }
+
+    if (options.source_floor) {
+      query += ` AND (sls.floor LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.source_floor)));
+    }
+
+    if (options.source_suite) {
+      query += ` AND (sls.suite LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.source_suite)));
+    }
+
+    if (options.source_row) {
+      query += ` AND (sls.\`row\` LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.source_row)));
+    }
+
+    if (options.source_rack) {
+      query += ` AND (sls.rack LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.source_rack)));
+    }
+
+    if (options.destination_location_label) {
+      query += ` AND (COALESCE(sld.label, s.code) LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.destination_location_label)));
+    }
+
+    if (options.destination_floor) {
+      query += ` AND (sld.floor LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.destination_floor)));
+    }
+
+    if (options.destination_suite) {
+      query += ` AND (sld.suite LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.destination_suite)));
+    }
+
+    if (options.destination_row) {
+      query += ` AND (sld.\`row\` LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.destination_row)));
+    }
+
+    if (options.destination_rack) {
+      query += ` AND (sld.rack LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.destination_rack)));
+    }
+
+    if (options.location_label) {
+      query += ` AND (sls.label LIKE ? OR sld.label LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.location_label));
+      params.push(p, p);
+    }
+
+    if (options.floor) {
+      query += ` AND (sls.floor LIKE ? OR sld.floor LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.floor));
+      params.push(p, p);
+    }
+
+    if (options.suite) {
+      query += ` AND (sls.suite LIKE ? OR sld.suite LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.suite));
+      params.push(p, p);
+    }
+
+    if (options.row) {
+      query += ` AND (sls.\`row\` LIKE ? OR sld.\`row\` LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.row));
+      params.push(p, p);
+    }
+
+    if (options.rack) {
+      query += ` AND (sls.rack LIKE ? OR sld.rack LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.rack));
+      params.push(p, p);
+    }
+
+    if (options.cable_type_id) {
+      query += ` AND (l.cable_type_id = ?)`;
+      params.push(Number(options.cable_type_id));
+    }
+
+    if (options.cable_type) {
+      query += ` AND (ct.name LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.cable_type));
+      params.push(p);
+    }
+
+    if (options.created_by) {
+      query += ` AND (u.username LIKE ? OR u.email LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.created_by));
+      params.push(p, p);
+    }
+
     if (options.search) {
-      query += ` AND (l.ref_string LIKE ? OR l.payload_json LIKE ?)`;
-      const searchPattern = `%${options.search}%`;
-      params.push(searchPattern, searchPattern);
+      query += ` AND (
+        l.ref_string LIKE ?
+        OR l.payload_json LIKE ?
+        OR ct.name LIKE ?
+        OR u.username LIKE ?
+        OR u.email LIKE ?
+        OR sls.label LIKE ?
+        OR sld.label LIKE ?
+        OR sls.floor LIKE ?
+        OR sld.floor LIKE ?
+        OR sls.suite LIKE ?
+        OR sld.suite LIKE ?
+        OR sls.\`row\` LIKE ?
+        OR sld.\`row\` LIKE ?
+        OR sls.rack LIKE ?
+        OR sld.rack LIKE ?
+        OR CONCAT('Floor ', IFNULL(sls.floor, '')) LIKE ?
+        OR CONCAT('Floor ', IFNULL(sld.floor, '')) LIKE ?
+        OR CONCAT('Suite ', IFNULL(sls.suite, '')) LIKE ?
+        OR CONCAT('Suite ', IFNULL(sld.suite, '')) LIKE ?
+        OR CONCAT('Row ', IFNULL(sls.\`row\`, '')) LIKE ?
+        OR CONCAT('Row ', IFNULL(sld.\`row\`, '')) LIKE ?
+        OR CONCAT('Rack ', IFNULL(sls.rack, '')) LIKE ?
+        OR CONCAT('Rack ', IFNULL(sld.rack, '')) LIKE ?
+      )`;
+      const searchPattern = makePayloadContainsPattern(String(options.search));
+      params.push(
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern
+      );
     }
 
     // Use numeric ordering for reference sorting so it stays correct past 9999.
@@ -602,25 +777,215 @@ export class LabelModel {
     return result.affectedRows || 0;
   }
 
-  async countBySiteId(siteId: number, options: Pick<LabelSearchOptions, 'search' | 'reference_number'> = {}): Promise<number> {
-    let query = `SELECT COUNT(*) as count FROM labels WHERE site_id = ?`;
+  async countBySiteId(
+    siteId: number,
+    options: Pick<
+      LabelSearchOptions,
+      | 'search'
+      | 'reference_number'
+      | 'source_location_id'
+      | 'destination_location_id'
+      | 'source_location_label'
+      | 'source_floor'
+      | 'source_suite'
+      | 'source_row'
+      | 'source_rack'
+      | 'destination_location_label'
+      | 'destination_floor'
+      | 'destination_suite'
+      | 'destination_row'
+      | 'destination_rack'
+      | 'location_label'
+      | 'floor'
+      | 'suite'
+      | 'row'
+      | 'rack'
+      | 'cable_type_id'
+      | 'cable_type'
+      | 'created_by'
+    > = {}
+  ): Promise<number> {
+    let query = `
+      SELECT COUNT(*) as count
+      FROM labels l
+      LEFT JOIN users u ON u.id = l.created_by
+      LEFT JOIN cable_types ct ON ct.id = l.cable_type_id
+      LEFT JOIN site_locations sls ON sls.id = l.source_location_id
+      LEFT JOIN site_locations sld ON sld.id = l.destination_location_id
+      WHERE l.site_id = ?
+    `;
     const params: any[] = [siteId];
 
     if (options.reference_number) {
       const refNum = parseTrailingRefNumber(options.reference_number);
       if (refNum !== null) {
-        query += ` AND ref_number = ?`;
+        query += ` AND l.ref_number = ?`;
         params.push(refNum);
       } else {
-        query += ` AND ref_string = ?`;
+        query += ` AND l.ref_string = ?`;
         params.push(options.reference_number);
       }
     }
 
+    if (options.source_location_id) {
+      query += ` AND l.source_location_id = ?`;
+      params.push(Number(options.source_location_id));
+    }
+
+    if (options.destination_location_id) {
+      query += ` AND l.destination_location_id = ?`;
+      params.push(Number(options.destination_location_id));
+    }
+
+    if (options.source_location_label) {
+      query += ` AND (COALESCE(sls.label, s.code) LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.source_location_label)));
+    }
+
+    if (options.source_floor) {
+      query += ` AND (sls.floor LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.source_floor)));
+    }
+
+    if (options.source_suite) {
+      query += ` AND (sls.suite LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.source_suite)));
+    }
+
+    if (options.source_row) {
+      query += ` AND (sls.\`row\` LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.source_row)));
+    }
+
+    if (options.source_rack) {
+      query += ` AND (sls.rack LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.source_rack)));
+    }
+
+    if (options.destination_location_label) {
+      query += ` AND (COALESCE(sld.label, s.code) LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.destination_location_label)));
+    }
+
+    if (options.destination_floor) {
+      query += ` AND (sld.floor LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.destination_floor)));
+    }
+
+    if (options.destination_suite) {
+      query += ` AND (sld.suite LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.destination_suite)));
+    }
+
+    if (options.destination_row) {
+      query += ` AND (sld.\`row\` LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.destination_row)));
+    }
+
+    if (options.destination_rack) {
+      query += ` AND (sld.rack LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.destination_rack)));
+    }
+
+    if (options.location_label) {
+      query += ` AND (sls.label LIKE ? OR sld.label LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.location_label));
+      params.push(p, p);
+    }
+
+    if (options.floor) {
+      query += ` AND (sls.floor LIKE ? OR sld.floor LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.floor));
+      params.push(p, p);
+    }
+
+    if (options.suite) {
+      query += ` AND (sls.suite LIKE ? OR sld.suite LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.suite));
+      params.push(p, p);
+    }
+
+    if (options.row) {
+      query += ` AND (sls.\`row\` LIKE ? OR sld.\`row\` LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.row));
+      params.push(p, p);
+    }
+
+    if (options.rack) {
+      query += ` AND (sls.rack LIKE ? OR sld.rack LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.rack));
+      params.push(p, p);
+    }
+
+    if (options.cable_type_id) {
+      query += ` AND (l.cable_type_id = ?)`;
+      params.push(Number(options.cable_type_id));
+    }
+
+    if (options.cable_type) {
+      query += ` AND (ct.name LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.cable_type));
+      params.push(p);
+    }
+
+    if (options.created_by) {
+      query += ` AND (u.username LIKE ? OR u.email LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.created_by));
+      params.push(p, p);
+    }
+
     if (options.search) {
-      query += ` AND (ref_string LIKE ? OR payload_json LIKE ?)`;
-      const searchPattern = `%${options.search}%`;
-      params.push(searchPattern, searchPattern);
+      query += ` AND (
+        l.ref_string LIKE ?
+        OR l.payload_json LIKE ?
+        OR ct.name LIKE ?
+        OR u.username LIKE ?
+        OR u.email LIKE ?
+        OR sls.label LIKE ?
+        OR sld.label LIKE ?
+        OR sls.floor LIKE ?
+        OR sld.floor LIKE ?
+        OR sls.suite LIKE ?
+        OR sld.suite LIKE ?
+        OR sls.\`row\` LIKE ?
+        OR sld.\`row\` LIKE ?
+        OR sls.rack LIKE ?
+        OR sld.rack LIKE ?
+        OR CONCAT('Floor ', IFNULL(sls.floor, '')) LIKE ?
+        OR CONCAT('Floor ', IFNULL(sld.floor, '')) LIKE ?
+        OR CONCAT('Suite ', IFNULL(sls.suite, '')) LIKE ?
+        OR CONCAT('Suite ', IFNULL(sld.suite, '')) LIKE ?
+        OR CONCAT('Row ', IFNULL(sls.\`row\`, '')) LIKE ?
+        OR CONCAT('Row ', IFNULL(sld.\`row\`, '')) LIKE ?
+        OR CONCAT('Rack ', IFNULL(sls.rack, '')) LIKE ?
+        OR CONCAT('Rack ', IFNULL(sld.rack, '')) LIKE ?
+      )`;
+      const searchPattern = makePayloadContainsPattern(String(options.search));
+      params.push(
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern,
+        searchPattern
+      );
     }
 
     const rows = await this.adapter.query(query, params);

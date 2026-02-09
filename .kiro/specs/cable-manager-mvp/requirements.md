@@ -128,7 +128,7 @@ This document describes the requirements as the application exists today (early 
 
 #### Acceptance Criteria
 
-1. THE system SHALL provide a Tools page with generators (RESID, 30DAY, TEXT, RACKS, IN-RACK, PORTS, PDU).
+1. THE system SHALL provide a Tools page with generators (SID, 30DAY, TEXT, RACKS, IN-RACK, PORTS, PDU).
 2. THE system SHALL provide a global Day/Night theme toggle with persistence.
 
 ### Requirement 11 — Deployment

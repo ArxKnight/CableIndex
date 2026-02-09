@@ -28,7 +28,7 @@ A professional cable labeling system for Brady printers with automatic reference
 - 🛡️ **Data Security**: Password hashing, input validation, and secure sessions
 
 ### Tools
-- 🧰 **Toolbox**: RESID, 30DAY, TEXT, RACKS, IN-RACK, PORTS, and PDU helpers
+- 🧰 **Toolbox**: SID, 30DAY, TEXT, RACKS, IN-RACK, PORTS, and PDU helpers
 - 🌓 **Theme Toggle**: Site-wide Day/Night mode (defaults to Night) with persistence
 
 ### Database & Deployment

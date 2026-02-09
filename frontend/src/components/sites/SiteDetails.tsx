@@ -335,12 +335,12 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-muted-foreground">Name</label>
+              <label className="text-sm font-medium text-muted-foreground">Site Name</label>
               <p className="text-sm">{site.name}</p>
             </div>
 
             <div>
-              <label className="text-sm font-medium text-muted-foreground">Abbreviation</label>
+              <label className="text-sm font-medium text-muted-foreground">Site Abbreviation</label>
               <p className="text-sm font-mono">{site.code}</p>
             </div>
             
@@ -348,7 +348,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
               <div>
                 <label className="text-sm font-medium text-muted-foreground flex items-center">
                   <MapPin className="mr-1 h-3 w-3" />
-                  Location
+                  Site Location
                 </label>
                 <p className="text-sm">{site.location}</p>
               </div>
@@ -356,7 +356,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
             
             {site.description && (
               <div>
-                <label className="text-sm font-medium text-muted-foreground">Description</label>
+                <label className="text-sm font-medium text-muted-foreground">Site Description</label>
                 <p className="text-sm whitespace-pre-wrap">{site.description}</p>
               </div>
             )}
@@ -365,12 +365,12 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
               <div>
                 <label className="text-sm font-medium text-muted-foreground flex items-center">
                   <Calendar className="mr-1 h-3 w-3" />
-                  Created
+                  Site Created
                 </label>
                 <p className="text-sm">{formatDateTime(site.created_at)}</p>
               </div>
               <div>
-                <label className="text-sm font-medium text-muted-foreground">Last Updated</label>
+                <label className="text-sm font-medium text-muted-foreground">Site Last Updated</label>
                 <p className="text-sm">{formatDateTime(site.updated_at)}</p>
               </div>
             </div>

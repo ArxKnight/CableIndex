@@ -55,27 +55,64 @@ function buildHierarchy(locations: SiteLocation[]): HierarchyNode<SiteLocation> 
   return root;
 }
 
-export interface LocationHierarchyDropdownProps {
+export type LocationHierarchyScope = {
+  label: string;
+  floor?: string;
+  suite?: string;
+  row?: string;
+  rack?: string;
+};
+
+function formatScope(scope: LocationHierarchyScope): string {
+  const parts: string[] = [scope.label];
+  if (scope.floor !== undefined) parts.push(`Floor ${scope.floor}`);
+  if (scope.suite !== undefined) parts.push(`Suite ${scope.suite}`);
+  if (scope.row !== undefined) parts.push(`Row ${scope.row}`);
+  if (scope.rack !== undefined) parts.push(`Rack ${scope.rack}`);
+  return parts.join(' / ');
+}
+
+type LocationSelectProps = {
+  mode?: 'location';
   locations: SiteLocation[];
   valueLocationId: number | null;
   onSelect: (locationId: number) => void;
   placeholder: string;
   disabled?: boolean;
-}
+};
 
-const LocationHierarchyDropdown: React.FC<LocationHierarchyDropdownProps> = ({
-  locations,
-  valueLocationId,
-  onSelect,
-  placeholder,
-  disabled,
-}) => {
+type ScopeSelectProps = {
+  mode: 'scope';
+  locations: SiteLocation[];
+  valueScope: LocationHierarchyScope | null;
+  onSelectScope: (scope: LocationHierarchyScope | null) => void;
+  placeholder: string;
+  disabled?: boolean;
+};
+
+export type LocationHierarchyDropdownProps = LocationSelectProps | ScopeSelectProps;
+
+const LocationHierarchyDropdown: React.FC<LocationHierarchyDropdownProps> = (props) => {
   const [open, setOpen] = useState(false);
 
+  const locations = props.locations;
+  const disabled = props.disabled;
+  const placeholder = props.placeholder;
+  const isScopeMode = props.mode === 'scope';
+
+  const valueLocationId = 'valueLocationId' in props ? props.valueLocationId : null;
+  const valueScope = 'valueScope' in props ? props.valueScope : null;
+
   const selected = useMemo(() => {
+    if (isScopeMode) return null;
     if (!valueLocationId) return null;
     return locations.find((l) => Number(l.id) === Number(valueLocationId)) ?? null;
-  }, [locations, valueLocationId]);
+  }, [isScopeMode, locations, valueLocationId]);
+
+  const selectedScopeLabel = useMemo(() => {
+    if (!isScopeMode) return null;
+    return valueScope ? formatScope(valueScope) : null;
+  }, [isScopeMode, valueScope]);
 
   const hierarchy = useMemo(() => buildHierarchy(locations), [locations]);
 
@@ -84,13 +121,31 @@ const LocationHierarchyDropdown: React.FC<LocationHierarchyDropdownProps> = ({
       <DropdownMenuTrigger asChild>
         <Button type="button" variant="outline" className="w-full justify-between" disabled={disabled}>
           <span className="truncate text-left">
-            {selected ? formatLocationFields(selected) : placeholder}
+            {!isScopeMode
+              ? selected
+                ? formatLocationFields(selected)
+                : placeholder
+              : selectedScopeLabel ?? placeholder}
           </span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-[28rem] max-w-[90vw]" align="start">
-        <DropdownMenuLabel>Select location</DropdownMenuLabel>
+        <DropdownMenuLabel>{isScopeMode ? 'Select scope' : 'Select location'}</DropdownMenuLabel>
         <DropdownMenuSeparator />
+
+        {isScopeMode && (
+          <>
+            <DropdownMenuItem
+              onSelect={() => {
+                props.onSelectScope(null);
+                setOpen(false);
+              }}
+            >
+              Any
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
 
         {sortedKeys(hierarchy).map((labelKey) => {
           const floors = hierarchy.get(labelKey) as HierarchyNode<SiteLocation>;
@@ -98,31 +153,104 @@ const LocationHierarchyDropdown: React.FC<LocationHierarchyDropdownProps> = ({
             <DropdownMenuSub key={labelKey}>
               <DropdownMenuSubTrigger>{labelKey}</DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
+                {isScopeMode && (
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      props.onSelectScope({ label: labelKey });
+                      setOpen(false);
+                    }}
+                  >
+                    {`Any in ${labelKey}`}
+                  </DropdownMenuItem>
+                )}
+
                 {sortedKeys(floors).map((floorKey) => {
                   const suites = floors.get(floorKey) as HierarchyNode<SiteLocation>;
                   return (
                     <DropdownMenuSub key={`${labelKey}::${floorKey}`}>
                       <DropdownMenuSubTrigger>{`Floor ${floorKey}`}</DropdownMenuSubTrigger>
                       <DropdownMenuSubContent>
+                        {isScopeMode && (
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              props.onSelectScope({ label: labelKey, floor: floorKey });
+                              setOpen(false);
+                            }}
+                          >
+                            {`Any in Floor ${floorKey}`}
+                          </DropdownMenuItem>
+                        )}
+
                         {sortedKeys(suites).map((suiteKey) => {
                           const rows = suites.get(suiteKey) as HierarchyNode<SiteLocation>;
                           return (
                             <DropdownMenuSub key={`${labelKey}::${floorKey}::${suiteKey}`}>
                               <DropdownMenuSubTrigger>{`Suite ${suiteKey}`}</DropdownMenuSubTrigger>
                               <DropdownMenuSubContent>
+                                {isScopeMode && (
+                                  <DropdownMenuItem
+                                    onSelect={() => {
+                                      props.onSelectScope({
+                                        label: labelKey,
+                                        floor: floorKey,
+                                        suite: suiteKey,
+                                      });
+                                      setOpen(false);
+                                    }}
+                                  >
+                                    {`Any in Suite ${suiteKey}`}
+                                  </DropdownMenuItem>
+                                )}
+
                                 {sortedKeys(rows).map((rowKey) => {
                                   const racks = rows.get(rowKey) as HierarchyNode<SiteLocation>;
                                   return (
                                     <DropdownMenuSub key={`${labelKey}::${floorKey}::${suiteKey}::${rowKey}`}>
                                       <DropdownMenuSubTrigger>{`Row ${rowKey}`}</DropdownMenuSubTrigger>
                                       <DropdownMenuSubContent>
+                                        {isScopeMode && (
+                                          <DropdownMenuItem
+                                            onSelect={() => {
+                                              props.onSelectScope({
+                                                label: labelKey,
+                                                floor: floorKey,
+                                                suite: suiteKey,
+                                                row: rowKey,
+                                              });
+                                              setOpen(false);
+                                            }}
+                                          >
+                                            {`Any in Row ${rowKey}`}
+                                          </DropdownMenuItem>
+                                        )}
+
                                         {sortedKeys(racks).map((rackKey) => {
                                           const locs = racks.get(rackKey) as SiteLocation[];
+                                          if (isScopeMode) {
+                                            return (
+                                              <DropdownMenuItem
+                                                key={`${labelKey}::${floorKey}::${suiteKey}::${rowKey}::${rackKey}`}
+                                                onSelect={() => {
+                                                  props.onSelectScope({
+                                                    label: labelKey,
+                                                    floor: floorKey,
+                                                    suite: suiteKey,
+                                                    row: rowKey,
+                                                    rack: rackKey,
+                                                  });
+                                                  setOpen(false);
+                                                }}
+                                              >
+                                                {`Rack ${rackKey}`}
+                                              </DropdownMenuItem>
+                                            );
+                                          }
+
                                           return locs.length === 1 ? (
                                             <DropdownMenuItem
                                               key={`${labelKey}::${floorKey}::${suiteKey}::${rowKey}::${rackKey}::${locs[0]!.id}`}
                                               onSelect={() => {
-                                                onSelect(locs[0]!.id);
+                                                props.onSelect(locs[0]!.id);
                                                 setOpen(false);
                                               }}
                                             >
@@ -139,7 +267,7 @@ const LocationHierarchyDropdown: React.FC<LocationHierarchyDropdownProps> = ({
                                                     <DropdownMenuItem
                                                       key={loc.id}
                                                       onSelect={() => {
-                                                        onSelect(loc.id);
+                                                        props.onSelect(loc.id);
                                                         setOpen(false);
                                                       }}
                                                     >

@@ -11,7 +11,6 @@ import { Input } from '@/components/ui/input';
 import {
   Save,
   RefreshCw,
-  Shield,
   Mail,
   Send,
   AlertCircle
@@ -259,51 +258,6 @@ const AppSettings: React.FC = () => {
                 )}
               </Button>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Maintenance Mode */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              Maintenance Mode
-            </CardTitle>
-            <CardDescription>
-              Temporarily disable system access for maintenance
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="maintenance_mode">Enable Maintenance Mode</Label>
-                <p className="text-sm text-muted-foreground">
-                  Prevent non-admin users from accessing the system
-                </p>
-              </div>
-              <Switch
-                id="maintenance_mode"
-                checked={watch('maintenance_mode')}
-                onCheckedChange={(checked) => setValue('maintenance_mode', checked)}
-              />
-            </div>
-
-            {watch('maintenance_mode') && (
-              <div className="space-y-2">
-                <Label htmlFor="maintenance_message">Maintenance Message</Label>
-                <Input
-                  id="maintenance_message"
-                  placeholder="System is under maintenance. Please try again later."
-                  {...register('maintenance_message')}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Message shown to users during maintenance
-                </p>
-                {errors.maintenance_message && (
-                  <p className="text-sm text-red-600">{errors.maintenance_message.message}</p>
-                )}
-              </div>
-            )}
           </CardContent>
         </Card>
 

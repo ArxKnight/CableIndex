@@ -42,6 +42,61 @@ describe('Site Location Routes', () => {
     await cleanupTestDatabase();
   });
 
+  it('allows the same coordinates to exist unlabeled and labeled', async () => {
+    const site = await siteModel.create({ name: 'Test Site', code: 'TS', created_by: testUser.id });
+
+    await request(app)
+      .post(`/api/sites/${site.id}/locations`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ floor: '1', suite: '1', row: 'A', rack: '1' })
+      .expect(201);
+
+    await request(app)
+      .post(`/api/sites/${site.id}/locations`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ floor: '1', suite: '1', row: 'A', rack: '1', label: 'LOFT' })
+      .expect(201);
+  });
+
+  it('returns 409 when creating a duplicate location with the same coordinates and same label', async () => {
+    const site = await siteModel.create({ name: 'Test Site', code: 'TS', created_by: testUser.id });
+
+    await request(app)
+      .post(`/api/sites/${site.id}/locations`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ floor: '1', suite: '1', row: 'A', rack: '1', label: 'LOFT' })
+      .expect(201);
+
+    const response = await request(app)
+      .post(`/api/sites/${site.id}/locations`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ floor: '1', suite: '1', row: 'A', rack: '1', label: 'LOFT' })
+      .expect(409);
+
+    expect(response.body.success).toBe(false);
+    expect((response.body.error ?? '').toString()).toMatch(/already exists/i);
+    expect(response.body.data?.existing?.id).toBeTruthy();
+  });
+
+  it('returns 409 when creating a second unlabeled location with the same coordinates', async () => {
+    const site = await siteModel.create({ name: 'Test Site', code: 'TS', created_by: testUser.id });
+
+    await request(app)
+      .post(`/api/sites/${site.id}/locations`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ floor: '1', suite: '1', row: 'A', rack: '1' })
+      .expect(201);
+
+    const response = await request(app)
+      .post(`/api/sites/${site.id}/locations`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ floor: '1', suite: '1', row: 'A', rack: '1' })
+      .expect(409);
+
+    expect(response.body.success).toBe(false);
+    expect((response.body.error ?? '').toString()).toMatch(/already exists/i);
+  });
+
   it('deletes an unused location with default behavior', async () => {
     const site = await siteModel.create({ name: 'Test Site', code: 'TS', created_by: testUser.id });
     const loc = await siteLocationModel.create({ site_id: site.id, floor: '1', suite: 'A', row: 'R1', rack: '1', label: 'SRC' });
