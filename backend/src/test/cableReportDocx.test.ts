@@ -42,6 +42,7 @@ describe('cableReportDocx', () => {
     const buffer = await buildCableReportDocxBuffer({
       siteName: 'Ivy Office',
       siteCode: 'IVY',
+      siteDescription: 'Main office (Domestic + Datacentre mix)',
       createdAt,
       locations: [
         { name: 'Loft', label: 'IVY', floor: '2', suite: '1', row: 'A', rack: '1' },
@@ -51,19 +52,19 @@ describe('cableReportDocx', () => {
       runs: [
         {
           ref_number: 49,
-          type: 'cable',
           source: { label: 'Loft', floor: '2', suite: '1', row: 'A', rack: '1' },
           destination: { label: 'Garage', floor: '0', suite: '1', row: 'A', rack: '1' },
           cable_type_name: 'CAT6 Copper',
+          description: 'Uplink to garage switch',
           created_at: createdAt,
           created_by_display: 'Alex Engineer',
         },
         {
           ref_number: 10000,
-          type: 'cable',
           source: null,
           destination: null,
           cable_type_name: null,
+          description: null,
           created_at: createdAt,
           created_by_display: 'alex@example.com',
         },
@@ -81,6 +82,8 @@ describe('cableReportDocx', () => {
     expect(xml).toContain('Ivy Office');
     expect(xml).toContain('Site Abbreviation');
     expect(xml).toContain('IVY');
+    expect(xml).toContain('Site Description');
+    expect(xml).toContain('Main office (Domestic + Datacentre mix)');
     expect(xml).toContain('Report Generated on');
     expect(xml).toContain(formatPrintedDateDDMonYYYY_HHMM(createdAt));
 
@@ -101,9 +104,11 @@ describe('cableReportDocx', () => {
     expect(xml).toContain('Rack');
 
     expect(xml).toContain('Cable Ref');
+    expect(xml).not.toContain('Label Type');
     expect(xml).toContain('Cable Source');
     expect(xml).toContain('Cable Destination');
     expect(xml).toContain('Cable Type');
+    expect(xml).toContain('Cable Description');
     expect(xml).toContain('Created (Date/Time — User)');
 
     expect(xml).toContain('#0049');
@@ -111,6 +116,8 @@ describe('cableReportDocx', () => {
 
     expect(xml).toContain('Loft');
     expect(xml).toContain('Garage');
+
+    expect(xml).toContain('Uplink to garage switch');
 
     // For missing cable type and missing locations, the report uses an em dash
     expect(xml).toContain('—');
@@ -154,10 +161,10 @@ describe('cableReportDocx', () => {
       runs: [
         {
           ref_number: 1,
-          type: 'cable',
           source: { label: '', floor: '2', suite: '1', row: 'A', rack: '1' },
           destination: { label: 'Loft', floor: '0', suite: '1', row: 'A', rack: '1' },
           cable_type_name: null,
+          description: null,
           created_at: createdAt,
           created_by_display: 'Alex',
         },

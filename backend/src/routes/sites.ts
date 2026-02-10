@@ -830,6 +830,7 @@ router.get(
 
       const siteName = String(req.site?.name ?? '').trim();
       const siteCode = String(req.site?.code ?? '').trim().toUpperCase();
+      const siteDescription = String(req.site?.description ?? '').trim();
       if (!siteName || !siteCode) {
         return res.status(500).json({
           success: false,
@@ -844,9 +845,9 @@ router.get(
         cableTypeModel.listBySiteId(id),
         getAdapter().query(
           `SELECT
-             l.type,
              l.ref_number,
              l.created_at,
+             l.payload_json,
              u.username AS created_by_username,
              u.email AS created_by_email,
              ct.name AS cable_type_name,
@@ -871,6 +872,7 @@ router.get(
            LEFT JOIN site_locations sls ON sls.id = l.source_location_id
            LEFT JOIN site_locations sld ON sld.id = l.destination_location_id
            WHERE l.site_id = ?
+            AND (l.type IS NULL OR l.type = 'cable')
            ORDER BY l.ref_number ASC, l.id ASC`,
           [id]
         ),
@@ -919,12 +921,25 @@ router.get(
         const email = String(r.created_by_email ?? '').trim();
         const createdByDisplay = username || email || 'Unknown';
 
+        let description: string | null = null;
+        if (r.payload_json != null && String(r.payload_json).trim() !== '') {
+          try {
+            const parsed = JSON.parse(String(r.payload_json));
+            const notes = (parsed as any)?.notes;
+            if (typeof notes === 'string' && notes.trim() !== '') {
+              description = notes.trim();
+            }
+          } catch {
+            // ignore invalid payload_json
+          }
+        }
+
         return {
           ref_number: Number(r.ref_number),
-          type: String(r.type ?? '').trim() || 'cable',
           source,
           destination,
           cable_type_name: r.cable_type_name != null ? String(r.cable_type_name) : null,
+          description,
           created_at: new Date(r.created_at),
           created_by_display: createdByDisplay,
         };
@@ -933,6 +948,7 @@ router.get(
       const buffer = await buildCableReportDocxBuffer({
         siteName,
         siteCode,
+        ...(siteDescription ? { siteDescription } : {}),
         createdAt,
         locations,
         cableTypes: (cableTypesRaw as any[]).map((ct) => ({ name: String((ct as any).name ?? '').trim() })),
