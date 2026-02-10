@@ -1,8 +1,8 @@
-# WireIndex Image Assets
+# CableIndex Image Assets
 
 ## Image Files to Replace
 
-The following placeholder files need to be replaced with the actual WireIndex logo images:
+The following placeholder files can be replaced with your CableIndex logo images:
 
 ### 1. cableindex-logo.png
 - **Usage**: Full logo with database icon and text for login/register pages

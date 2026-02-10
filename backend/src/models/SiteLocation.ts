@@ -26,18 +26,22 @@ export class DuplicateSiteLocationCoordsError extends Error {
 
 export interface CreateSiteLocationData {
   site_id: number;
+  template_type?: 'DATACENTRE' | 'DOMESTIC';
   floor: string;
-  suite: string;
-  row: string;
-  rack: string;
+  suite?: string | null;
+  row?: string | null;
+  rack?: string | null;
+  area?: string | null;
   label?: string | null;
 }
 
 export interface UpdateSiteLocationData {
+  template_type?: 'DATACENTRE' | 'DOMESTIC';
   floor?: string;
-  suite?: string;
-  row?: string;
-  rack?: string;
+  suite?: string | null;
+  row?: string | null;
+  rack?: string | null;
+  area?: string | null;
   label?: string | null;
 }
 
@@ -51,10 +55,12 @@ export class SiteLocationModel {
       `SELECT
          sl.id,
          sl.site_id,
+         sl.template_type,
          sl.floor,
          sl.suite,
          sl.\`row\` as \`row\`,
          sl.rack,
+         sl.area,
          sl.label,
          COALESCE(NULLIF(TRIM(sl.label), ''), s.code) AS effective_label,
          sl.created_at,
@@ -81,10 +87,12 @@ export class SiteLocationModel {
       `SELECT
          sl.id,
          sl.site_id,
+         sl.template_type,
          sl.floor,
          sl.suite,
          sl.\`row\` as \`row\`,
          sl.rack,
+         sl.area,
          sl.label,
          COALESCE(NULLIF(TRIM(sl.label), ''), s.code) AS effective_label,
          sl.created_at,
@@ -96,9 +104,71 @@ export class SiteLocationModel {
        LIMIT 1`,
       [siteId, floor, suite, row, rack, labelKey]
     );
-
     return rows.length ? (rows[0] as SiteLocation) : null;
   }
+
+  private async findByIdentity(siteId: number, identity: {
+    template_type: 'DATACENTRE' | 'DOMESTIC';
+    floor: string;
+    suite?: string | null;
+    row?: string | null;
+    rack?: string | null;
+    area?: string | null;
+    labelKey: string;
+  }): Promise<SiteLocation | null> {
+    if (identity.template_type === 'DOMESTIC') {
+      const rows = await this.adapter.query(
+        `SELECT
+           sl.id,
+           sl.site_id,
+           sl.template_type,
+           sl.floor,
+           sl.suite,
+           sl.\`row\` as \`row\`,
+           sl.rack,
+           sl.area,
+           sl.label,
+           COALESCE(NULLIF(TRIM(sl.label), ''), s.code) AS effective_label,
+           sl.created_at,
+           sl.updated_at
+         FROM site_locations sl
+         JOIN sites s ON s.id = sl.site_id
+         WHERE sl.site_id = ? AND sl.template_type = 'DOMESTIC' AND sl.floor = ?
+           AND sl.area_key = IFNULL(NULLIF(TRIM(?), ''), '__NONE__')
+           AND sl.label_key = ?
+         LIMIT 1`,
+        [siteId, identity.floor, identity.area ?? null, identity.labelKey]
+      );
+      return rows.length ? (rows[0] as SiteLocation) : null;
+    }
+
+    const rows = await this.adapter.query(
+      `SELECT
+         sl.id,
+         sl.site_id,
+         sl.template_type,
+         sl.floor,
+         sl.suite,
+         sl.\`row\` as \`row\`,
+         sl.rack,
+         sl.area,
+         sl.label,
+         COALESCE(NULLIF(TRIM(sl.label), ''), s.code) AS effective_label,
+         sl.created_at,
+         sl.updated_at
+       FROM site_locations sl
+       JOIN sites s ON s.id = sl.site_id
+       WHERE sl.site_id = ? AND sl.template_type = 'DATACENTRE' AND sl.floor = ?
+         AND sl.suite_key = IFNULL(NULLIF(TRIM(?), ''), '__NONE__')
+         AND sl.row_key = IFNULL(NULLIF(TRIM(?), ''), '__NONE__')
+         AND sl.rack_key = IFNULL(NULLIF(TRIM(?), ''), '__NONE__')
+         AND sl.label_key = ?
+       LIMIT 1`,
+      [siteId, identity.floor, identity.suite ?? null, identity.row ?? null, identity.rack ?? null, identity.labelKey]
+    );
+    return rows.length ? (rows[0] as SiteLocation) : null;
+  }
+
 
   async getLabelUsageCounts(siteId: number, locationId: number): Promise<{ source: number; destination: number }> {
     const sourceRows = await this.adapter.query(
@@ -219,10 +289,12 @@ export class SiteLocationModel {
       `SELECT
          sl.id,
          sl.site_id,
+         sl.template_type,
          sl.floor,
          sl.suite,
          sl.\`row\` as \`row\`,
          sl.rack,
+         sl.area,
          sl.label,
          COALESCE(NULLIF(TRIM(sl.label), ''), s.code) AS effective_label,
          sl.created_at,
@@ -230,7 +302,7 @@ export class SiteLocationModel {
        FROM site_locations sl
        JOIN sites s ON s.id = sl.site_id
        WHERE sl.site_id = ?
-       ORDER BY sl.floor ASC, sl.suite ASC, sl.\`row\` ASC, sl.rack ASC, sl.id ASC`,
+       ORDER BY sl.floor ASC, sl.suite ASC, sl.\`row\` ASC, sl.rack ASC, sl.area ASC, sl.id ASC`,
       [siteId]
     );
 
@@ -242,10 +314,12 @@ export class SiteLocationModel {
       `SELECT
          sl.id,
          sl.site_id,
+         sl.template_type,
          sl.floor,
          sl.suite,
          sl.\`row\` as \`row\`,
          sl.rack,
+         sl.area,
          sl.label,
          COALESCE(NULLIF(TRIM(sl.label), ''), s.code) AS effective_label,
          sl.created_at,
@@ -262,64 +336,92 @@ export class SiteLocationModel {
   async create(data: CreateSiteLocationData): Promise<SiteLocation> {
     const labelRaw = data.label;
     const labelTrimmed = typeof labelRaw === 'string' ? labelRaw.trim() : '';
+    const templateType: 'DATACENTRE' | 'DOMESTIC' = data.template_type ?? 'DATACENTRE';
+
+    const floor = data.floor.trim();
+    const suite = (data.suite ?? '').toString().trim();
+    const row = (data.row ?? '').toString().trim();
+    const rack = (data.rack ?? '').toString().trim();
+    const area = (data.area ?? '').toString().trim();
 
     const payload = {
       site_id: data.site_id,
-      floor: data.floor.trim(),
-      suite: data.suite.trim(),
-      row: data.row.trim(),
-      rack: data.rack.trim(),
+      template_type: templateType,
+      floor,
+      suite: templateType === 'DATACENTRE' ? (suite !== '' ? suite : null) : null,
+      row: templateType === 'DATACENTRE' ? (row !== '' ? row : null) : null,
+      rack: templateType === 'DATACENTRE' ? (rack !== '' ? rack : null) : null,
+      area: templateType === 'DOMESTIC' ? (area !== '' ? area : null) : null,
       label: labelTrimmed !== '' ? labelTrimmed : null,
     };
 
-    if (!payload.floor || !payload.suite || !payload.row || !payload.rack) {
-      throw new Error('All location fields are required');
+    if (!payload.floor) {
+      throw new Error('Floor is required');
+    }
+
+    if (payload.template_type === 'DATACENTRE') {
+      if (!payload.suite || !payload.row || !payload.rack) {
+        throw new Error('Suite, Row, and Rack are required for Datacentre/Commercial locations');
+      }
+    } else {
+      if (!payload.area) {
+        throw new Error('Area is required for Domestic locations');
+      }
     }
 
     let result: { insertId?: number; affectedRows: number };
     try {
       result = await this.adapter.execute(
-        `INSERT INTO site_locations (site_id, floor, suite, \`row\`, rack, label)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [payload.site_id, payload.floor, payload.suite, payload.row, payload.rack, payload.label]
+        `INSERT INTO site_locations (site_id, template_type, floor, suite, \`row\`, rack, area, label)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          payload.site_id,
+          payload.template_type,
+          payload.floor,
+          payload.suite,
+          payload.row,
+          payload.rack,
+          payload.area,
+          payload.label,
+        ]
       );
     } catch (error: any) {
       const msg = (error?.message ?? '').toString();
       const isDup = error?.code === 'ER_DUP_ENTRY' || error?.errno === 1062;
       const isCoordsIndex = msg.includes('idx_site_locations_unique_coords');
       const isCoordsLabelIndex = msg.includes('idx_site_locations_unique_coords_label');
+      const isIdentityIndex = msg.includes('idx_site_locations_unique_identity');
 
-      if (isDup && (isCoordsIndex || isCoordsLabelIndex)) {
+      if (isDup && (isCoordsIndex || isCoordsLabelIndex || isIdentityIndex)) {
         let existing: SiteLocation | null = null;
-        if (isCoordsLabelIndex) {
-          const labelKey = payload.label ? payload.label : '__UNLABELED__';
-          try {
-            existing = await this.findByCoordsAndLabelKey(
-              payload.site_id,
-              payload.floor,
-              payload.suite,
-              payload.row,
-              payload.rack,
-              labelKey
-            );
-          } catch {
-            // If the column isn't present yet for some reason, fall back.
-            existing = await this.findByCoords(
-              payload.site_id,
-              payload.floor,
-              payload.suite,
-              payload.row,
-              payload.rack
-            );
+
+        const labelKey = payload.label ? payload.label : '__UNLABELED__';
+        try {
+          existing = await this.findByIdentity(payload.site_id, {
+            template_type: payload.template_type,
+            floor: payload.floor,
+            suite: payload.suite,
+            row: payload.row,
+            rack: payload.rack,
+            area: payload.area,
+            labelKey,
+          });
+        } catch {
+          // Backwards compatible fallbacks for pre-template installs.
+          if (payload.template_type === 'DATACENTRE') {
+            try {
+              existing = await this.findByCoordsAndLabelKey(
+                payload.site_id,
+                payload.floor,
+                payload.suite ?? '',
+                payload.row ?? '',
+                payload.rack ?? '',
+                labelKey
+              );
+            } catch {
+              existing = await this.findByCoords(payload.site_id, payload.floor, payload.suite ?? '', payload.row ?? '', payload.rack ?? '');
+            }
           }
-        } else {
-          existing = await this.findByCoords(
-            payload.site_id,
-            payload.floor,
-            payload.suite,
-            payload.row,
-            payload.rack
-          );
         }
 
         throw new DuplicateSiteLocationCoordsError(existing);
@@ -344,6 +446,20 @@ export class SiteLocationModel {
     const updates: string[] = [];
     const values: any[] = [];
 
+    if (data.template_type !== undefined) {
+      updates.push('template_type = ?');
+      values.push(data.template_type);
+
+      // When switching templates, enforce column nullability at the DB level by clearing incompatible fields.
+      if (data.template_type === 'DOMESTIC') {
+        updates.push('suite = NULL');
+        updates.push('`row` = NULL');
+        updates.push('rack = NULL');
+      } else if (data.template_type === 'DATACENTRE') {
+        updates.push('area = NULL');
+      }
+    }
+
     if (data.floor !== undefined) {
       updates.push('floor = ?');
       values.push(data.floor.trim());
@@ -351,17 +467,22 @@ export class SiteLocationModel {
 
     if (data.suite !== undefined) {
       updates.push('suite = ?');
-      values.push(data.suite.trim());
+      values.push(data.suite ? String(data.suite).trim() : null);
     }
 
     if (data.row !== undefined) {
       updates.push('`row` = ?');
-      values.push(data.row.trim());
+      values.push(data.row ? String(data.row).trim() : null);
     }
 
     if (data.rack !== undefined) {
       updates.push('rack = ?');
-      values.push(data.rack.trim());
+      values.push(data.rack ? String(data.rack).trim() : null);
+    }
+
+    if (data.area !== undefined) {
+      updates.push('area = ?');
+      values.push(data.area ? String(data.area).trim() : null);
     }
 
     if (data.label !== undefined) {

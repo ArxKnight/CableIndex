@@ -25,10 +25,12 @@ export interface Site {
 export interface SiteLocation {
   id: number;
   site_id: number;
+  template_type?: 'DATACENTRE' | 'DOMESTIC';
   floor: string;
-  suite: string;
-  row: string;
-  rack: string;
+  suite?: string | null;
+  row?: string | null;
+  rack?: string | null;
+  area?: string | null;
   label?: string | null;
   effective_label?: string;
   created_at: string;

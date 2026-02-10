@@ -32,16 +32,19 @@ export interface LabelSearchOptions {
   source_suite?: string;
   source_row?: string;
   source_rack?: string;
+  source_area?: string;
   destination_location_label?: string;
   destination_floor?: string;
   destination_suite?: string;
   destination_row?: string;
   destination_rack?: string;
+  destination_area?: string;
   location_label?: string;
   floor?: string;
   suite?: string;
   row?: string;
   rack?: string;
+  area?: string;
   cable_type_id?: number;
   cable_type?: string;
   created_by?: string;
@@ -135,9 +138,27 @@ export class LabelModel {
         l.created_at,
         l.updated_at,
         s.code as site_code,
-        ct.id as ct_id, ct.name as ct_name, ct.description as ct_description, ct.created_at as ct_created_at, ct.updated_at as ct_updated_at,
-        sls.id as sls_id, sls.floor as sls_floor, sls.suite as sls_suite, sls.\`row\` as sls_row, sls.rack as sls_rack, sls.label as sls_label,
-        sld.id as sld_id, sld.floor as sld_floor, sld.suite as sld_suite, sld.\`row\` as sld_row, sld.rack as sld_rack, sld.label as sld_label
+        ct.id as ct_id,
+        ct.name as ct_name,
+        ct.description as ct_description,
+        ct.created_at as ct_created_at,
+        ct.updated_at as ct_updated_at,
+        sls.id as sls_id,
+        sls.template_type as sls_template_type,
+        sls.floor as sls_floor,
+        sls.suite as sls_suite,
+        sls.\`row\` as sls_row,
+        sls.rack as sls_rack,
+        sls.area as sls_area,
+        sls.label as sls_label,
+        sld.id as sld_id,
+        sld.template_type as sld_template_type,
+        sld.floor as sld_floor,
+        sld.suite as sld_suite,
+        sld.\`row\` as sld_row,
+        sld.rack as sld_rack,
+        sld.area as sld_area,
+        sld.label as sld_label
       FROM labels l
       JOIN sites s ON s.id = l.site_id
       LEFT JOIN cable_types ct ON ct.id = l.cable_type_id
@@ -194,20 +215,52 @@ export class LabelModel {
     }
   }
 
+  private normalizeArea(value: unknown): string {
+    const raw = (value ?? '').toString().trim();
+    if (!raw) return '';
+    return raw.replace(/\s+/g, ' ');
+  }
+
+  private isDomesticTemplate(location: {
+    template_type?: string | null;
+    area?: string | null;
+    suite?: string | null;
+    row?: string | null;
+    rack?: string | null;
+  }): boolean {
+    const template = (location.template_type ?? '').toString().trim().toUpperCase();
+    if (template === 'DOMESTIC') return true;
+    if (template === 'DATACENTRE') return false;
+    const area = this.normalizeArea(location.area);
+    const hasDcFields = (location.suite ?? '').toString().trim() !== '' || (location.row ?? '').toString().trim() !== '' || (location.rack ?? '').toString().trim() !== '';
+    return area !== '' && !hasDcFields;
+  }
+
   private formatLocationDisplay(
     siteCode: string,
-    location: { label?: string | null; floor: string; suite: string; row: string; rack: string }
+    location: {
+      template_type?: 'DATACENTRE' | 'DOMESTIC' | string | null;
+      label?: string | null;
+      floor: string | null;
+      suite?: string | null;
+      row?: string | null;
+      rack?: string | null;
+      area?: string | null;
+    }
   ): string {
     const labelRaw = (location.label ?? '').toString().trim();
-    const label = labelRaw !== '' ? labelRaw : siteCode;
+    const effectiveLabel = labelRaw !== '' ? labelRaw : siteCode;
     const floor = (location.floor ?? '').toString().trim();
+
+    if (this.isDomesticTemplate(location)) {
+      const area = this.normalizeArea(location.area);
+      return `Label: ${effectiveLabel} | Floor: ${floor} | Area: ${area}`;
+    }
+
     const suite = (location.suite ?? '').toString().trim();
     const row = (location.row ?? '').toString().trim();
     const rack = (location.rack ?? '').toString().trim();
-
-    // UI display format: <LocationLabel> — Label: <SiteCode> | Floor: ...
-    // (kept separate from ZPL print format)
-    return `${label} — Label: ${siteCode} | Floor: ${floor} | Suite: ${suite} | Row: ${row} | Rack: ${rack}`;
+    return `Label: ${effectiveLabel} | Floor: ${floor} | Suite: ${suite} | Row: ${row} | Rack: ${rack}`;
   }
 
   private mapRow(row: any): Label {
@@ -241,10 +294,12 @@ export class LabelModel {
       ? {
           id: Number(row.sls_id),
           site_id: Number(row.site_id),
+          template_type: row.sls_template_type ?? undefined,
           floor: String(row.sls_floor),
-          suite: String(row.sls_suite),
-          row: String(row.sls_row),
-          rack: String(row.sls_rack),
+          suite: row.sls_suite == null ? null : String(row.sls_suite),
+          row: row.sls_row == null ? null : String(row.sls_row),
+          rack: row.sls_rack == null ? null : String(row.sls_rack),
+          area: row.sls_area == null ? null : String(row.sls_area),
           label: row.sls_label ?? null,
           created_at: row.created_at,
           updated_at: row.updated_at,
@@ -255,10 +310,12 @@ export class LabelModel {
       ? {
           id: Number(row.sld_id),
           site_id: Number(row.site_id),
+          template_type: row.sld_template_type ?? undefined,
           floor: String(row.sld_floor),
-          suite: String(row.sld_suite),
-          row: String(row.sld_row),
-          rack: String(row.sld_rack),
+          suite: row.sld_suite == null ? null : String(row.sld_suite),
+          row: row.sld_row == null ? null : String(row.sld_row),
+          rack: row.sld_rack == null ? null : String(row.sld_rack),
+          area: row.sld_area == null ? null : String(row.sld_area),
           label: row.sld_label ?? null,
           created_at: row.created_at,
           updated_at: row.updated_at,
@@ -462,8 +519,8 @@ export class LabelModel {
         u.email as created_by_email,
         s.code as site_code,
         ct.id as ct_id, ct.name as ct_name, ct.description as ct_description, ct.created_at as ct_created_at, ct.updated_at as ct_updated_at,
-        sls.id as sls_id, sls.floor as sls_floor, sls.suite as sls_suite, sls.\`row\` as sls_row, sls.rack as sls_rack, sls.label as sls_label,
-        sld.id as sld_id, sld.floor as sld_floor, sld.suite as sld_suite, sld.\`row\` as sld_row, sld.rack as sld_rack, sld.label as sld_label
+        sls.id as sls_id, sls.template_type as sls_template_type, sls.floor as sls_floor, sls.suite as sls_suite, sls.\`row\` as sls_row, sls.rack as sls_rack, sls.area as sls_area, sls.label as sls_label,
+        sld.id as sld_id, sld.template_type as sld_template_type, sld.floor as sld_floor, sld.suite as sld_suite, sld.\`row\` as sld_row, sld.rack as sld_rack, sld.area as sld_area, sld.label as sld_label
        FROM labels l
        JOIN sites s ON s.id = l.site_id
        LEFT JOIN users u ON u.id = l.created_by
@@ -500,8 +557,8 @@ export class LabelModel {
         u.email as created_by_email,
         s.code as site_code,
         ct.id as ct_id, ct.name as ct_name, ct.description as ct_description, ct.created_at as ct_created_at, ct.updated_at as ct_updated_at,
-        sls.id as sls_id, sls.floor as sls_floor, sls.suite as sls_suite, sls.\`row\` as sls_row, sls.rack as sls_rack, sls.label as sls_label,
-        sld.id as sld_id, sld.floor as sld_floor, sld.suite as sld_suite, sld.\`row\` as sld_row, sld.rack as sld_rack, sld.label as sld_label
+        sls.id as sls_id, sls.template_type as sls_template_type, sls.floor as sls_floor, sls.suite as sls_suite, sls.\`row\` as sls_row, sls.rack as sls_rack, sls.area as sls_area, sls.label as sls_label,
+        sld.id as sld_id, sld.template_type as sld_template_type, sld.floor as sld_floor, sld.suite as sld_suite, sld.\`row\` as sld_row, sld.rack as sld_rack, sld.area as sld_area, sld.label as sld_label
       FROM labels l
       JOIN sites s ON s.id = l.site_id
       LEFT JOIN users u ON u.id = l.created_by
@@ -559,6 +616,11 @@ export class LabelModel {
       params.push(makePayloadContainsPattern(String(options.source_rack)));
     }
 
+    if (options.source_area) {
+      query += ` AND (sls.area LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.source_area)));
+    }
+
     if (options.destination_location_label) {
       query += ` AND (COALESCE(sld.label, s.code) LIKE ?)`;
       params.push(makePayloadContainsPattern(String(options.destination_location_label)));
@@ -582,6 +644,11 @@ export class LabelModel {
     if (options.destination_rack) {
       query += ` AND (sld.rack LIKE ?)`;
       params.push(makePayloadContainsPattern(String(options.destination_rack)));
+    }
+
+    if (options.destination_area) {
+      query += ` AND (sld.area LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.destination_area)));
     }
 
     if (options.location_label) {
@@ -611,6 +678,12 @@ export class LabelModel {
     if (options.rack) {
       query += ` AND (sls.rack LIKE ? OR sld.rack LIKE ?)`;
       const p = makePayloadContainsPattern(String(options.rack));
+      params.push(p, p);
+    }
+
+    if (options.area) {
+      query += ` AND (sls.area LIKE ? OR sld.area LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.area));
       params.push(p, p);
     }
 
@@ -790,16 +863,19 @@ export class LabelModel {
       | 'source_suite'
       | 'source_row'
       | 'source_rack'
+      | 'source_area'
       | 'destination_location_label'
       | 'destination_floor'
       | 'destination_suite'
       | 'destination_row'
       | 'destination_rack'
+      | 'destination_area'
       | 'location_label'
       | 'floor'
       | 'suite'
       | 'row'
       | 'rack'
+      | 'area'
       | 'cable_type_id'
       | 'cable_type'
       | 'created_by'
@@ -808,6 +884,7 @@ export class LabelModel {
     let query = `
       SELECT COUNT(*) as count
       FROM labels l
+      JOIN sites s ON s.id = l.site_id
       LEFT JOIN users u ON u.id = l.created_by
       LEFT JOIN cable_types ct ON ct.id = l.cable_type_id
       LEFT JOIN site_locations sls ON sls.id = l.source_location_id
@@ -862,6 +939,11 @@ export class LabelModel {
       params.push(makePayloadContainsPattern(String(options.source_rack)));
     }
 
+    if (options.source_area) {
+      query += ` AND (sls.area LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.source_area)));
+    }
+
     if (options.destination_location_label) {
       query += ` AND (COALESCE(sld.label, s.code) LIKE ?)`;
       params.push(makePayloadContainsPattern(String(options.destination_location_label)));
@@ -885,6 +967,11 @@ export class LabelModel {
     if (options.destination_rack) {
       query += ` AND (sld.rack LIKE ?)`;
       params.push(makePayloadContainsPattern(String(options.destination_rack)));
+    }
+
+    if (options.destination_area) {
+      query += ` AND (sld.area LIKE ?)`;
+      params.push(makePayloadContainsPattern(String(options.destination_area)));
     }
 
     if (options.location_label) {
@@ -914,6 +1001,12 @@ export class LabelModel {
     if (options.rack) {
       query += ` AND (sls.rack LIKE ? OR sld.rack LIKE ?)`;
       const p = makePayloadContainsPattern(String(options.rack));
+      params.push(p, p);
+    }
+
+    if (options.area) {
+      query += ` AND (sls.area LIKE ? OR sld.area LIKE ?)`;
+      const p = makePayloadContainsPattern(String(options.area));
       params.push(p, p);
     }
 
@@ -1034,8 +1127,8 @@ export class LabelModel {
          l.updated_at,
          s.code as site_code,
          ct.id as ct_id, ct.name as ct_name, ct.description as ct_description, ct.created_at as ct_created_at, ct.updated_at as ct_updated_at,
-         sls.id as sls_id, sls.floor as sls_floor, sls.suite as sls_suite, sls.\`row\` as sls_row, sls.rack as sls_rack, sls.label as sls_label,
-         sld.id as sld_id, sld.floor as sld_floor, sld.suite as sld_suite, sld.\`row\` as sld_row, sld.rack as sld_rack, sld.label as sld_label
+         sls.id as sls_id, sls.template_type as sls_template_type, sls.floor as sls_floor, sls.suite as sls_suite, sls.\`row\` as sls_row, sls.rack as sls_rack, sls.area as sls_area, sls.label as sls_label,
+         sld.id as sld_id, sld.template_type as sld_template_type, sld.floor as sld_floor, sld.suite as sld_suite, sld.\`row\` as sld_row, sld.rack as sld_rack, sld.area as sld_area, sld.label as sld_label
         FROM labels l
         JOIN sites s ON s.id = l.site_id
         LEFT JOIN cable_types ct ON ct.id = l.cable_type_id

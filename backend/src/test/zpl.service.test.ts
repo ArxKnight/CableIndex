@@ -26,12 +26,12 @@ describe('ZPLService', () => {
         '^MUm^FO1,1',
         '^A0N,3,3',
         '^FB292,3,1,C',
-        '^FD#001\\& Server-01\\& Switch-01',
+        '^FD#001\\&Server-01\\&Switch-01',
         '^FS',
         '^MUm^FO31,1',
         '^A0N,3,3',
         '^FB292,3,1,C',
-        '^FD#001\\& Server-01\\& Switch-01',
+        '^FD#001\\&Server-01\\&Switch-01',
         '^FS',
         '^XZ',
       ].join('\n');
@@ -248,7 +248,56 @@ describe('ZPLService', () => {
 
       expect(zpl).toContain('^XA');
       expect(zpl).toContain('^XZ');
-      expect(zpl).toContain('#001\\& Server-01\\& Switch-01');
+      expect(zpl).toContain('#001\\&Server-01\\&Switch-01');
+    });
+
+    it('should format DATACENTRE and DOMESTIC locations as compact paths (mixed templates)', () => {
+      const label = {
+        id: 1,
+        ref_string: '0007',
+        site_id: 1,
+        is_active: true,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z',
+        source_location: {
+          id: 10,
+          site_id: 1,
+          template_type: 'DATACENTRE',
+          label: null,
+          floor: '2',
+          suite: '1',
+          row: 'A',
+          rack: '1',
+          area: null,
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z'
+        },
+        destination_location: {
+          id: 11,
+          site_id: 1,
+          template_type: 'DOMESTIC',
+          label: null,
+          floor: '0',
+          suite: null,
+          row: null,
+          rack: null,
+          area: '  Garage   Bench  ',
+          created_at: '2024-01-01T00:00:00Z',
+          updated_at: '2024-01-01T00:00:00Z'
+        }
+      } as any;
+
+      const site = {
+        id: 1,
+        code: 'IVY',
+        name: 'IVY',
+        created_by: 1,
+        created_at: '2024-01-01T00:00:00Z',
+        updated_at: '2024-01-01T00:00:00Z'
+      } as any;
+
+      const zpl = zplService.generateFromLabel(label, site);
+      expect(zpl).toContain('#0007\\&IVY/2/1/A/1\\&IVY/0/Garage Bench');
     });
   });
 
@@ -296,8 +345,8 @@ describe('ZPLService', () => {
 
       const zpl = zplService.generateBulkLabels(labels, sites);
 
-      expect(zpl).toContain('#001\\& Server-01\\& Switch-01');
-      expect(zpl).toContain('#002\\& Server-02\\& Switch-01');
+      expect(zpl).toContain('#001\\&Server-01\\&Switch-01');
+      expect(zpl).toContain('#002\\&Server-02\\&Switch-01');
       
       // Should contain multiple ZPL blocks
       const zplBlocks = zpl.split('^XZ').filter(block => block.trim().length > 0);

@@ -76,7 +76,7 @@ graph TB
 
 ### Authorization Model
 
-- **Global roles**: Global Admin, Admin, User.
+- **Global roles**: Global Admin, User.
 - **Site roles**: Site Admin, Site User.
 - Backend enforces:
   - Authentication (JWT)
@@ -88,11 +88,18 @@ graph TB
 - **Users**: identity, password hash, global role
 - **Sites**: user-visible groupings
 - **Site Memberships**: per-user, per-site role assignments
-- **Locations**: structured locations per site (`label/floor/suite/row/rack`)
+- **Locations**: template-aware structured locations per site
+  - Datacentre/Commercial: `label/floor/suite/row/rack`
+  - Domestic: `label/floor/area`
 - **Cable Types**: per-site categories
 - **Labels**: cable labels with per-site reference numbering and associated metadata
 - **App Settings**: system configuration (including optional SMTP settings)
 - **Invitations**: invitation tokens and expiry/acceptance status
+
+## DOCX Reporting
+
+- The backend can generate a deterministic **Site Cable Report** as a `.docx` export.
+- The report includes label metadata (including label `type`) and template-aware location formatting.
 
 ## Frontend Design
 
@@ -113,14 +120,17 @@ graph TB
 
 ### Cable Label Payload
 
-Printed payload (cross-rack cable label):
+Printed payload (3 lines):
 
-`#<REF>\& <SOURCE>\& <DESTINATION>`
+1. `#<REF>`
+2. `<SOURCE>`
+3. `<DESTINATION>`
 
 ### Formatting Rules
 
 - ZPL is produced as a sequence of newline-separated commands.
 - `^FD...` and its terminator `^FS` must be on separate lines.
+- For cable labels, `\&` is used within `^FD` to force line breaks (to render the 3-line payload).
 - Bulk outputs are concatenated cleanly (labels do not run into each other).
 
 ### Example (Simplified)

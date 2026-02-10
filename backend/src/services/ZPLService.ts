@@ -29,16 +29,43 @@ export class ZPLService {
     return (value ?? '').toString().trim();
   }
 
-  private formatLocationPrint(location: {
-    effective_label?: string | null;
-    label?: string | null;
-    floor?: string | null;
-    suite?: string | null;
-    row?: string | null;
-    rack?: string | null;
-  }): string {
-    const label = this.safe(location.effective_label ?? location.label);
+  private normalizeArea(value: unknown): string {
+    const raw = (value ?? '').toString().trim();
+    if (!raw) return '';
+    return raw.replace(/\s+/g, ' ');
+  }
+
+  private isDomesticTemplate(location: { template_type?: string | null; area?: string | null; suite?: string | null; row?: string | null; rack?: string | null }): boolean {
+    const template = (location.template_type ?? '').toString().trim().toUpperCase();
+    if (template === 'DOMESTIC') return true;
+    if (template === 'DATACENTRE') return false;
+    // Backwards-compatible inference if template_type isn't present in joined payloads
+    const area = this.normalizeArea(location.area);
+    const hasDcFields = this.safe(location.suite) !== '' || this.safe(location.row) !== '' || this.safe(location.rack) !== '';
+    return area !== '' && !hasDcFields;
+  }
+
+  private formatLocationPrint(
+    siteCode: string,
+    location: {
+      template_type?: 'DATACENTRE' | 'DOMESTIC' | string | null;
+      effective_label?: string | null;
+      label?: string | null;
+      floor?: string | null;
+      suite?: string | null;
+      row?: string | null;
+      rack?: string | null;
+      area?: string | null;
+    }
+  ): string {
+    const label = this.safe(location.effective_label ?? location.label ?? siteCode);
     const floor = this.safe(location.floor);
+
+    if (this.isDomesticTemplate(location)) {
+      const area = this.normalizeArea(location.area);
+      return `${label}/${floor}/${area}`;
+    }
+
     const suite = this.safe(location.suite);
     const row = this.safe(location.row);
     const rack = this.safe(location.rack);
@@ -47,7 +74,11 @@ export class ZPLService {
 
   /**
    * Generate ZPL code for a cable label
-   * Format: #[REF]\& [SOURCE]\& [DESTINATION] (printed twice per label)
+   * Format (exactly 3 lines):
+   *   #[REF]
+   *   [SOURCE]
+   *   [DESTINATION]
+   * (printed twice per label)
    */
   generateCableLabel(data: CableLabelData): string {
     const { referenceNumber, source, destination } = data;
@@ -55,7 +86,7 @@ export class ZPLService {
     // Validate input data
     this.validateCableLabelData(data);
     
-    const payload = `#${referenceNumber}\\& ${source}\\& ${destination}`;
+    const payload = `#${referenceNumber}\\&${source}\\&${destination}`;
 
     const lines: string[] = [
       '^XA',
@@ -136,12 +167,14 @@ export class ZPLService {
   generateFromLabel(label: Label, site: Site): string {
     const referenceNumber = (String(label.ref_string || '').trim() || (Number.isFinite(label.ref_number) ? String(label.ref_number).padStart(4, '0') : '') || 'UNKNOWN');
 
+    const siteCode = this.safe(site.code);
+
     const source = label.source_location
-      ? this.formatLocationPrint(label.source_location)
+      ? this.formatLocationPrint(siteCode, label.source_location)
       : (label.source || 'Unknown');
 
     const destination = label.destination_location
-      ? this.formatLocationPrint(label.destination_location)
+      ? this.formatLocationPrint(siteCode, label.destination_location)
       : (label.destination || 'Unknown');
     
     return this.generateCableLabel({

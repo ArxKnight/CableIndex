@@ -24,7 +24,7 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "types": ["vitest/globals", "node", "nodemailer"]
+    "types": ["vitest/globals", "node", "nodemailer", "adm-zip"]
   },
   "include": [
     "src/**/*"

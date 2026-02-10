@@ -4,14 +4,24 @@ import SiteModel from '../models/Site.js';
 import SiteLocationModel from '../models/SiteLocation.js';
 import { DuplicateSiteLocationCoordsError, SiteLocationInUseError } from '../models/SiteLocation.js';
 import CableTypeModel from '../models/CableType.js';
+import connection from '../database/connection.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireGlobalRole, requireSiteRole, resolveSiteAccess } from '../middleware/permissions.js';
 import { ApiResponse } from '../types/index.js';
+import {
+  buildCableReportDocxBuffer,
+  formatDateTimeDDMMYYYY_HHMM,
+  formatPrintedDateDDMonYYYY_HHMM,
+  formatTimestampYYYYMMDD_HHMMSS,
+  type CableReportLocation,
+  type CableReportRun,
+} from '../utils/cableReportDocx.js';
 
 const router = Router();
 const siteModel = new SiteModel();
 const siteLocationModel = new SiteLocationModel();
 const cableTypeModel = new CableTypeModel();
+const getAdapter = () => connection.getAdapter();
 
 // Validation schemas
 const createSiteSchema = z.object({
@@ -47,21 +57,69 @@ const cableTypeIdSchema = z.object({
   cableTypeId: z.coerce.number().min(1, 'Invalid cable type ID'),
 });
 
-const createLocationSchema = z.object({
-  floor: z.string().min(1, 'Floor is required').max(50),
-  suite: z.string().min(1, 'Suite is required').max(50),
-  row: z.string().min(1, 'Row is required').max(50),
-  rack: z.string().min(1, 'Rack is required').max(50),
-  label: z.string().max(255).optional(),
-});
+const locationTemplateTypeSchema = z.enum(['DATACENTRE', 'DOMESTIC']);
 
-const updateLocationSchema = z.object({
-  floor: z.string().min(1).max(50).optional(),
-  suite: z.string().min(1).max(50).optional(),
-  row: z.string().min(1).max(50).optional(),
-  rack: z.string().min(1).max(50).optional(),
-  label: z.string().max(255).optional().or(z.literal('')),
-});
+const createLocationSchema = z
+  .object({
+    template_type: locationTemplateTypeSchema.default('DATACENTRE').optional(),
+    label: z.string().max(255).optional(),
+    floor: z.string().min(1, 'Floor is required').max(50),
+    suite: z.string().max(50).optional(),
+    row: z.string().max(50).optional(),
+    rack: z.string().max(50).optional(),
+    area: z.string().max(64).optional(),
+  })
+  .superRefine((data, ctx) => {
+    const template = (data.template_type ?? 'DATACENTRE') as 'DATACENTRE' | 'DOMESTIC';
+
+    if (template === 'DATACENTRE') {
+      if (!data.suite || data.suite.trim() === '') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['suite'], message: 'Suite is required' });
+      }
+      if (!data.row || data.row.trim() === '') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['row'], message: 'Row is required' });
+      }
+      if (!data.rack || data.rack.trim() === '') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['rack'], message: 'Rack is required' });
+      }
+      if (data.area && data.area.trim() !== '') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['area'], message: 'Area must be empty for Datacentre/Commercial locations' });
+      }
+    } else {
+      if (!data.area || data.area.trim() === '') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['area'], message: 'Area is required' });
+      }
+      if ((data.suite && data.suite.trim() !== '') || (data.row && data.row.trim() !== '') || (data.rack && data.rack.trim() !== '')) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [], message: 'Suite/Row/Rack must be empty for Domestic locations' });
+      }
+    }
+  });
+
+const updateLocationSchema = z
+  .object({
+    template_type: locationTemplateTypeSchema.optional(),
+    label: z.string().max(255).optional().or(z.literal('')),
+    floor: z.string().min(1).max(50).optional(),
+    suite: z.string().max(50).optional().or(z.literal('')),
+    row: z.string().max(50).optional().or(z.literal('')),
+    rack: z.string().max(50).optional().or(z.literal('')),
+    area: z.string().max(64).optional().or(z.literal('')),
+  })
+  .superRefine((data, ctx) => {
+    // Template-specific required-field validation is enforced more strictly on create.
+    // For update, we only block obviously invalid mixed-field submissions.
+    if (data.template_type === 'DATACENTRE') {
+      if (data.area !== undefined && data.area.trim() !== '') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['area'], message: 'Area must be empty for Datacentre/Commercial locations' });
+      }
+    }
+
+    if (data.template_type === 'DOMESTIC') {
+      if ((data.suite && data.suite.trim() !== '') || (data.row && data.row.trim() !== '') || (data.rack && data.rack.trim() !== '')) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [], message: 'Suite/Row/Rack must be empty for Domestic locations' });
+      }
+    }
+  });
 
 const deleteLocationQuerySchema = z.object({
   strategy: z.enum(['reassign', 'cascade']).optional(),
@@ -360,14 +418,28 @@ router.post('/:id/locations', authenticateToken, resolveSiteAccess(req => Number
     const labelTrimmed = (dataParsed.label ?? '').toString().trim();
     const label = labelTrimmed !== '' ? labelTrimmed : null;
 
-    const location = await siteLocationModel.create({
+    const template_type = (dataParsed.template_type ?? 'DATACENTRE') as 'DATACENTRE' | 'DOMESTIC';
+
+    const baseCreate = {
       site_id: id,
+      template_type,
       floor: dataParsed.floor,
-      suite: dataParsed.suite,
-      row: dataParsed.row,
-      rack: dataParsed.rack,
-      label,
-    });
+      ...(label !== null ? { label } : {}),
+    };
+
+    const location = await siteLocationModel.create(
+      template_type === 'DOMESTIC'
+        ? {
+          ...baseCreate,
+          area: (dataParsed.area ?? '').toString().trim(),
+        }
+        : {
+          ...baseCreate,
+          suite: (dataParsed.suite ?? '').toString().trim(),
+          row: (dataParsed.row ?? '').toString().trim(),
+          rack: (dataParsed.rack ?? '').toString().trim(),
+        }
+    );
 
     res.status(201).json({
       success: true,
@@ -427,11 +499,37 @@ router.put('/:id/locations/:locationId', authenticateToken, resolveSiteAccess(re
       labelUpdate = labelTrimmed !== '' ? labelTrimmed : null;
     }
 
+    let areaUpdate: string | null | undefined;
+    if (dataParsed.area !== undefined) {
+      const areaTrimmed = (dataParsed.area ?? '').toString().trim();
+      areaUpdate = areaTrimmed !== '' ? areaTrimmed : null;
+    }
+
+    let suiteUpdate: string | null | undefined;
+    if (dataParsed.suite !== undefined) {
+      const suiteTrimmed = (dataParsed.suite ?? '').toString().trim();
+      suiteUpdate = suiteTrimmed !== '' ? suiteTrimmed : null;
+    }
+
+    let rowUpdate: string | null | undefined;
+    if (dataParsed.row !== undefined) {
+      const rowTrimmed = (dataParsed.row ?? '').toString().trim();
+      rowUpdate = rowTrimmed !== '' ? rowTrimmed : null;
+    }
+
+    let rackUpdate: string | null | undefined;
+    if (dataParsed.rack !== undefined) {
+      const rackTrimmed = (dataParsed.rack ?? '').toString().trim();
+      rackUpdate = rackTrimmed !== '' ? rackTrimmed : null;
+    }
+
     const location = await siteLocationModel.update(locationId, id, {
+      ...(dataParsed.template_type !== undefined ? { template_type: dataParsed.template_type } : {}),
       ...(dataParsed.floor !== undefined ? { floor: dataParsed.floor } : {}),
-      ...(dataParsed.suite !== undefined ? { suite: dataParsed.suite } : {}),
-      ...(dataParsed.row !== undefined ? { row: dataParsed.row } : {}),
-      ...(dataParsed.rack !== undefined ? { rack: dataParsed.rack } : {}),
+      ...(suiteUpdate !== undefined ? { suite: suiteUpdate } : {}),
+      ...(rowUpdate !== undefined ? { row: rowUpdate } : {}),
+      ...(rackUpdate !== undefined ? { rack: rackUpdate } : {}),
+      ...(areaUpdate !== undefined ? { area: areaUpdate } : {}),
       ...(labelUpdate !== undefined ? { label: labelUpdate } : {}),
     });
 
@@ -713,6 +811,154 @@ router.get(
       return res.status(500).json({
         success: false,
         error: 'Internal server error',
+      } as ApiResponse);
+    }
+  }
+);
+
+/**
+ * GET /api/sites/:id/cable-report
+ * Download a Word document containing a printable cable report for the site.
+ */
+router.get(
+  '/:id/cable-report',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  async (req: Request, res: Response) => {
+    try {
+      const { id } = siteIdSchema.parse(req.params);
+
+      const siteName = String(req.site?.name ?? '').trim();
+      const siteCode = String(req.site?.code ?? '').trim().toUpperCase();
+      if (!siteName || !siteCode) {
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to resolve site details',
+        } as ApiResponse);
+      }
+
+      const createdAt = new Date();
+
+      const [locationsRaw, cableTypesRaw, runsRaw] = await Promise.all([
+        siteLocationModel.listBySiteId(id),
+        cableTypeModel.listBySiteId(id),
+        getAdapter().query(
+          `SELECT
+             l.type,
+             l.ref_number,
+             l.created_at,
+             u.username AS created_by_username,
+             u.email AS created_by_email,
+             ct.name AS cable_type_name,
+             COALESCE(NULLIF(TRIM(sls.label), ''), s.code) AS source_name,
+             sls.template_type AS source_template_type,
+             sls.floor AS source_floor,
+             sls.suite AS source_suite,
+             sls.\`row\` AS source_row,
+             sls.rack AS source_rack,
+             sls.area AS source_area,
+             COALESCE(NULLIF(TRIM(sld.label), ''), s.code) AS dest_name,
+             sld.template_type AS dest_template_type,
+             sld.floor AS dest_floor,
+             sld.suite AS dest_suite,
+             sld.\`row\` AS dest_row,
+             sld.rack AS dest_rack
+             , sld.area AS dest_area
+           FROM labels l
+           JOIN sites s ON s.id = l.site_id
+           LEFT JOIN users u ON u.id = l.created_by
+           LEFT JOIN cable_types ct ON ct.id = l.cable_type_id
+           LEFT JOIN site_locations sls ON sls.id = l.source_location_id
+           LEFT JOIN site_locations sld ON sld.id = l.destination_location_id
+           WHERE l.site_id = ?
+           ORDER BY l.ref_number ASC, l.id ASC`,
+          [id]
+        ),
+      ]);
+
+      const locations: CableReportLocation[] = (locationsRaw as any[]).map((l) => ({
+        name: String((l as any).label ?? '').trim() || siteCode,
+        label: siteCode,
+        floor: String((l as any).floor ?? ''),
+        ...((l as any).template_type != null ? { template_type: String((l as any).template_type) } : {}),
+        ...((l as any).area != null ? { area: String((l as any).area) } : {}),
+        ...((l as any).suite != null ? { suite: String((l as any).suite) } : {}),
+        ...((l as any).row != null ? { row: String((l as any).row) } : {}),
+        ...((l as any).rack != null ? { rack: String((l as any).rack) } : {}),
+      }));
+
+      const runs: CableReportRun[] = (runsRaw as any[]).map((r) => {
+        const sourceHasFloor = r.source_floor != null;
+        const destHasFloor = r.dest_floor != null;
+
+        const source = sourceHasFloor
+          ? {
+              label: String(r.source_name ?? siteCode),
+              floor: String(r.source_floor ?? ''),
+              ...(r.source_template_type != null ? { template_type: String(r.source_template_type) } : {}),
+              ...(r.source_suite != null ? { suite: String(r.source_suite) } : {}),
+              ...(r.source_row != null ? { row: String(r.source_row) } : {}),
+              ...(r.source_rack != null ? { rack: String(r.source_rack) } : {}),
+              ...(r.source_area != null ? { area: String(r.source_area) } : {}),
+            }
+          : null;
+
+        const destination = destHasFloor
+          ? {
+              label: String(r.dest_name ?? siteCode),
+              floor: String(r.dest_floor ?? ''),
+              ...(r.dest_template_type != null ? { template_type: String(r.dest_template_type) } : {}),
+              ...(r.dest_suite != null ? { suite: String(r.dest_suite) } : {}),
+              ...(r.dest_row != null ? { row: String(r.dest_row) } : {}),
+              ...(r.dest_rack != null ? { rack: String(r.dest_rack) } : {}),
+              ...(r.dest_area != null ? { area: String(r.dest_area) } : {}),
+            }
+          : null;
+
+        const username = String(r.created_by_username ?? '').trim();
+        const email = String(r.created_by_email ?? '').trim();
+        const createdByDisplay = username || email || 'Unknown';
+
+        return {
+          ref_number: Number(r.ref_number),
+          type: String(r.type ?? '').trim() || 'cable',
+          source,
+          destination,
+          cable_type_name: r.cable_type_name != null ? String(r.cable_type_name) : null,
+          created_at: new Date(r.created_at),
+          created_by_display: createdByDisplay,
+        };
+      });
+
+      const buffer = await buildCableReportDocxBuffer({
+        siteName,
+        siteCode,
+        createdAt,
+        locations,
+        cableTypes: (cableTypesRaw as any[]).map((ct) => ({ name: String((ct as any).name ?? '').trim() })),
+        runs,
+      });
+
+      const ts = formatTimestampYYYYMMDD_HHMMSS(createdAt);
+      const filename = `${siteCode}_cable_report_${ts}.docx`;
+
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('X-Report-Created-On', formatPrintedDateDDMonYYYY_HHMM(createdAt));
+      return res.status(200).send(buffer);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          details: error.errors,
+        } as ApiResponse);
+      }
+
+      console.error('Cable report generation error:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to generate cable report',
       } as ApiResponse);
     }
   }

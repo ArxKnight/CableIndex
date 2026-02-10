@@ -22,10 +22,12 @@ export interface Site {
 export interface SiteLocation {
   id: number;
   site_id: number;
+  template_type?: 'DATACENTRE' | 'DOMESTIC' | null;
   floor?: string | null;
   suite?: string | null;
   row?: string | null;
   rack?: string | null;
+  area?: string | null;
   label?: string | null;
   effective_label?: string | null;
   created_at: string;
@@ -100,11 +102,13 @@ export interface LabelSearchParams {
   source_suite?: string;
   source_row?: string;
   source_rack?: string;
+  source_area?: string;
   destination_location_label?: string;
   destination_floor?: string;
   destination_suite?: string;
   destination_row?: string;
   destination_rack?: string;
+  destination_area?: string;
   cable_type_id?: number;
   created_by?: string;
   limit?: number;

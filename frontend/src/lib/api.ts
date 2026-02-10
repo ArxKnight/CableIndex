@@ -267,7 +267,15 @@ class ApiClient {
     return this.request<{ locations: any[] }>(`/sites/${siteId}/locations`);
   }
 
-  async createSiteLocation(siteId: number, data: { floor?: string; suite?: string; row?: string; rack?: string; label?: string }) {
+  async createSiteLocation(siteId: number, data: {
+    template_type?: 'DATACENTRE' | 'DOMESTIC';
+    floor?: string;
+    suite?: string;
+    row?: string;
+    rack?: string;
+    area?: string;
+    label?: string;
+  }) {
     return this.request<{ location: any }>(`/sites/${siteId}/locations`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -277,7 +285,15 @@ class ApiClient {
   async updateSiteLocation(
     siteId: number,
     locationId: number,
-    data: { floor?: string | null; suite?: string | null; row?: string | null; rack?: string | null; label?: string | null }
+    data: {
+      template_type?: 'DATACENTRE' | 'DOMESTIC';
+      floor?: string | null;
+      suite?: string | null;
+      row?: string | null;
+      rack?: string | null;
+      area?: string | null;
+      label?: string | null;
+    }
   ) {
     return this.request<{ location: any }>(`/sites/${siteId}/locations/${locationId}`, {
       method: 'PUT',
@@ -351,11 +367,13 @@ class ApiClient {
     source_suite?: string;
     source_row?: string;
     source_rack?: string;
+    source_area?: string;
     destination_location_label?: string;
     destination_floor?: string;
     destination_suite?: string;
     destination_row?: string;
     destination_rack?: string;
+    destination_area?: string;
     cable_type_id?: number;
     created_by?: string;
     limit?: number;
@@ -379,12 +397,14 @@ class ApiClient {
     if (params?.source_suite) searchParams.append('source_suite', params.source_suite);
     if (params?.source_row) searchParams.append('source_row', params.source_row);
     if (params?.source_rack) searchParams.append('source_rack', params.source_rack);
+    if (params?.source_area) searchParams.append('source_area', params.source_area);
 
     if (params?.destination_location_label) searchParams.append('destination_location_label', params.destination_location_label);
     if (params?.destination_floor) searchParams.append('destination_floor', params.destination_floor);
     if (params?.destination_suite) searchParams.append('destination_suite', params.destination_suite);
     if (params?.destination_row) searchParams.append('destination_row', params.destination_row);
     if (params?.destination_rack) searchParams.append('destination_rack', params.destination_rack);
+    if (params?.destination_area) searchParams.append('destination_area', params.destination_area);
 
     if (Number.isFinite(params?.cable_type_id) && (params!.cable_type_id as number) > 0) {
       searchParams.append('cable_type_id', String(params!.cable_type_id));
@@ -625,6 +645,46 @@ class ApiClient {
     }
 
     return await response.blob();
+  }
+
+  async downloadGetFileWithName(endpoint: string): Promise<{ blob: Blob; filename?: string }> {
+    const url = `${this.baseURL}${endpoint}`;
+    const tokens = getAuthTokens();
+
+    const config: RequestInit = {
+      method: 'GET',
+      headers: {},
+    };
+
+    if (tokens?.accessToken) {
+      (config.headers as Record<string, string>)['Authorization'] = `Bearer ${tokens.accessToken}`;
+    }
+
+    const response = await fetch(url, config);
+    if (!response.ok) {
+      let message = `HTTP error! status: ${response.status}`;
+      try {
+        const errorData = await response.json();
+        message = errorData.error || message;
+      } catch {
+        // ignore
+      }
+      throw new Error(message);
+    }
+
+    const disposition = response.headers.get('Content-Disposition') || response.headers.get('content-disposition');
+    let filename: string | undefined;
+    if (disposition) {
+      const match = disposition.match(/filename\s*=\s*"?([^";]+)"?/i);
+      if (match?.[1]) filename = match[1];
+    }
+
+    const blob = await response.blob();
+    return { blob, filename };
+  }
+
+  async downloadSiteCableReport(siteId: number): Promise<{ blob: Blob; filename?: string }> {
+    return this.downloadGetFileWithName(`/sites/${siteId}/cable-report`);
   }
 
   async downloadLabelZpl(labelId: number, siteId: number): Promise<Blob> {

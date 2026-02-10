@@ -76,11 +76,13 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     source_suite: '',
     source_row: '',
     source_rack: '',
+    source_area: '',
     destination_location_label: '',
     destination_floor: '',
     destination_suite: '',
     destination_row: '',
     destination_rack: '',
+    destination_area: '',
     cable_type_id: undefined,
     created_by: '',
     limit: 25,
@@ -139,11 +141,13 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
         source_suite: '',
         source_row: '',
         source_rack: '',
+        source_area: '',
         destination_location_label: '',
         destination_floor: '',
         destination_suite: '',
         destination_row: '',
         destination_rack: '',
+        destination_area: '',
         cable_type_id: undefined,
         offset: 0,
       }));
@@ -285,6 +289,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     if (searchParams.source_suite) scope.suite = searchParams.source_suite;
     if (searchParams.source_row) scope.row = searchParams.source_row;
     if (searchParams.source_rack) scope.rack = searchParams.source_rack;
+    if (searchParams.source_area) scope.area = searchParams.source_area;
     return scope;
   }, [
     searchParams.source_location_label,
@@ -292,6 +297,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     searchParams.source_suite,
     searchParams.source_row,
     searchParams.source_rack,
+    searchParams.source_area,
   ]);
 
   const destinationScope = useMemo((): LocationHierarchyScope | null => {
@@ -301,6 +307,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     if (searchParams.destination_suite) scope.suite = searchParams.destination_suite;
     if (searchParams.destination_row) scope.row = searchParams.destination_row;
     if (searchParams.destination_rack) scope.rack = searchParams.destination_rack;
+    if (searchParams.destination_area) scope.area = searchParams.destination_area;
     return scope;
   }, [
     searchParams.destination_location_label,
@@ -308,6 +315,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     searchParams.destination_suite,
     searchParams.destination_row,
     searchParams.destination_rack,
+    searchParams.destination_area,
   ]);
 
   const setSideScope = useCallback((side: 'source' | 'destination', scope: LocationHierarchyScope | null) => {
@@ -316,13 +324,15 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     const suite = scope?.suite ?? '';
     const row = scope?.row ?? '';
     const rack = scope?.rack ?? '';
+    const area = scope?.area ?? '';
 
     const resolved = {
       label,
       floor,
-      suite: floor ? suite : '',
-      row: floor && suite ? row : '',
-      rack: floor && suite && row ? rack : '',
+      area: floor ? area : '',
+      suite: floor && !area ? suite : '',
+      row: floor && !area && suite ? row : '',
+      rack: floor && !area && suite && row ? rack : '',
     };
 
     setSearchParams((prev) => {
@@ -335,6 +345,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
           source_suite: resolved.suite,
           source_row: resolved.row,
           source_rack: resolved.rack,
+          source_area: resolved.area,
           offset: 0,
         };
       }
@@ -346,6 +357,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
         destination_suite: resolved.suite,
         destination_row: resolved.row,
         destination_rack: resolved.rack,
+        destination_area: resolved.area,
         offset: 0,
       };
     });
@@ -443,11 +455,13 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
       source_suite: '',
       source_row: '',
       source_rack: '',
+      source_area: '',
       destination_location_label: '',
       destination_floor: '',
       destination_suite: '',
       destination_row: '',
       destination_rack: '',
+      destination_area: '',
       cable_type_id: undefined,
       created_by: '',
       site_id: selectedSiteId || 0,
@@ -465,11 +479,13 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     searchParams.source_suite ||
     searchParams.source_row ||
     searchParams.source_rack ||
+    searchParams.source_area ||
     searchParams.destination_location_label ||
     searchParams.destination_floor ||
     searchParams.destination_suite ||
     searchParams.destination_row ||
     searchParams.destination_rack ||
+    searchParams.destination_area ||
     searchParams.cable_type_id ||
     searchParams.created_by
   );

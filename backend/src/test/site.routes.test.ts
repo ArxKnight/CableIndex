@@ -6,8 +6,20 @@ import SiteModel from '../models/Site.js';
 import SiteLocationModel from '../models/SiteLocation.js';
 import LabelModel from '../models/Label.js';
 import CableTypeModel from '../models/CableType.js';
+import AdmZip from 'adm-zip';
 import { generateTokens } from '../utils/jwt.js';
 import { setupTestDatabase, cleanupTestDatabase } from './setup.js';
+
+function parseBinaryResponse(res: any, callback: (err: Error | null, data: Buffer) => void) {
+  res.setEncoding('binary');
+  let data = '';
+  res.on('data', (chunk: string) => {
+    data += chunk;
+  });
+  res.on('end', () => {
+    callback(null, Buffer.from(data, 'binary'));
+  });
+}
 
 describe('Site Routes', () => {
   let userModel: UserModel;
@@ -426,6 +438,96 @@ describe('Site Routes', () => {
       await request(app)
         .delete('/api/sites/1')
         .expect(401);
+    });
+  });
+
+  describe('GET /api/sites/:id/cable-report', () => {
+    it('should download a DOCX cable report for a site member', async () => {
+      const site = await siteModel.create({
+        name: 'Test Site',
+        code: 'TS',
+        created_by: testUser.id,
+      });
+
+      const cableType = await cableTypeModel.create({ site_id: site.id, name: 'CAT6' });
+      const locA = await siteLocationModel.create({
+        site_id: site.id,
+        floor: '1',
+        suite: 'A',
+        row: 'R1',
+        rack: '01',
+        label: 'Loft',
+      });
+      const locB = await siteLocationModel.create({
+        site_id: site.id,
+        floor: '1',
+        suite: 'A',
+        row: 'R1',
+        rack: '02',
+        label: 'Garage',
+      });
+
+      await labelModel.create({
+        site_id: site.id,
+        created_by: testUser.id,
+        source_location_id: locA.id,
+        destination_location_id: locB.id,
+        cable_type_id: cableType.id,
+        notes: 'Test label',
+      });
+
+      const response = await request(app)
+        .get(`/api/sites/${site.id}/cable-report`)
+        .set('Authorization', `Bearer ${authToken}`)
+        .buffer(true)
+        .parse(parseBinaryResponse)
+        .expect(200);
+
+      expect(response.headers['content-type']).toContain(
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      );
+
+      const contentDisposition = response.headers['content-disposition'];
+      expect(contentDisposition).toContain('attachment');
+      expect(contentDisposition).toMatch(/filename="TS_cable_report_\d{8}_\d{6}\.docx"/);
+
+      expect(Buffer.isBuffer(response.body)).toBe(true);
+      expect(response.body.subarray(0, 2).toString('utf8')).toBe('PK');
+
+      const zip = new AdmZip(response.body);
+      const documentXml = zip.readAsText('word/document.xml');
+      expect(documentXml).toContain('CableIndex – Site Cable Report');
+      expect(documentXml).toContain('Test Site');
+      expect(documentXml).toContain('TS');
+      expect(documentXml).toContain('Known Locations');
+      expect(documentXml).toContain('Loft');
+      expect(documentXml).toContain('Garage');
+      expect(documentXml).toContain('CAT6');
+      expect(documentXml).toContain('Test User');
+
+      // Structured run locations
+      expect(documentXml).toContain('Label: Loft | Floor: 1 | Suite: A | Row: R1 | Rack: 01');
+      expect(documentXml).toContain('Label: Garage | Floor: 1 | Suite: A | Row: R1 | Rack: 02');
+    });
+
+    it('should deny access to non-members', async () => {
+      const otherUser = await userModel.create({
+        email: 'other2@example.com',
+        username: 'Other User',
+        password: 'TestPassword123!',
+        role: 'USER',
+      });
+
+      const site = await siteModel.create({
+        name: 'Other User Site',
+        code: 'OU',
+        created_by: otherUser.id,
+      });
+
+      await request(app)
+        .get(`/api/sites/${site.id}/cable-report`)
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(403);
     });
   });
 });

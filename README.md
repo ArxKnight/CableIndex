@@ -10,9 +10,13 @@ A professional cable labeling system for Brady printers with automatic reference
 - 🏷️ **Cable Label Generation**: Automatic ZPL format generation for Brady printers
 - 🔢 **Smart Reference Numbering**: Sequential numbering per site (e.g. `#0001`, `#0002`, ...)
 - 🏢 **Multi-Site Management**: Organize labels across multiple physical locations
-- 📍 **Structured Locations**: Model locations as `label/floor/suite/row/rack` for consistent output
+- 📍 **Structured Locations**: Template-aware locations for consistent output
+   - **Datacentre/Commercial**: `label/floor/suite/row/rack`
+   - **Domestic**: `label/floor/area`
+   - A single site can contain a mix of templates
 - 🧵 **Cable Types**: Define per-site cable types for categorization
-- 📊 **Label Database**: Searchable database with filtering and bulk export capabilities
+- 📊 **Label Database**: Searchable database with filtering (including template-aware location filters like Domestic `area`) and bulk export capabilities
+- 📄 **Site Cable Report (.docx)**: Deterministic cable report export including label `type`
 
 ### Port & Equipment Labeling
 - 🔌 **Port Labels**: Generate labels for switches and network equipment
@@ -150,6 +154,8 @@ cd backend && npm run test        # Backend tests only
 
 ```
 cableindex/
+├── 📄 build-and-push.ps1           # Build/push helper (Windows)
+├── 📄 build-docker.sh              # Build helper (Linux)
 ├── 📁 frontend/                    # React frontend application
 │   ├── 📁 src/
 │   │   ├── 📁 components/         # Reusable UI components
@@ -171,6 +177,8 @@ cableindex/
 │   ├── 📄 package.json            # Frontend dependencies
 │   └── 📄 vite.config.ts          # Vite configuration
 ├── 📁 backend/                     # Express backend API
+│   ├── 📁 data/                    # Optional runtime marker files
+│   ├── 📁 scripts/                 # Dev/test helper scripts
 │   ├── 📁 src/
 │   │   ├── 📁 database/           # Database connection and migrations
 │   │   │   ├── 📁 adapters/       # MySQL adapter
@@ -190,7 +198,9 @@ cableindex/
 ├── 📁 .kiro/                       # Kiro AI assistant configuration
 │   └── 📁 specs/                  # Project specifications
 ├── 📄 docker-compose.yml          # Docker Compose configuration
+├── 📄 docker-compose.test.yml     # Test Docker Compose configuration
 ├── 📄 Dockerfile                  # Multi-stage Docker build
+├── 📄 LICENSE                      # PolyForm Noncommercial License 1.0.0
 ├── 📄 package.json                # Root package.json with scripts
 └── 📄 README.md                   # This file
 ```
@@ -227,6 +237,9 @@ cableindex/
 - `DELETE /api/sites/:id/locations/:locationId` - Delete a location (site admin; supports strategy)
 - `POST /api/sites/:id/locations/:locationId/reassign-and-delete` - Reassign labels then delete (site admin)
 
+#### Site Cable Report
+- `GET /api/sites/:id/cable-report` - Download Site Cable Report (.docx)
+
 #### Site Cable Types
 - `GET /api/sites/:id/cable-types` - List cable types for a site
 - `POST /api/sites/:id/cable-types` - Create a cable type (site admin)
@@ -254,6 +267,8 @@ cableindex/
 - `GET /api/admin/overview` - Admin overview notification counts
 - `POST /api/admin/invite` - Create invitation with site assignments
 - `GET /api/admin/invitations` - List pending invitations
+- `POST /api/admin/invitations/:id/link` - Get an invitation link for an existing invitation
+- `POST /api/admin/invitations/:id/resend` - Re-send invitation email (SMTP required)
 - `DELETE /api/admin/invitations/:id` - Cancel invitation
 - `POST /api/admin/accept-invite` - Accept invitation (public)
 - `GET /api/admin/validate-invite/:token` - Validate invitation token
@@ -261,11 +276,11 @@ cableindex/
 - `PUT /api/admin/users/:id/role` - Update user role
 - `GET /api/admin/users/:id/sites` - List user site memberships
 - `PUT /api/admin/users/:id/sites` - Replace user site memberships
-- `DELETE /api/admin/users/:id` - Deactivate user account
+- `DELETE /api/admin/users/:id` - Delete user account
 - `GET /api/admin/settings` - Application configuration
 - `PUT /api/admin/settings` - Update application settings
 - `POST /api/admin/settings/test-email` - Send an SMTP test email
-- `GET /api/admin/stats` - System statistics (site-scoped for Admin)
+- `GET /api/admin/stats` - System statistics (Global Admin only; requires `site_id` query param)
 
 ### Setup & Health
 - `GET /api/health` - Health check endpoint for monitoring
@@ -532,9 +547,15 @@ Generate professional cable labels with automatic reference numbering:
 
 **Reference**: `#0001` (per-site counter, padded to 4 digits)
 
-**Printed payload** (cross-rack cable label): `#<REF>\& <SOURCE>\& <DESTINATION>`
+**Printed payload** (3 lines):
 
-**Location print format**: `<LocationLabel>/<Floor>/<Suite>/<Row>/<Rack>`
+1. `#<REF>`
+2. `<SOURCE>`
+3. `<DESTINATION>`
+
+**Location print format**:
+- **Datacentre/Commercial**: `<LocationLabel>/<Floor>/<Suite>/<Row>/<Rack>`
+- **Domestic**: `<LocationLabel>/<Floor>/<Area>`
 
 ### Port Labels
 Create consistent port labels for network equipment:
@@ -569,7 +590,7 @@ CableIndex uses **global roles** for system-wide access and **site roles** for p
 
 **Global Admin**
 - **Full system access** - all features and settings
-- **User management** - invite, modify roles, deactivate users
+- **User management** - invite users, manage access, update global roles, delete users
 - **Site management** - create, edit, delete any site
 - **Stats** - system-wide statistics endpoints
 
@@ -591,10 +612,10 @@ CableIndex uses **global roles** for system-wide access and **site roles** for p
 ### Permission Matrix (Global Roles)
 | Capability              | Global Admin | User |
 |-------------------------|--------------|------|
-| Access admin panel      | ✅          | 🏢   |
-| Manage users & invites  | ✅          | 🏢   |
+| Access admin panel      | ✅          | 🏢*  |
+| Manage users & invites  | ✅          | 🏢*  |
 | Create sites            | ✅          | ❌   |
-| View all sites          | ✅          | 🏢   |
+| View sites              | ✅ (all)    | ✅ (assigned) |
 | System settings         | ✅          | ❌   |
 | System-wide stats       | ✅          | ❌   |
 
@@ -602,8 +623,12 @@ CableIndex uses **global roles** for system-wide access and **site roles** for p
 | Capability           | Site Admin | Site User |
 |----------------------|------------|-----------|
 | Update site details  | ✅         | ❌       |
+| Manage locations     | ✅         | ❌       |
+| Manage cable types   | ✅         | ❌       |
 | Create labels        | ✅         | ✅       |
 | Update/delete labels | ✅         | ✅       |
 | Bulk export/delete   | ✅         | ✅       |
 
 **Legend**: ✅ Full Access, 🏢 Site-Scoped Access, ❌ No Access
+
+* 🏢 = available when the user is a **Site Admin** of at least one site (actions are scoped to those sites).

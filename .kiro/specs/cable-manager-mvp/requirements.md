@@ -18,10 +18,12 @@ This document describes the requirements as the application exists today (early 
 - **Cable Label**: A cross-rack label containing a reference + source + destination.
 - **Reference Number**: Per-site sequential identifier formatted like `#0001`.
 - **Site**: A logical grouping for labels, locations, cable types, and permissions.
-- **Structured Location**: A structured, printable location represented as `label/floor/suite/row/rack`.
+- **Structured Location**: A template-aware, structured, printable location.
+	- **Datacentre/Commercial**: `label/floor/suite/row/rack`
+	- **Domestic**: `label/floor/area`
 - **Cable Type**: A site-defined category used when creating labels.
 - **Setup Wizard**: The first-run flow that configures DB and creates the initial admin.
-- **Global Role**: System-wide role: Global Admin, Admin, or User.
+- **Global Role**: System-wide role: Global Admin or User.
 - **Site Role**: Per-site role: Site Admin or Site User.
 
 ## Requirements
@@ -65,7 +67,7 @@ This document describes the requirements as the application exists today (early 
 
 #### Acceptance Criteria
 
-1. THE system SHALL support Global roles: Global Admin, Admin, User.
+1. THE system SHALL support Global roles: Global Admin, User.
 2. THE system SHALL support per-site roles: Site Admin, Site User.
 3. THE backend SHALL enforce authorization on every protected endpoint.
 4. THE frontend SHALL hide/disable UI actions that the current user cannot perform.
@@ -87,7 +89,9 @@ This document describes the requirements as the application exists today (early 
 #### Acceptance Criteria
 
 1. THE system SHALL support CRUD operations for locations within a site.
-2. THE system SHALL format locations for printing as `<LocationLabel>/<Floor>/<Suite>/<Row>/<Rack>`.
+2. THE system SHALL format locations for printing based on template type:
+	- Datacentre/Commercial: `<LocationLabel>/<Floor>/<Suite>/<Row>/<Rack>`
+	- Domestic: `<LocationLabel>/<Floor>/<Area>`
 3. THE system SHALL provide a way to see whether a location is in use (usage counts).
 4. WHEN deleting a location with usage, THE system SHALL support a safe strategy (e.g., reassign then delete).
 

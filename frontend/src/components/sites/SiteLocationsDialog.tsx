@@ -32,7 +32,8 @@ export interface SiteLocationsDialogProps {
 
 function formatLocationDisplay(siteName: string, siteCode: string, loc: SiteLocation): string {
   const prefix = (siteCode || siteName).toString().trim() || siteCode;
-  return formatLocationWithPrefix(prefix, loc);
+  const base = formatLocationWithPrefix(prefix, loc);
+  return base;
 }
 
 const SiteLocationsDialog: React.FC<SiteLocationsDialogProps> = ({ open, onOpenChange, siteId, siteCode, siteName, onChanged }) => {
@@ -50,10 +51,12 @@ const SiteLocationsDialog: React.FC<SiteLocationsDialogProps> = ({ open, onOpenC
   const [cascadeTyped, setCascadeTyped] = useState('');
 
   const [label, setLabel] = useState('');
+  const [templateType, setTemplateType] = useState<'DATACENTRE' | 'DOMESTIC'>('DATACENTRE');
   const [floor, setFloor] = useState('');
   const [suite, setSuite] = useState('');
   const [row, setRow] = useState('');
   const [rack, setRack] = useState('');
+  const [area, setArea] = useState('');
 
   const sortedLocations = useMemo(() => {
     return [...locations].sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
@@ -88,10 +91,12 @@ const SiteLocationsDialog: React.FC<SiteLocationsDialogProps> = ({ open, onOpenC
 
   const resetForm = () => {
     setLabel('');
+    setTemplateType('DATACENTRE');
     setFloor('');
     setSuite('');
     setRow('');
     setRack('');
+    setArea('');
   };
 
   const handleCreate = async () => {
@@ -99,21 +104,39 @@ const SiteLocationsDialog: React.FC<SiteLocationsDialogProps> = ({ open, onOpenC
     const suiteV = suite.trim();
     const rowV = row.trim();
     const rackV = rack.trim();
+    const areaV = area.trim();
 
-    if (!floorV || !suiteV || !rowV || !rackV) {
-      setError('Floor, Suite, Row, and Rack are all required.');
+    if (!floorV) {
+      setError('Floor is required.');
       return;
+    }
+
+    if (templateType === 'DATACENTRE') {
+      if (!suiteV || !rowV || !rackV) {
+        setError('Suite, Row, and Rack are required for Datacentre/Commercial locations.');
+        return;
+      }
+    } else {
+      if (!areaV) {
+        setError('Area is required for Domestic locations.');
+        return;
+      }
     }
 
     try {
       setWorking(true);
       setError(null);
       const resp = await apiClient.createSiteLocation(siteId, {
+        template_type: templateType,
         label: label.trim() || undefined,
         floor: floorV,
-        suite: suiteV,
-        row: rowV,
-        rack: rackV,
+        ...(templateType === 'DOMESTIC'
+          ? { area: areaV }
+          : {
+            suite: suiteV,
+            row: rowV,
+            rack: rackV,
+          }),
       });
       if (!resp.success) throw new Error(resp.error || 'Failed to create location');
       resetForm();
@@ -254,25 +277,64 @@ const SiteLocationsDialog: React.FC<SiteLocationsDialogProps> = ({ open, onOpenC
             <div className="text-sm font-semibold">Add Location</div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
+                <Label>Template</Label>
+                <Select
+                  value={templateType}
+                  onValueChange={(v) => {
+                    const next = v === 'DOMESTIC' ? 'DOMESTIC' : 'DATACENTRE';
+                    setTemplateType(next);
+                    // Clear incompatible fields when switching templates
+                    if (next === 'DOMESTIC') {
+                      setSuite('');
+                      setRow('');
+                      setRack('');
+                    } else {
+                      setArea('');
+                    }
+                  }}
+                  disabled={working}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DATACENTRE">Datacentre / Commercial</SelectItem>
+                    <SelectItem value="DOMESTIC">Domestic</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
                 <Label>Label</Label>
                 <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Optional nickname" disabled={working} />
               </div>
+
               <div className="space-y-1">
                 <Label>Floor</Label>
                 <Input value={floor} onChange={(e) => setFloor(e.target.value)} placeholder="e.g., 1" disabled={working} />
               </div>
-              <div className="space-y-1">
-                <Label>Suite</Label>
-                <Input value={suite} onChange={(e) => setSuite(e.target.value)} placeholder="e.g., 1" disabled={working} />
-              </div>
-              <div className="space-y-1">
-                <Label>Row</Label>
-                <Input value={row} onChange={(e) => setRow(e.target.value)} placeholder="e.g., A" disabled={working} />
-              </div>
-              <div className="space-y-1">
-                <Label>Rack</Label>
-                <Input value={rack} onChange={(e) => setRack(e.target.value)} placeholder="e.g., 1" disabled={working} />
-              </div>
+
+              {templateType === 'DOMESTIC' ? (
+                <div className="space-y-1">
+                  <Label>Area</Label>
+                  <Input value={area} onChange={(e) => setArea(e.target.value)} placeholder="e.g., Garage" disabled={working} />
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-1">
+                    <Label>Suite</Label>
+                    <Input value={suite} onChange={(e) => setSuite(e.target.value)} placeholder="e.g., 1" disabled={working} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Row</Label>
+                    <Input value={row} onChange={(e) => setRow(e.target.value)} placeholder="e.g., A" disabled={working} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Rack</Label>
+                    <Input value={rack} onChange={(e) => setRack(e.target.value)} placeholder="e.g., 1" disabled={working} />
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="flex justify-end">

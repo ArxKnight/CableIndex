@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Label, Site } from '../../types';
 import { apiClient } from '../../lib/api';
+import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Alert, AlertDescription } from '../ui/alert';
@@ -9,7 +10,7 @@ import { Input } from '../ui/input';
 import { LabelDatabase, LabelForm } from '../labels';
 import type { CreateLabelData } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
-import { downloadBlobAsNamedTextFile, makeTimestampLocal } from '../../lib/download';
+import { downloadBlobAsNamedFile, downloadBlobAsNamedTextFile, makeTimestampLocal } from '../../lib/download';
 import SiteLocationsDialog from './SiteLocationsDialog';
 import SiteCableTypesDialog from './SiteCableTypesDialog';
 import { 
@@ -56,6 +57,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
   const [locationCount, setLocationCount] = useState<number | null>(null);
   const [cableTypesOpen, setCableTypesOpen] = useState(false);
   const [cableTypeCount, setCableTypeCount] = useState<number | null>(null);
+  const [isGeneratingCableReport, setIsGeneratingCableReport] = useState(false);
 
   const canCreateLabels = canCreate('labels');
 
@@ -210,6 +212,21 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
       await downloadBlobAsNamedTextFile(blob, filename);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to download labels');
+    }
+  };
+
+  const handleDownloadCableReport = async () => {
+    if (!site) return;
+
+    try {
+      setIsGeneratingCableReport(true);
+      const { blob, filename } = await apiClient.downloadSiteCableReport(site.id);
+      const fallbackFilename = `${String(site.code || '').toUpperCase()}_cable_report_${makeTimestampLocal()}.docx`;
+      downloadBlobAsNamedFile(blob, filename || fallbackFilename);
+    } catch {
+      toast.error('Failed to generate report. Please try again.');
+    } finally {
+      setIsGeneratingCableReport(false);
     }
   };
 
@@ -386,7 +403,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2 rounded-md border p-3">
-              <div>
+              <div className="text-center">
                 <div className="text-sm font-semibold">Cross-Rack Reference Range</div>
                 <div className="text-xs text-muted-foreground">Downloads a single .txt for a reference range.</div>
               </div>
@@ -413,6 +430,28 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
               <div className="flex justify-center">
                 <Button variant="outline" onClick={handleRangeDownload}>
                   Download Label Range
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-md border p-3">
+              <div className="text-center">
+                <div className="text-sm font-semibold">Cable Report</div>
+                <div className="text-xs text-muted-foreground">
+                  Export a Word document containing site locations, cable types, and all cable runs for this site.
+                </div>
+              </div>
+
+              <div className="flex justify-center">
+                <Button onClick={handleDownloadCableReport} disabled={isGeneratingCableReport}>
+                  {isGeneratingCableReport ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    'Download Cable Report (.docx)'
+                  )}
                 </Button>
               </div>
             </div>

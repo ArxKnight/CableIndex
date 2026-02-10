@@ -24,7 +24,7 @@ This file tracks what is implemented in CableIndex today and the next logical ro
 - [x] Invitation-driven registration with optional SMTP delivery
 - [x] Role/permission model (global roles + per-site roles)
 - [x] Site CRUD
-- [x] Structured locations CRUD + usage checks + safe deletion workflows
+- [x] Structured locations CRUD + usage checks + safe deletion workflows (template-aware: Datacentre/Commercial + Domestic)
 - [x] Per-site cable types CRUD
 - [x] Cable label CRUD with per-site reference numbering (e.g. `#0001`)
 - [x] ZPL generation and downloads
@@ -32,6 +32,7 @@ This file tracks what is implemented in CableIndex today and the next logical ro
   - [x] Bulk export
   - [x] Reference-range export
   - [x] Port and PDU generators
+- [x] Site Cable Report export (.docx)
 - [x] Tools page generators (SID, 30DAY, TEXT, RACKS, IN-RACK, PORTS, PDU)
 - [x] Global Day/Night theme toggle with persistence (`cableindex-theme`)
 - [x] Docker deployment (single container serving UI + API)

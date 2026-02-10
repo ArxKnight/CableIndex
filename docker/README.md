@@ -1,8 +1,8 @@
-# cableindex Docker Setup
+# CableIndex Docker Setup
 
 ## 🐳 Docker Deployment for Unraid
 
-This guide will help you deploy cableindex on Unraid using Docker.
+This guide will help you deploy CableIndex on Unraid using Docker.
 
 ### Quick Start
 
@@ -70,7 +70,7 @@ docker run -d \
 
 ### Accessing the Application
 
-After deployment, access cableindex at:
+After deployment, access CableIndex at:
 - **URL**: `http://YOUR_UNRAID_IP:HOST_PORT`
 - **Example**: `http://192.168.1.100:8080`
 
