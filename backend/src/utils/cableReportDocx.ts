@@ -52,6 +52,7 @@ export type CableReportRun = {
 export type CableReportData = {
   siteName: string;
   siteCode: string;
+  siteLocation?: string | null;
   siteDescription?: string | null;
   createdAt: Date;
   locations: CableReportLocation[];
@@ -231,8 +232,15 @@ function bodyCellParagraphs(paragraphs: Paragraph[], zebra = false, widthPct?: n
   return new TableCell(options);
 }
 
-function infoTable(siteName: string, siteCode: string, reportCreatedOn: string, siteDescription?: string | null): Table {
+function infoTable(
+  siteName: string,
+  siteCode: string,
+  reportCreatedOn: string,
+  siteLocation?: string | null,
+  siteDescription?: string | null
+): Table {
   const description = String(siteDescription ?? '').trim();
+  const location = String(siteLocation ?? '').trim();
 
   const rows: TableRow[] = [];
   const addRow = (label: string, value: string, zebra: boolean) => {
@@ -249,15 +257,21 @@ function infoTable(siteName: string, siteCode: string, reportCreatedOn: string, 
   // Keep a stable, readable layout:
   //   Site Name
   //   Site Abbreviation
+  //   Site Location (optional)
   //   Site Description (optional)
   //   Report Generated on
-  addRow('Site Name', siteName, false);
-  addRow('Site Abbreviation', siteCode, true);
-  if (description) {
-    addRow('Site Description', description, false);
-    addRow('Report Generated on', reportCreatedOn, true);
-  } else {
-    addRow('Report Generated on', reportCreatedOn, false);
+  const entries: Array<{ label: string; value: string }> = [
+    { label: 'Site Name', value: siteName },
+    { label: 'Site Abbreviation', value: siteCode },
+  ];
+
+  if (location) entries.push({ label: 'Site Location', value: location });
+  if (description) entries.push({ label: 'Site Description', value: description });
+  entries.push({ label: 'Report Generated on', value: reportCreatedOn });
+
+  for (const [i, entry] of entries.entries()) {
+    const zebra = i % 2 === 1;
+    addRow(entry.label, entry.value, zebra);
   }
 
   return new Table({
@@ -406,7 +420,7 @@ export async function buildCableReportDocxBuffer(data: CableReportData): Promise
         children: [
           reportTitle('CableIndex – Site Cable Report'),
 
-          infoTable(data.siteName, data.siteCode, createdOn, data.siteDescription),
+          infoTable(data.siteName, data.siteCode, createdOn, data.siteLocation, data.siteDescription),
 
           h1('Overview'),
           p(

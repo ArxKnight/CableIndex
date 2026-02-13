@@ -446,6 +446,7 @@ describe('Site Routes', () => {
       const site = await siteModel.create({
         name: 'Test Site',
         code: 'TS',
+        location: 'Test Location',
         created_by: testUser.id,
       });
 
@@ -499,6 +500,8 @@ describe('Site Routes', () => {
       expect(documentXml).toContain('CableIndex – Site Cable Report');
       expect(documentXml).toContain('Test Site');
       expect(documentXml).toContain('TS');
+      expect(documentXml).toContain('Site Location');
+      expect(documentXml).toContain('Test Location');
       expect(documentXml).toContain('Known Locations');
       expect(documentXml).toContain('Loft');
       expect(documentXml).toContain('Garage');

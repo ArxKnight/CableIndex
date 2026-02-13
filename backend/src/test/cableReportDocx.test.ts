@@ -42,6 +42,7 @@ describe('cableReportDocx', () => {
     const buffer = await buildCableReportDocxBuffer({
       siteName: 'Ivy Office',
       siteCode: 'IVY',
+      siteLocation: 'London',
       siteDescription: 'Main office (Domestic + Datacentre mix)',
       createdAt,
       locations: [
@@ -82,6 +83,8 @@ describe('cableReportDocx', () => {
     expect(xml).toContain('Ivy Office');
     expect(xml).toContain('Site Abbreviation');
     expect(xml).toContain('IVY');
+    expect(xml).toContain('Site Location');
+    expect(xml).toContain('London');
     expect(xml).toContain('Site Description');
     expect(xml).toContain('Main office (Domestic + Datacentre mix)');
     expect(xml).toContain('Report Generated on');

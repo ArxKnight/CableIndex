@@ -966,6 +966,7 @@ router.get(
 
       const siteName = String(req.site?.name ?? '').trim();
       const siteCode = String(req.site?.code ?? '').trim().toUpperCase();
+      const siteLocation = String((req.site as any)?.location ?? '').trim();
       const siteDescription = String(req.site?.description ?? '').trim();
       if (!siteName || !siteCode) {
         return res.status(500).json({
@@ -1084,6 +1085,7 @@ router.get(
       const buffer = await buildCableReportDocxBuffer({
         siteName,
         siteCode,
+        ...(siteLocation ? { siteLocation } : {}),
         ...(siteDescription ? { siteDescription } : {}),
         createdAt,
         locations,
