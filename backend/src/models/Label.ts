@@ -248,19 +248,21 @@ export class LabelModel {
       area?: string | null;
     }
   ): string {
+    // UI display format (lists, admin screens, etc):
+    //   <LocationLabel> — Label: <SiteAbbrev> | Floor: <Floor> | Suite: <Suite> | Row: <Row> | Rack: <Rack>
     const labelRaw = (location.label ?? '').toString().trim();
-    const effectiveLabel = labelRaw !== '' ? labelRaw : siteCode;
+    const locationLabel = labelRaw !== '' ? labelRaw : siteCode;
     const floor = (location.floor ?? '').toString().trim();
 
     if (this.isDomesticTemplate(location)) {
       const area = this.normalizeArea(location.area);
-      return `Label: ${effectiveLabel} | Floor: ${floor} | Area: ${area}`;
+      return `${locationLabel} — Label: ${siteCode} | Floor: ${floor} | Area: ${area}`;
     }
 
     const suite = (location.suite ?? '').toString().trim();
     const row = (location.row ?? '').toString().trim();
     const rack = (location.rack ?? '').toString().trim();
-    return `Label: ${effectiveLabel} | Floor: ${floor} | Suite: ${suite} | Row: ${row} | Rack: ${rack}`;
+    return `${locationLabel} — Label: ${siteCode} | Floor: ${floor} | Suite: ${suite} | Row: ${row} | Rack: ${rack}`;
   }
 
   private mapRow(row: any): Label {

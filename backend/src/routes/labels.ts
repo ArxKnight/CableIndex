@@ -3,6 +3,7 @@ import { z } from 'zod';
 import LabelModel from '../models/Label.js';
 import SiteModel from '../models/Site.js';
 import ZPLService from '../services/ZPLService.js';
+import { logActivity } from '../services/ActivityLogService.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { resolveSiteAccess } from '../middleware/permissions.js';
 import { ApiResponse } from '../types/index.js';
@@ -371,6 +372,26 @@ router.post('/', authenticateToken, resolveSiteAccess(req => Number(req.body.sit
       const firstRefNumber = labels[0]?.ref_number;
       const lastRefNumber = labels[labels.length - 1]?.ref_number;
 
+      try {
+        const range = typeof firstRefNumber === 'number' && typeof lastRefNumber === 'number'
+          ? ` (#${String(firstRefNumber).padStart(4, '0')}-#${String(lastRefNumber).padStart(4, '0')})`
+          : '';
+        await logActivity({
+          actorUserId: req.user!.userId,
+          siteId: req.site?.id ?? labelData.site_id,
+          action: 'LABELS_CREATED',
+          summary: `Created ${labels.length} labels${range} on site ${req.site?.name ?? labelData.site_id}`,
+          metadata: {
+            created_count: labels.length,
+            first_ref_number: firstRefNumber,
+            last_ref_number: lastRefNumber,
+            site_id: labelData.site_id,
+          },
+        });
+      } catch (error) {
+        console.warn('⚠️ Failed to log label creation activity:', error);
+      }
+
       res.status(201).json({
         success: true,
         data: {
@@ -389,6 +410,22 @@ router.post('/', authenticateToken, resolveSiteAccess(req => Number(req.body.sit
       ...labelData,
       created_by: req.user!.userId,
     });
+
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        siteId: req.site?.id ?? labelData.site_id,
+        action: 'LABEL_CREATED',
+        summary: `Created label #${String(label.ref_number).padStart(4, '0')} on site ${req.site?.name ?? labelData.site_id}`,
+        metadata: {
+          label_id: label.id,
+          ref_number: label.ref_number,
+          site_id: labelData.site_id,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log label creation activity:', error);
+    }
 
     res.status(201).json({
       success: true,
@@ -468,6 +505,22 @@ router.put('/:id', authenticateToken, resolveSiteAccess(req => Number(req.body.s
       message: 'Label updated successfully',
     } as ApiResponse);
 
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        siteId: req.site?.id ?? label.site_id,
+        action: 'LABEL_UPDATED',
+        summary: `Updated label #${String(label.ref_number).padStart(4, '0')} on site ${req.site?.name ?? label.site_id}`,
+        metadata: {
+          label_id: label.id,
+          ref_number: label.ref_number,
+          site_id: label.site_id,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log label update activity:', error);
+    }
+
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
@@ -504,6 +557,14 @@ router.delete('/:id', authenticateToken, resolveSiteAccess(req => Number(req.que
     // Validate label ID
     const { id } = labelIdSchema.parse(req.params);
 
+    // Load label for logging before deletion
+    let labelForLog: any = null;
+    try {
+      labelForLog = await labelModel.findById(id, req.site!.id);
+    } catch {
+      // ignore
+    }
+
     // Delete label
     const deleted = await labelModel.delete(id, req.site!.id);
 
@@ -518,6 +579,24 @@ router.delete('/:id', authenticateToken, resolveSiteAccess(req => Number(req.que
       success: true,
       message: 'Label deleted successfully',
     } as ApiResponse);
+
+    try {
+      const refNumber = labelForLog?.ref_number;
+      const refText = typeof refNumber === 'number' ? `#${String(refNumber).padStart(4, '0')}` : `ID ${id}`;
+      await logActivity({
+        actorUserId: req.user!.userId,
+        siteId: req.site?.id ?? null,
+        action: 'LABEL_DELETED',
+        summary: `Deleted label ${refText} on site ${req.site?.name ?? req.site?.id}`,
+        metadata: {
+          label_id: id,
+          ref_number: refNumber,
+          site_id: req.site?.id,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log label delete activity:', error);
+    }
 
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -553,6 +632,21 @@ router.post('/bulk-delete', authenticateToken, resolveSiteAccess(req => Number(r
       data: { deleted_count: deletedCount },
       message: `${deletedCount} label(s) deleted successfully`,
     } as ApiResponse);
+
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        siteId: req.site?.id ?? null,
+        action: 'LABELS_DELETED',
+        summary: `Deleted ${deletedCount} labels on site ${req.site?.name ?? req.site?.id}`,
+        metadata: {
+          deleted_count: deletedCount,
+          site_id: req.site?.id,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log bulk label delete activity:', error);
+    }
 
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -596,6 +690,22 @@ router.get('/:id/zpl', authenticateToken, resolveSiteAccess(req => Number(req.qu
         success: false,
         error: 'Site not found',
       } as ApiResponse);
+    }
+
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'LABEL_ZPL_GENERATED',
+        summary: `Generated ZPL for label ${label.reference_number}`,
+        siteId: label.site_id,
+        metadata: {
+          label_id: label.id,
+          reference_number: label.reference_number,
+          site_id: label.site_id,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log single label ZPL generation activity:', error);
     }
 
     // Generate ZPL
@@ -680,6 +790,25 @@ router.post('/bulk-zpl', authenticateToken, resolveSiteAccess(req => Number(req.
     const timestamp = makeTimestamp();
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="crossrackref_${timestamp}.txt"`);
+
+    try {
+      const siteCode = String((req.site as any)?.code ?? '').trim().toUpperCase();
+      const siteName = String((req.site as any)?.name ?? '').trim();
+      const siteLabel = siteName && siteCode ? `${siteName} (${siteCode})` : siteName || siteCode;
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'LABELS_ZPL_GENERATED',
+        summary: `Generated bulk ZPL for ${labels.length} label(s)${siteLabel ? ` in ${siteLabel}` : ''}`,
+        siteId: req.site!.id,
+        metadata: {
+          site_id: req.site!.id,
+          label_count: labels.length,
+          ids,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log bulk ZPL generation activity:', error);
+    }
     
     res.send(zplContent);
 
@@ -759,6 +888,26 @@ router.post('/bulk-zpl-range', authenticateToken, resolveSiteAccess(req => Numbe
     const timestamp = makeTimestamp();
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="crossrackref_${timestamp}.txt"`);
+
+    try {
+      const siteCode = String((req.site as any)?.code ?? '').trim().toUpperCase();
+      const siteName = String((req.site as any)?.name ?? '').trim();
+      const siteLabel = siteName && siteCode ? `${siteName} (${siteCode})` : siteName || siteCode;
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'LABELS_ZPL_RANGE_GENERATED',
+        summary: `Generated bulk ZPL for ${labels.length} label(s) in range ${start_ref} → ${end_ref}${siteLabel ? ` in ${siteLabel}` : ''}`,
+        siteId: req.site!.id,
+        metadata: {
+          site_id: req.site!.id,
+          start_ref,
+          end_ref,
+          label_count: labels.length,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log bulk ZPL range generation activity:', error);
+    }
     res.send(zplContent);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -800,6 +949,22 @@ router.post('/port-labels/zpl', authenticateToken, async (req: Request, res: Res
     const filename = `port-labels-${portData.sid}-${portData.fromPort}-${portData.toPort}.txt`;
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'PORT_LABELS_ZPL_GENERATED',
+        summary: `Generated port-labels ZPL for ${portData.sid} ports ${portData.fromPort}–${portData.toPort}`,
+        siteId: null,
+        metadata: {
+          sid: portData.sid,
+          from_port: portData.fromPort,
+          to_port: portData.toPort,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log port labels ZPL generation activity:', error);
+    }
     
     res.send(zplContent);
 
@@ -850,6 +1015,22 @@ router.post('/pdu-labels/zpl', authenticateToken, async (req: Request, res: Resp
     const filename = `pdu-labels-${pduData.pduSid}-${pduData.fromPort}-${pduData.toPort}.txt`;
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'PDU_LABELS_ZPL_GENERATED',
+        summary: `Generated PDU-labels ZPL for ${pduData.pduSid} ports ${pduData.fromPort}–${pduData.toPort}`,
+        siteId: null,
+        metadata: {
+          pdu_sid: pduData.pduSid,
+          from_port: pduData.fromPort,
+          to_port: pduData.toPort,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log PDU labels ZPL generation activity:', error);
+    }
     
     res.send(zplContent);
 

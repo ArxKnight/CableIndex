@@ -8,6 +8,7 @@ import connection from '../database/connection.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireGlobalRole, requireSiteRole, resolveSiteAccess } from '../middleware/permissions.js';
 import { ApiResponse } from '../types/index.js';
+import { logActivity } from '../services/ActivityLogService.js';
 import {
   buildCableReportDocxBuffer,
   formatDateTimeDDMMYYYY_HHMM,
@@ -295,6 +296,22 @@ router.post('/', authenticateToken, requireGlobalRole('GLOBAL_ADMIN'), async (re
       created_by: req.user!.userId,
     });
 
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'SITE_CREATED',
+        summary: `Created site ${site.name} (${site.code})`,
+        siteId: Number(site.id),
+        metadata: {
+          site_id: Number(site.id),
+          name: site.name,
+          code: site.code,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log site create activity:', error);
+    }
+
     res.status(201).json({
       success: true,
       data: { site },
@@ -343,6 +360,21 @@ router.put('/:id', authenticateToken, resolveSiteAccess(req => Number(req.params
         success: false,
         error: 'Site not found or no changes made',
       } as ApiResponse);
+    }
+
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'SITE_UPDATED',
+        summary: `Updated site ${site.name} (${String(site.code || '').toUpperCase()})`,
+        siteId: id,
+        metadata: {
+          site_id: id,
+          changes: siteData,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log site update activity:', error);
     }
 
     res.json({
@@ -440,6 +472,30 @@ router.post('/:id/locations', authenticateToken, resolveSiteAccess(req => Number
           rack: (dataParsed.rack ?? '').toString().trim(),
         }
     );
+
+    try {
+      const displayLabel = (location as any).effective_label ?? (location as any).label ?? site.code;
+      await logActivity({
+        actorUserId: req.user!.userId,
+        siteId: id,
+        action: 'LOCATION_CREATED',
+        summary: `Created location ${displayLabel} on site ${site.name}`,
+        metadata: {
+          site_id: id,
+          location_id: location.id,
+          effective_label: (location as any).effective_label,
+          label: (location as any).label,
+          floor: (location as any).floor,
+          suite: (location as any).suite,
+          row: (location as any).row,
+          rack: (location as any).rack,
+          area: (location as any).area,
+          template_type: (location as any).template_type,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log location create activity:', error);
+    }
 
     res.status(201).json({
       success: true,
@@ -545,6 +601,24 @@ router.put('/:id/locations/:locationId', authenticateToken, resolveSiteAccess(re
       data: { location },
       message: 'Location updated successfully',
     } as ApiResponse);
+
+    try {
+      const displayLabel = (location as any).effective_label ?? (location as any).label ?? req.site?.code ?? id;
+      await logActivity({
+        actorUserId: req.user!.userId,
+        siteId: id,
+        action: 'LOCATION_UPDATED',
+        summary: `Updated location ${displayLabel} on site ${req.site?.name ?? id}`,
+        metadata: {
+          site_id: id,
+          location_id: location.id,
+          effective_label: (location as any).effective_label,
+          label: (location as any).label,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log location update activity:', error);
+    }
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
@@ -621,6 +695,13 @@ router.delete('/:id/locations/:locationId', authenticateToken, resolveSiteAccess
     const { id } = siteIdSchema.parse(req.params);
     const { locationId } = locationIdSchema.parse(req.params);
 
+    let locationForLog: any = null;
+    try {
+      locationForLog = await siteLocationModel.findById(locationId, id);
+    } catch {
+      // ignore
+    }
+
     const queryValidation = deleteLocationQuerySchema.safeParse(req.query);
     if (!queryValidation.success) {
       return res.status(400).json({
@@ -668,6 +749,28 @@ router.delete('/:id/locations/:locationId', authenticateToken, resolveSiteAccess
       },
       message: 'Location deleted successfully',
     } as ApiResponse);
+
+    try {
+      const displayLabel = locationForLog?.effective_label ?? locationForLog?.label ?? req.site?.code ?? id;
+      await logActivity({
+        actorUserId: req.user!.userId,
+        siteId: id,
+        action: 'LOCATION_DELETED',
+        summary: `Deleted location ${displayLabel} on site ${req.site?.name ?? id}`,
+        metadata: {
+          site_id: id,
+          location_id: locationId,
+          effective_label: locationForLog?.effective_label,
+          label: locationForLog?.label,
+          strategy: result.strategyUsed,
+          labels_deleted: result.labelsDeleted,
+          labels_reassigned_source: result.labelsReassignedSource,
+          labels_reassigned_destination: result.labelsReassignedDestination,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log location delete activity:', error);
+    }
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
@@ -721,6 +824,19 @@ router.post(
       const { locationId } = locationIdSchema.parse(req.params);
       const body = reassignAndDeleteSchema.parse(req.body);
 
+      let fromLocationLabel: string | null = null;
+      let toLocationLabel: string | null = null;
+      try {
+        const [fromLocation, toLocation] = await Promise.all([
+          siteLocationModel.findById(locationId, id),
+          siteLocationModel.findById(body.reassign_to_location_id, id),
+        ]);
+        fromLocationLabel = fromLocation ? String((fromLocation as any).effective_label ?? (fromLocation as any).label ?? fromLocation.id) : null;
+        toLocationLabel = toLocation ? String((toLocation as any).effective_label ?? (toLocation as any).label ?? toLocation.id) : null;
+      } catch {
+        // Best-effort only
+      }
+
       const result = await siteLocationModel.deleteWithStrategy(locationId, id, {
         strategy: 'reassign',
         target_location_id: body.reassign_to_location_id,
@@ -731,6 +847,26 @@ router.post(
           success: false,
           error: 'Location not found',
         } as ApiResponse);
+      }
+
+      try {
+        const fromText = fromLocationLabel ? fromLocationLabel : `#${locationId}`;
+        const toText = toLocationLabel ? toLocationLabel : `#${body.reassign_to_location_id}`;
+        await logActivity({
+          actorUserId: req.user!.userId,
+          action: 'LOCATION_REASSIGNED_AND_DELETED',
+          summary: `Reassigned labels from ${fromText} to ${toText} and deleted ${fromText}`,
+          siteId: id,
+          metadata: {
+            from_location_id: locationId,
+            to_location_id: body.reassign_to_location_id,
+            usage: result.usage,
+            labels_reassigned_source: result.labelsReassignedSource,
+            labels_reassigned_destination: result.labelsReassignedDestination,
+          },
+        });
+      } catch (error) {
+        console.warn('⚠️ Failed to log location reassign+delete activity:', error);
       }
 
       return res.json({
@@ -958,6 +1094,21 @@ router.get(
       const ts = formatTimestampYYYYMMDD_HHMMSS(createdAt);
       const filename = `${siteCode}_cable_report_${ts}.docx`;
 
+      try {
+        await logActivity({
+          actorUserId: req.user!.userId,
+          action: 'CABLE_REPORT_DOWNLOADED',
+          summary: `Downloaded cable report for ${siteName} (${siteCode})`,
+          siteId: id,
+          metadata: {
+            filename,
+            created_at: createdAt.toISOString(),
+          },
+        });
+      } catch (error) {
+        console.warn('⚠️ Failed to log cable report download activity:', error);
+      }
+
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.setHeader('X-Report-Created-On', formatPrintedDateDDMonYYYY_HHMM(createdAt));
@@ -999,6 +1150,21 @@ router.post(
         name: dataParsed.name,
         ...(dataParsed.description !== undefined ? { description: dataParsed.description } : {}),
       });
+
+      try {
+        await logActivity({
+          actorUserId: req.user!.userId,
+          action: 'CABLE_TYPE_CREATED',
+          summary: `Created cable type ${cable_type.name}`,
+          siteId: id,
+          metadata: {
+            cable_type_id: Number((cable_type as any).id),
+            name: cable_type.name,
+          },
+        });
+      } catch (error) {
+        console.warn('⚠️ Failed to log cable type create activity:', error);
+      }
 
       return res.status(201).json({
         success: true,
@@ -1065,6 +1231,24 @@ router.put(
         } as ApiResponse);
       }
 
+      try {
+        await logActivity({
+          actorUserId: req.user!.userId,
+          action: 'CABLE_TYPE_UPDATED',
+          summary: `Updated cable type ${cable_type.name}`,
+          siteId: id,
+          metadata: {
+            cable_type_id: cableTypeId,
+            changes: {
+              ...(dataParsed.name !== undefined ? { name: dataParsed.name } : {}),
+              ...(dataParsed.description !== undefined ? { description: dataParsed.description } : {}),
+            },
+          },
+        });
+      } catch (error) {
+        console.warn('⚠️ Failed to log cable type update activity:', error);
+      }
+
       return res.json({
         success: true,
         data: { cable_type },
@@ -1117,6 +1301,17 @@ router.delete(
       const { id } = siteIdSchema.parse(req.params);
       const { cableTypeId } = cableTypeIdSchema.parse(req.params);
 
+      let cableTypeName: string | null = null;
+      try {
+        const rows = await getAdapter().query(
+          'SELECT name FROM cable_types WHERE id = ? AND site_id = ? LIMIT 1',
+          [cableTypeId, id]
+        );
+        cableTypeName = rows.length ? String((rows as any[])[0]?.name ?? '') : null;
+      } catch {
+        // Best-effort only
+      }
+
       const inUseCount = await cableTypeModel.countLabelsUsingType(id, cableTypeId);
       if (inUseCount > 0) {
         return res.status(409).json({
@@ -1132,6 +1327,21 @@ router.delete(
           success: false,
           error: 'Cable type not found',
         } as ApiResponse);
+      }
+
+      try {
+        await logActivity({
+          actorUserId: req.user!.userId,
+          action: 'CABLE_TYPE_DELETED',
+          summary: `Deleted cable type ${cableTypeName ? cableTypeName : `#${cableTypeId}`}`,
+          siteId: id,
+          metadata: {
+            cable_type_id: cableTypeId,
+            name: cableTypeName,
+          },
+        });
+      } catch (error) {
+        console.warn('⚠️ Failed to log cable type delete activity:', error);
       }
 
       return res.json({
@@ -1177,6 +1387,18 @@ router.delete('/:id', authenticateToken, requireGlobalRole('GLOBAL_ADMIN'), asyn
 
     const cascade = String(req.query.cascade || '').toLowerCase() === 'true';
 
+    let siteName: string | null = null;
+    let siteCode: string | null = null;
+    try {
+      const existing = await siteModel.findById(id);
+      if (existing) {
+        siteName = String((existing as any).name ?? '').trim() || null;
+        siteCode = String((existing as any).code ?? '').trim() || null;
+      }
+    } catch {
+      // Best-effort only
+    }
+
     // Attempt to delete site
     const deleted = await siteModel.delete(id, req.user!.userId, { cascade });
 
@@ -1185,6 +1407,27 @@ router.delete('/:id', authenticateToken, requireGlobalRole('GLOBAL_ADMIN'), asyn
         success: false,
         error: 'Site not found',
       } as ApiResponse);
+    }
+
+    try {
+      const label = siteName
+        ? `${siteName}${siteCode ? ` (${String(siteCode).toUpperCase()})` : ''}`
+        : `#${id}`;
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'SITE_DELETED',
+        summary: `Deleted site ${label}${cascade ? ' (cascade)' : ''}`,
+        // Site has been deleted; avoid FK constraint on activity_log.site_id
+        siteId: null,
+        metadata: {
+          site_id: id,
+          name: siteName,
+          code: siteCode,
+          cascade,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log site delete activity:', error);
     }
 
     res.json({

@@ -56,6 +56,8 @@ interface UserWithStats extends User {
   label_count: number;
   site_count: number;
   last_activity?: string;
+  last_activity_summary?: string;
+  last_activity_at?: string;
 }
 
 const UserManagement: React.FC = () => {
@@ -288,7 +290,18 @@ const UserManagement: React.FC = () => {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {user.last_activity ? (
+                    {user.last_activity_summary ? (
+                      <div className="flex flex-col">
+                        <span className="text-sm text-muted-foreground">
+                          {user.last_activity_summary}
+                        </span>
+                        {(user.last_activity_at || user.last_activity) && (
+                          <span className="text-xs text-muted-foreground">
+                            {formatDistanceToNow(new Date(user.last_activity_at ?? user.last_activity!), { addSuffix: true })}
+                          </span>
+                        )}
+                      </div>
+                    ) : user.last_activity ? (
                       <span className="text-sm text-muted-foreground">
                         {formatDistanceToNow(new Date(user.last_activity), { addSuffix: true })}
                       </span>

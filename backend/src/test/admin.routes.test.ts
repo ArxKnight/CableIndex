@@ -596,6 +596,7 @@ describe('Admin Routes', () => {
       expect(response.body.data.users[0]).toHaveProperty('role');
       expect(response.body.data.users[0]).toHaveProperty('label_count');
       expect(response.body.data.users[0]).toHaveProperty('site_count');
+      expect(response.body.data.users[0]).toHaveProperty('last_activity');
     });
 
     it('should filter users by search term', async () => {

@@ -6,6 +6,7 @@ import { validatePassword } from '../utils/password.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { ApiResponse } from '../types/index.js';
 import connection from '../database/connection.js';
+import { logActivity } from '../services/ActivityLogService.js';
 
 const router = Router();
 const userModel = new UserModel();
@@ -53,6 +54,20 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 
     console.log(`✓ Credentials verified for user: ${user.id} (${user.email})`);
+
+    try {
+      const now = new Date();
+      await connection.getAdapter().execute(
+        `INSERT INTO user_activity (user_id, last_activity, last_login)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           last_activity = VALUES(last_activity),
+           last_login = VALUES(last_login)`,
+        [user.id, now, now]
+      );
+    } catch (error) {
+      console.warn('⚠️ Failed to record login activity:', error);
+    }
 
     // Generate tokens
     console.log(`🔑 Generating tokens for user: ${user.id}`);
@@ -260,6 +275,19 @@ router.put('/profile', authenticateToken, async (req: Request, res: Response) =>
 
     // Return updated user data (without password hash)
     const { password_hash, ...userWithoutPassword } = updatedUser;
+
+    try {
+      await logActivity({
+        actorUserId: req.user.userId,
+        action: 'PROFILE_UPDATED',
+        summary: `Updated profile${email ? ' email' : ''}`,
+        metadata: {
+          ...(email ? { email } : {}),
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log profile update activity:', error);
+    }
     
     res.json({
       success: true,
@@ -342,6 +370,16 @@ router.put('/password', authenticateToken, async (req: Request, res: Response) =
       } as ApiResponse);
     }
 
+    try {
+      await logActivity({
+        actorUserId: req.user.userId,
+        action: 'PASSWORD_CHANGED',
+        summary: 'Changed password',
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log password change activity:', error);
+    }
+
     res.json({
       success: true,
       message: 'Password updated successfully',
@@ -371,6 +409,18 @@ router.put('/password', authenticateToken, async (req: Request, res: Response) =
 router.post('/logout', authenticateToken, (req: Request, res: Response) => {
   // Since we're using stateless JWT tokens, logout is handled client-side
   // This endpoint exists for consistency and future token blacklisting if needed
+  try {
+    if (req.user?.userId) {
+      // Fire-and-forget; do not delay response
+      void logActivity({
+        actorUserId: req.user.userId,
+        action: 'LOGOUT',
+        summary: 'Logged out',
+      });
+    }
+  } catch {
+    // ignore
+  }
   res.json({
     success: true,
     message: 'Logout successful',

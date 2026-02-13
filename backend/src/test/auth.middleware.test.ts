@@ -31,11 +31,11 @@ describe('Authentication Middleware', () => {
   });
 
   describe('authenticateToken', () => {
-    it('should authenticate valid token', () => {
+    it('should authenticate valid token', async () => {
       const tokens = generateTokens(mockUser);
       (mockRequest.header as any).mockReturnValue(`Bearer ${tokens.accessToken}`);
 
-      authenticateToken(mockRequest as Request, mockResponse as Response, mockNext);
+      await authenticateToken(mockRequest as Request, mockResponse as Response, mockNext);
 
       expect(mockRequest.user).toBeDefined();
       expect(mockRequest.user?.userId).toBe(mockUser.id);
@@ -44,10 +44,10 @@ describe('Authentication Middleware', () => {
       expect(mockNext).toHaveBeenCalled();
     });
 
-    it('should reject request without token', () => {
+    it('should reject request without token', async () => {
       (mockRequest.header as any).mockReturnValue(undefined);
 
-      authenticateToken(mockRequest as Request, mockResponse as Response, mockNext);
+      await authenticateToken(mockRequest as Request, mockResponse as Response, mockNext);
 
       expect(mockResponse.status).toHaveBeenCalledWith(401);
       expect(mockResponse.json).toHaveBeenCalledWith({
@@ -57,10 +57,10 @@ describe('Authentication Middleware', () => {
       expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it('should reject request with invalid token', () => {
+    it('should reject request with invalid token', async () => {
       (mockRequest.header as any).mockReturnValue('Bearer invalid-token');
 
-      authenticateToken(mockRequest as Request, mockResponse as Response, mockNext);
+      await authenticateToken(mockRequest as Request, mockResponse as Response, mockNext);
 
       expect(mockResponse.status).toHaveBeenCalledWith(401);
       expect(mockResponse.json).toHaveBeenCalledWith({
@@ -70,11 +70,11 @@ describe('Authentication Middleware', () => {
       expect(mockNext).not.toHaveBeenCalled();
     });
 
-    it('should handle token without Bearer prefix', () => {
+    it('should handle token without Bearer prefix', async () => {
       const tokens = generateTokens(mockUser);
       (mockRequest.header as any).mockReturnValue(tokens.accessToken);
 
-      authenticateToken(mockRequest as Request, mockResponse as Response, mockNext);
+      await authenticateToken(mockRequest as Request, mockResponse as Response, mockNext);
 
       expect(mockResponse.status).toHaveBeenCalledWith(401);
       expect(mockResponse.json).toHaveBeenCalledWith({

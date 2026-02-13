@@ -112,7 +112,17 @@ export const Migration012_LocationTemplates: Migration = {
 
     // Ensure site_id is indexed.
     try {
-      await adapter.execute('CREATE INDEX idx_site_locations_site_id ON site_locations(site_id)');
+      const rows = await adapter.query(
+        `SELECT 1
+         FROM information_schema.statistics
+         WHERE table_schema = DATABASE()
+           AND table_name = 'site_locations'
+           AND index_name = 'idx_site_locations_site_id'
+         LIMIT 1`
+      );
+      if (!rows || rows.length === 0) {
+        await adapter.execute('CREATE INDEX idx_site_locations_site_id ON site_locations(site_id)');
+      }
     } catch {
       // ignore
     }

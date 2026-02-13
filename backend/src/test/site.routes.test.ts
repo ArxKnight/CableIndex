@@ -503,7 +503,7 @@ describe('Site Routes', () => {
       expect(documentXml).toContain('Loft');
       expect(documentXml).toContain('Garage');
       expect(documentXml).toContain('CAT6');
-      expect(documentXml).toContain('Test User');
+      expect(documentXml).toContain('testuser');
 
       // Structured run locations
       expect(documentXml).toContain('Label: Loft | Floor: 1 | Suite: A | Row: R1 | Rack: 01');

@@ -51,6 +51,8 @@ const mockUsers = [
     label_count: 10,
     site_count: 3,
     last_activity: '2024-01-15T00:00:00Z',
+    last_activity_at: '2024-01-15T00:00:00Z',
+    last_activity_summary: 'Created label #0255 on site IVY',
   },
   {
     id: 2,
@@ -62,6 +64,8 @@ const mockUsers = [
     label_count: 5,
     site_count: 1,
     last_activity: '2024-01-14T00:00:00Z',
+    last_activity_at: '2024-01-14T00:00:00Z',
+    last_activity_summary: 'Created location IVY on site IVY',
   },
 ];
 
@@ -118,6 +122,16 @@ describe('UserManagement', () => {
     expect(screen.getByText('Sites')).toBeInTheDocument();
     expect(screen.getByText('Joined')).toBeInTheDocument();
     expect(screen.getByText('Edit')).toBeInTheDocument();
+  });
+
+  it('shows activity summaries', async () => {
+    const Wrapper = createWrapper();
+    render(<UserManagement />, { wrapper: Wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText('Created label #0255 on site IVY')).toBeInTheDocument();
+      expect(screen.getByText('Created location IVY on site IVY')).toBeInTheDocument();
+    });
   });
 
   it('displays user statistics correctly', async () => {

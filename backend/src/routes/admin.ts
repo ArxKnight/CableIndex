@@ -6,6 +6,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { requireAdminAccess, requireGlobalRole, resolveSiteAccess } from '../middleware/permissions.js';
 import connection from '../database/connection.js';
 import { buildInviteUrl, isSmtpConfigured, sendInviteEmailIfConfigured } from '../services/InvitationEmailService.js';
+import { logActivity } from '../services/ActivityLogService.js';
 import { validatePassword } from '../utils/password.js';
 import { normalizeUsername } from '../utils/username.js';
 
@@ -285,6 +286,32 @@ router.post('/invite', authenticateToken, requireAdminAccess, async (req, res) =
         ? 'Email not sent (SMTP not configured).'
         : 'Email not sent (SMTP error).';
 
+    try {
+      const siteParts = (sites || [])
+        .map(s => `${s.site_id}=${String(s.site_role)}`)
+        .join(', ');
+      const summary = siteParts
+        ? `Created invitation for ${username} (${email}) with sites: ${siteParts}`
+        : `Created invitation for ${username} (${email})`;
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'INVITATION_CREATED',
+        summary,
+        metadata: {
+          invitation_id: invitationId,
+          email,
+          username,
+          expires_at: expiresAt.toISOString(),
+          expires_in_days,
+          sites,
+          email_sent: emailResult.email_sent,
+          email_error: emailResult.email_error ?? null,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log invitation create activity:', error);
+    }
+
     res.status(201).json({
       success: true,
       data: {
@@ -541,6 +568,22 @@ router.post('/invitations/:id/link', authenticateToken, requireAdminAccess, asyn
       : `${req.protocol}://${req.get('host')}`;
     const invite_url = buildInviteUrl(rotated.token, baseUrl);
 
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'INVITATION_LINK_ROTATED',
+        summary: `Rotated invitation link for ${rotated.invitation.username} (${rotated.invitation.email})`,
+        metadata: {
+          invitation_id: invitationId,
+          email: rotated.invitation.email,
+          username: rotated.invitation.username,
+          expires_at: rotated.expires_at.toISOString(),
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log invitation link rotate activity:', error);
+    }
+
     res.json({
       success: true,
       data: {
@@ -598,6 +641,24 @@ router.post('/invitations/:id/resend', authenticateToken, requireAdminAccess, as
       expiresAtIso: rotated.expires_at.toISOString(),
     });
 
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'INVITATION_RESENT',
+        summary: `Resent invitation for ${rotated.invitation.username} (${rotated.invitation.email})`,
+        metadata: {
+          invitation_id: invitationId,
+          email: rotated.invitation.email,
+          username: rotated.invitation.username,
+          expires_at: rotated.expires_at.toISOString(),
+          email_sent: emailResult.email_sent,
+          email_error: emailResult.email_error ?? null,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log invitation resend activity:', error);
+    }
+
     res.json({
       success: true,
       data: {
@@ -634,6 +695,21 @@ router.delete('/invitations/:id', authenticateToken, requireAdminAccess, async (
 
     await assertInvitationAccess(invitationId, req.user);
 
+    let inviteEmail: string | null = null;
+    let inviteUsername: string | null = null;
+    try {
+      const rows = await getAdapter().query(
+        'SELECT email, username FROM invitations WHERE id = ? LIMIT 1',
+        [invitationId]
+      );
+      if (rows.length) {
+        inviteEmail = String((rows as any[])[0]?.email ?? '') || null;
+        inviteUsername = String((rows as any[])[0]?.username ?? '') || null;
+      }
+    } catch {
+      // Best-effort only
+    }
+
     const result = await getAdapter().execute(
       'DELETE FROM invitations WHERE id = ? AND used_at IS NULL',
       [invitationId]
@@ -644,6 +720,21 @@ router.delete('/invitations/:id', authenticateToken, requireAdminAccess, async (
         success: false,
         error: 'Invitation not found or already used',
       });
+    }
+
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'INVITATION_CANCELLED',
+        summary: `Cancelled invitation${inviteUsername || inviteEmail ? ` for ${[inviteUsername, inviteEmail].filter(Boolean).join(' ')}` : ''}`,
+        metadata: {
+          invitation_id: invitationId,
+          email: inviteEmail,
+          username: inviteUsername,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log invitation cancel activity:', error);
     }
 
     res.json({
@@ -784,6 +875,22 @@ router.post('/accept-invite', async (req, res) => {
     // Remove password_hash from response
     const { password_hash, ...userResponse } = user;
 
+    try {
+      await logActivity({
+        actorUserId: user.id,
+        action: 'INVITATION_ACCEPTED',
+        summary: `Accepted invitation and created account ${user.username} (${user.email})`,
+        metadata: {
+          user_id: user.id,
+          email: user.email,
+          username: user.username,
+          invitation_id: invitation.id,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log invitation accept activity:', error);
+    }
+
     res.status(201).json({
       success: true,
       data: userResponse,
@@ -870,16 +977,35 @@ router.get('/users', authenticateToken, requireAdminAccess, async (req, res) => 
     if (requesterRole === 'GLOBAL_ADMIN') {
       users = await getAdapter().query(
         `SELECT 
-          u.id, u.email, u.username,
-          CASE 
+          u.id,
+          MAX(u.email) as email,
+          MAX(u.username) as username,
+          MAX(CASE 
             WHEN u.role = 'ADMIN' THEN 'GLOBAL_ADMIN'
             WHEN u.role = 'MODERATOR' THEN 'USER'
             ELSE u.role
-          END as role,
-          u.is_active, u.created_at, u.updated_at,
+          END) as role,
+          MAX(u.is_active) as is_active,
+          MAX(u.created_at) as created_at,
+          MAX(u.updated_at) as updated_at,
+          MAX(COALESCE(alast.last_activity_at, ua.last_activity)) as last_activity,
+          MAX(alast.last_activity_summary) as last_activity_summary,
+          MAX(alast.last_activity_at) as last_activity_at,
           COUNT(DISTINCT sm.site_id) as site_count,
           COUNT(DISTINCT l.id) as label_count
         FROM users u
+        LEFT JOIN user_activity ua ON ua.user_id = u.id
+        LEFT JOIN (
+          SELECT al.actor_user_id,
+                 al.summary as last_activity_summary,
+                 al.created_at as last_activity_at
+          FROM activity_log al
+          JOIN (
+            SELECT actor_user_id, MAX(created_at) AS max_created_at
+            FROM activity_log
+            GROUP BY actor_user_id
+          ) mx ON mx.actor_user_id = al.actor_user_id AND mx.max_created_at = al.created_at
+        ) alast ON alast.actor_user_id = u.id
         LEFT JOIN site_memberships sm ON sm.user_id = u.id
         LEFT JOIN labels l ON l.site_id = sm.site_id AND l.created_by = u.id
         GROUP BY u.id
@@ -901,20 +1027,39 @@ router.get('/users', authenticateToken, requireAdminAccess, async (req, res) => 
       const placeholders = siteIds.map(() => '?').join(', ');
       users = await getAdapter().query(
         `SELECT 
-          u.id, u.email, u.username,
-          CASE 
+          u.id,
+          MAX(u.email) as email,
+          MAX(u.username) as username,
+          MAX(CASE 
             WHEN u.role = 'ADMIN' THEN 'GLOBAL_ADMIN'
             WHEN u.role = 'MODERATOR' THEN 'USER'
             ELSE u.role
-          END as role,
-          u.is_active, u.created_at, u.updated_at,
+          END) as role,
+          MAX(u.is_active) as is_active,
+          MAX(u.created_at) as created_at,
+          MAX(u.updated_at) as updated_at,
+          MAX(COALESCE(alast.last_activity_at, ua.last_activity)) as last_activity,
+          MAX(alast.last_activity_summary) as last_activity_summary,
+          MAX(alast.last_activity_at) as last_activity_at,
           COUNT(DISTINCT sm.site_id) as site_count,
           COUNT(DISTINCT l.id) as label_count
         FROM users u
+        LEFT JOIN user_activity ua ON ua.user_id = u.id
+        LEFT JOIN (
+          SELECT al.actor_user_id,
+                 al.summary as last_activity_summary,
+                 al.created_at as last_activity_at
+          FROM activity_log al
+          JOIN (
+            SELECT actor_user_id, MAX(created_at) AS max_created_at
+            FROM activity_log
+            GROUP BY actor_user_id
+          ) mx ON mx.actor_user_id = al.actor_user_id AND mx.max_created_at = al.created_at
+        ) alast ON alast.actor_user_id = u.id
         JOIN site_memberships sm ON sm.user_id = u.id AND sm.site_id IN (${placeholders})
         LEFT JOIN labels l ON l.site_id = sm.site_id AND l.created_by = u.id
         GROUP BY u.id
-        ORDER BY u.created_at DESC`,
+        ORDER BY MAX(u.created_at) DESC`,
         siteIds
       );
     }
@@ -983,6 +1128,7 @@ router.put('/users/:id/role', authenticateToken, requireGlobalRole('GLOBAL_ADMIN
 
     // Update user role
     const validRole = role as 'GLOBAL_ADMIN' | 'USER';
+    const previousRole = user.role;
     const result = await getAdapter().execute(
       'UPDATE users SET role = ?, updated_at = ? WHERE id = ?',
       [validRole, dbDateParam(new Date()), userId]
@@ -999,6 +1145,21 @@ router.put('/users/:id/role', authenticateToken, requireGlobalRole('GLOBAL_ADMIN
       success: true,
       message: 'User role updated successfully',
     });
+
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'USER_GLOBAL_ROLE_CHANGED',
+        summary: `Changed global role for ${user.username} from ${previousRole} to ${validRole}`,
+        metadata: {
+          target_user_id: userId,
+          previous_role: previousRole,
+          next_role: validRole,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log role change activity:', error);
+    }
   } catch (error) {
     console.error('Error updating user role:', error);
     res.status(500).json({
@@ -1215,6 +1376,38 @@ router.put('/users/:id/sites', authenticateToken, requireAdminAccess, async (req
       throw error;
     }
 
+    try {
+      const rows = siteIds.length
+        ? await getAdapter().query(
+          `SELECT id, name, code FROM sites WHERE id IN (${siteIds.map(() => '?').join(', ')})`,
+          siteIds
+        )
+        : [];
+      const siteNameById = new Map<number, string>((rows as any[]).map((r) => [Number(r.id), String(r.name ?? r.code ?? r.id)]));
+      const siteParts = sites
+        .map((s) => {
+          const name = siteNameById.get(Number(s.site_id)) ?? String(s.site_id);
+          const roleText = String(s.site_role) === 'SITE_ADMIN' ? 'Admin' : 'User';
+          return `${name}=${roleText}`;
+        })
+        .join(', ');
+      const summary = siteParts
+        ? `Updated site access for ${targetUser.username}: ${siteParts}`
+        : `Cleared site access for ${targetUser.username}`;
+
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'USER_SITE_ACCESS_CHANGED',
+        summary,
+        metadata: {
+          target_user_id: userId,
+          sites,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log site access change activity:', error);
+    }
+
     res.json({
       success: true,
       message: 'User site memberships updated successfully',
@@ -1259,6 +1452,9 @@ router.delete('/users/:id', authenticateToken, requireGlobalRole('GLOBAL_ADMIN')
       });
     }
 
+    const deletedUsername = String((user as any).username ?? '').trim();
+    const deletedEmail = String((user as any).email ?? '').trim();
+
     // requesterRole is GLOBAL_ADMIN (enforced above)
 
     // Prevent self-deletion
@@ -1296,6 +1492,21 @@ router.delete('/users/:id', authenticateToken, requireGlobalRole('GLOBAL_ADMIN')
     } catch (err) {
       await adapter.rollback();
       throw err;
+    }
+
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'USER_DELETED',
+        summary: `Deleted user ${deletedUsername}${deletedEmail ? ` (${deletedEmail})` : ''}`,
+        metadata: {
+          target_user_id: userId,
+          username: deletedUsername,
+          email: deletedEmail,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log admin user delete activity:', error);
     }
 
     res.json({
@@ -1542,6 +1753,20 @@ router.put('/settings', authenticateToken, requireGlobalRole('GLOBAL_ADMIN'), as
       success: true,
       message: 'Settings updated successfully',
     });
+
+    try {
+      const changedKeys = Object.keys(req.body ?? {});
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'ADMIN_SETTINGS_UPDATED',
+        summary: `Updated admin settings: ${changedKeys.length ? changedKeys.join(', ') : '(none)'}`,
+        metadata: {
+          changed_keys: changedKeys,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log settings update activity:', error);
+    }
   } catch (error) {
     console.error('Error updating settings:', error);
     res.status(500).json({
@@ -1575,6 +1800,17 @@ router.post('/settings/test-email', authenticateToken, requireGlobalRole('GLOBAL
         success: false,
         error: result.email_error || 'SMTP not configured',
       });
+    }
+
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'ADMIN_SETTINGS_TEST_EMAIL_SENT',
+        summary: `Sent admin SMTP test email to ${to}`,
+        metadata: { to },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log test email activity:', error);
     }
 
     res.json({

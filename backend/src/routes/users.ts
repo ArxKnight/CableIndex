@@ -5,6 +5,7 @@ import RoleService from '../services/RoleService.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireAdmin, requireUserManagement } from '../middleware/permissions.js';
 import { UserRole } from '../types/index.js';
+import { logActivity } from '../services/ActivityLogService.js';
 
 const router = express.Router();
 const userModel = new UserModel();
@@ -125,6 +126,9 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
       });
     }
 
+    const beforeEmail = String((existingUser as any).email ?? '');
+    const beforeRole = String((existingUser as any).role ?? '');
+
     // Check if email is already taken (if updating email)
     const emailToCheck = updateData.email;
     if (emailToCheck && await userModel.emailExists(emailToCheck, userId)) {
@@ -146,6 +150,27 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
     // Update role if provided
     if (updateData.role && updateData.role !== existingUser.role) {
       await roleService.assignRole(userId, updateData.role);
+    }
+
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'USER_UPDATED',
+        summary: `Updated user ${existingUser.username}${existingUser.email ? ` (${existingUser.email})` : ''}`,
+        metadata: {
+          target_user_id: userId,
+          before: {
+            email: beforeEmail,
+            role: beforeRole,
+          },
+          after: {
+            ...(updateData.email ? { email: updateData.email } : {}),
+            ...(updateData.role ? { role: updateData.role } : {}),
+          },
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log user update activity:', error);
     }
 
     // Remove password_hash from response
@@ -195,6 +220,9 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
       });
     }
 
+    const deletedUsername = String((existingUser as any).username ?? '').trim();
+    const deletedEmail = String((existingUser as any).email ?? '').trim();
+
     // Delete user
     const deleted = await userModel.delete(userId);
     if (!deleted) {
@@ -202,6 +230,21 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
         success: false,
         error: 'Failed to delete user',
       });
+    }
+
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'USER_DELETED',
+        summary: `Deleted user ${deletedUsername}${deletedEmail ? ` (${deletedEmail})` : ''}`,
+        metadata: {
+          target_user_id: userId,
+          username: deletedUsername,
+          email: deletedEmail,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log user delete activity:', error);
     }
 
     res.json({
