@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Table,
@@ -61,6 +61,9 @@ interface UserWithStats extends User {
   last_activity_at?: string;
 }
 
+type UserSortKey = 'user' | 'role' | 'activity' | 'labels' | 'sites' | 'joined';
+type SortDirection = 'asc' | 'desc';
+
 const UserManagement: React.FC = () => {
   const { user: currentUser, memberships } = useAuth();
   const { isGlobalAdmin } = usePermissions();
@@ -76,7 +79,32 @@ const UserManagement: React.FC = () => {
   const [passwordResetLink, setPasswordResetLink] = useState<string>('');
   const [passwordResetEmailStatus, setPasswordResetEmailStatus] = useState<{ email_sent: boolean; email_error?: string } | null>(null);
   const passwordResetLinkInputRef = useRef<HTMLInputElement | null>(null);
+  const [sortState, setSortState] = useState<{ key: UserSortKey; direction: SortDirection } | null>(null);
   const queryClient = useQueryClient();
+
+  const toggleSort = useCallback((key: UserSortKey) => {
+    setSortState((prev) => {
+      if (prev?.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+
+      const defaultDirection: SortDirection =
+        key === 'user' || key === 'role'
+          ? 'asc'
+          : 'desc';
+
+      return { key, direction: defaultDirection };
+    });
+  }, []);
+
+  const sortIndicator = useCallback((key: UserSortKey) => {
+    if (!sortState || sortState.key !== key) return null;
+    return (
+      <span className="ml-1 text-xs text-muted-foreground">
+        {sortState.direction === 'asc' ? '↑' : '↓'}
+      </span>
+    );
+  }, [sortState]);
 
   const resetDialogState = () => {
     setSelectedUser(null);
@@ -104,6 +132,70 @@ const UserManagement: React.FC = () => {
       return response.data;
     },
   });
+
+  const users = useMemo(() => (usersData?.users ?? []), [usersData?.users]);
+
+  const sortedUsers = useMemo(() => {
+    if (!sortState) return users;
+
+    const getActivityMs = (user: UserWithStats): number | null => {
+      const v = user.last_activity_at ?? user.last_activity;
+      if (!v) return null;
+      const ms = new Date(v).getTime();
+      if (Number.isNaN(ms)) return null;
+      return ms;
+    };
+
+    const directionMultiplier = sortState.direction === 'asc' ? 1 : -1;
+    const list = [...users];
+
+    list.sort((a, b) => {
+      switch (sortState.key) {
+        case 'user': {
+          const aName = String(a.username ?? a.email ?? '').trim();
+          const bName = String(b.username ?? b.email ?? '').trim();
+          return directionMultiplier * aName.localeCompare(bName, undefined, { sensitivity: 'base' });
+        }
+        case 'role': {
+          const aRole = String(a.role ?? '').trim();
+          const bRole = String(b.role ?? '').trim();
+          return directionMultiplier * aRole.localeCompare(bRole, undefined, { sensitivity: 'base' });
+        }
+        case 'activity': {
+          const aMs = getActivityMs(a);
+          const bMs = getActivityMs(b);
+
+          // Keep "Never" at the bottom regardless of direction.
+          if (aMs === null && bMs === null) return 0;
+          if (aMs === null) return 1;
+          if (bMs === null) return -1;
+
+          return directionMultiplier * (aMs - bMs);
+        }
+        case 'labels': {
+          const aCount = Number(a.label_count ?? 0);
+          const bCount = Number(b.label_count ?? 0);
+          return directionMultiplier * (aCount - bCount);
+        }
+        case 'sites': {
+          const aCount = Number(a.site_count ?? 0);
+          const bCount = Number(b.site_count ?? 0);
+          return directionMultiplier * (aCount - bCount);
+        }
+        case 'joined': {
+          const aMs = new Date(a.created_at).getTime();
+          const bMs = new Date(b.created_at).getTime();
+          const safeAMs = Number.isNaN(aMs) ? 0 : aMs;
+          const safeBMs = Number.isNaN(bMs) ? 0 : bMs;
+          return directionMultiplier * (safeAMs - safeBMs);
+        }
+        default:
+          return 0;
+      }
+    });
+
+    return list;
+  }, [sortState, users]);
 
   const { data: sitesData } = useQuery({
     queryKey: ['admin', 'sites'],
@@ -319,12 +411,36 @@ const UserManagement: React.FC = () => {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>User</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Activity</TableHead>
-              <TableHead>Labels</TableHead>
-              <TableHead>Sites</TableHead>
-              <TableHead>Joined</TableHead>
+              <TableHead>
+                <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => toggleSort('user')}>
+                  User{sortIndicator('user')}
+                </Button>
+              </TableHead>
+              <TableHead>
+                <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => toggleSort('role')}>
+                  Role{sortIndicator('role')}
+                </Button>
+              </TableHead>
+              <TableHead>
+                <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => toggleSort('activity')}>
+                  Activity{sortIndicator('activity')}
+                </Button>
+              </TableHead>
+              <TableHead>
+                <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => toggleSort('labels')}>
+                  Labels{sortIndicator('labels')}
+                </Button>
+              </TableHead>
+              <TableHead>
+                <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => toggleSort('sites')}>
+                  Sites{sortIndicator('sites')}
+                </Button>
+              </TableHead>
+              <TableHead>
+                <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => toggleSort('joined')}>
+                  Joined{sortIndicator('joined')}
+                </Button>
+              </TableHead>
               <TableHead className="text-right">Edit</TableHead>
             </TableRow>
           </TableHeader>
@@ -342,7 +458,7 @@ const UserManagement: React.FC = () => {
                 </TableCell>
               </TableRow>
             ) : (
-              usersData.users.map((user) => (
+              sortedUsers.map((user) => (
                 <TableRow
                   key={user.id}
                   role="button"

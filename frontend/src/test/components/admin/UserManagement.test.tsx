@@ -231,7 +231,7 @@ describe('UserManagement', () => {
     await user.click(deleteButton);
 
     // Confirm deletion in dialog
-    const confirmDeleteButton = await screen.findByRole('button', { name: /^delete$/i });
+    const confirmDeleteButton = await screen.findByRole('button', { name: /delete \(user only\)/i });
     await user.click(confirmDeleteButton);
 
     await waitFor(() => {
