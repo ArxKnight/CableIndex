@@ -5,6 +5,16 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Card, CardContent, CardHeader } from '../ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { 
   Search, 
@@ -53,6 +63,8 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsLabel, setDetailsLabel] = useState<LabelWithSiteInfo | null>(null);
   const [multiSelectEnabled, setMultiSelectEnabled] = useState(false);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [goToPageInput, setGoToPageInput] = useState('');
   const [locations, setLocations] = useState<SiteLocation[]>([]);
   const [loadingLocations, setLoadingLocations] = useState(false);
@@ -62,6 +74,12 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
   useEffect(() => {
     if (!multiSelectEnabled && selectedLabels.size > 0) {
       setSelectedLabels(new Set());
+    }
+  }, [multiSelectEnabled, selectedLabels.size]);
+
+  useEffect(() => {
+    if (!multiSelectEnabled || selectedLabels.size === 0) {
+      setBulkDeleteConfirmOpen(false);
     }
   }, [multiSelectEnabled, selectedLabels.size]);
   
@@ -420,27 +438,36 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
   };
 
   // Handle bulk operations
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
     if (selectedLabels.size === 0) return;
-    
-    if (!confirm(`Are you sure you want to delete ${selectedLabels.size} label(s)?`)) {
+    setBulkDeleteConfirmOpen(true);
+  };
+
+  const confirmBulkDelete = async () => {
+    if (selectedLabels.size === 0) {
+      setBulkDeleteConfirmOpen(false);
       return;
     }
 
     if (!selectedSiteId) {
       setError('No site selected');
+      setBulkDeleteConfirmOpen(false);
       return;
     }
 
+    setBulkDeleting(true);
     try {
       const response = await apiClient.bulkDeleteLabels(selectedSiteId, Array.from(selectedLabels));
       if (response.success) {
+        setBulkDeleteConfirmOpen(false);
         setSelectedLabels(new Set());
         loadLabels(searchParams); // Reload labels
         onLabelsChanged?.();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete labels');
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -694,6 +721,32 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
           </Button>
         </div>
       )}
+
+      <AlertDialog open={bulkDeleteConfirmOpen} onOpenChange={setBulkDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{`Delete ${selectedLabels.size} label(s)?`}</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the selected labels. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button
+                variant="destructive"
+                onClick={(e) => {
+                  e.preventDefault();
+                  void confirmBulkDelete();
+                }}
+                disabled={bulkDeleting}
+              >
+                {bulkDeleting ? 'Deleting…' : 'Delete'}
+              </Button>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Labels List */}
       <Card>
