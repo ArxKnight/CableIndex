@@ -188,7 +188,7 @@ const LocationHierarchyDropdown: React.FC<LocationHierarchyDropdownProps> = (pro
                 setOpen(false);
               }}
             >
-              Any
+              Any Site
             </DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
@@ -231,7 +231,7 @@ const LocationHierarchyDropdown: React.FC<LocationHierarchyDropdownProps> = (pro
                       setOpen(false);
                     }}
                   >
-                    {`All of ${labelKey}`}
+                    {`Any ${labelKey}`}
                   </DropdownMenuItem>
                 )}
 
@@ -363,7 +363,7 @@ const LocationHierarchyDropdown: React.FC<LocationHierarchyDropdownProps> = (pro
                             setOpen(false);
                           }}
                         >
-                          {`Floor ${floorKey}`}
+                          Any Floor
                         </DropdownMenuItem>
 
                         {hasChildren && <DropdownMenuSeparator />}
@@ -399,7 +399,7 @@ const LocationHierarchyDropdown: React.FC<LocationHierarchyDropdownProps> = (pro
                                         setOpen(false);
                                       }}
                                     >
-                                      {`Suite ${suiteKey}`}
+                                      Any Suite
                                     </DropdownMenuItem>
 
                                     {sortedKeys(rows).map((rowKey) => {
@@ -419,7 +419,7 @@ const LocationHierarchyDropdown: React.FC<LocationHierarchyDropdownProps> = (pro
                                                 setOpen(false);
                                               }}
                                             >
-                                              {`Row ${rowKey}`}
+                                              Any Row
                                             </DropdownMenuItem>
 
                                             {sortedKeys(racks).map((rackKey) => (
