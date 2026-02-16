@@ -94,6 +94,8 @@ const SitesPage: React.FC = () => {
   const handleConfirmDelete = async () => {
     if (!selectedSite) return;
 
+    const deletedSiteId = selectedSite.id;
+
     try {
       setIsLoading(true);
       setError(null);
@@ -108,6 +110,11 @@ const SitesPage: React.FC = () => {
 
       setRefreshTrigger(prev => prev + 1);
       handleCloseDialog();
+
+      // If the user deleted the site they were currently viewing, return to the list.
+      if (viewMode === 'details' && selectedSiteId === deletedSiteId) {
+        handleBackToList();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {

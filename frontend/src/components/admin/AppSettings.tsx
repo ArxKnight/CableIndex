@@ -232,8 +232,15 @@ const AppSettings: React.FC = () => {
                 </div>
                 <Switch
                   id="smtp_secure"
+                  aria-label="Enable TLS/SSL"
                   checked={Boolean(watch('smtp_secure'))}
-                  onCheckedChange={(checked) => setValue('smtp_secure', checked)}
+                  onCheckedChange={(checked) =>
+                    setValue('smtp_secure', checked, {
+                      shouldDirty: true,
+                      shouldTouch: true,
+                      shouldValidate: true,
+                    })
+                  }
                 />
               </div>
             </div>

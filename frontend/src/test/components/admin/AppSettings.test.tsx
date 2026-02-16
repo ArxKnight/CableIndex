@@ -118,6 +118,26 @@ describe('AppSettings', () => {
     });
   });
 
+  it('enables save when TLS/SSL switch is toggled', async () => {
+    const Wrapper = createWrapper();
+    const user = userEvent.setup();
+    render(<AppSettings />, { wrapper: Wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('smtp.example.com')).toBeInTheDocument();
+    });
+
+    const saveButton = screen.getByRole('button', { name: /save settings/i });
+    expect(saveButton).toBeDisabled();
+
+    const tlsSwitch = screen.getByRole('switch', { name: /enable tls\/ssl/i });
+    await user.click(tlsSwitch);
+
+    await waitFor(() => {
+      expect(saveButton).not.toBeDisabled();
+    });
+  });
+
   it('resets form to original values', async () => {
     const Wrapper = createWrapper();
     render(<AppSettings />, { wrapper: Wrapper });

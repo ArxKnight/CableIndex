@@ -164,6 +164,9 @@ describe('SitesPage', () => {
 
     // Dialog should close
     expect(screen.queryByRole('heading', { name: /delete site/i })).not.toBeInTheDocument();
+
+    // Should return to list view after deleting from details
+    expect(screen.getByTestId('site-list')).toBeInTheDocument();
   });
 
   it('should handle create site error', async () => {
