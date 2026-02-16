@@ -17,7 +17,7 @@ import { Label } from '../ui/label';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Checkbox } from '../ui/checkbox';
-import { Trash2, Loader2 } from 'lucide-react';
+import { Trash2, Loader2, Pencil } from 'lucide-react';
 import { apiClient } from '../../lib/api';
 import { formatLocationWithPrefix } from '../../lib/locationFormat';
 
@@ -41,6 +41,23 @@ const SiteLocationsDialog: React.FC<SiteLocationsDialogProps> = ({ open, onOpenC
   const [loading, setLoading] = useState(false);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [editing, setEditing] = useState<SiteLocation | null>(null);
+
+  const [updateConfirmOpen, setUpdateConfirmOpen] = useState(false);
+  const [updateUsage, setUpdateUsage] = useState<{ source_count: number; destination_count: number; total_in_use: number } | null>(null);
+  const [pendingUpdate, setPendingUpdate] = useState<{
+    locationId: number;
+    payload: {
+      template_type?: 'DATACENTRE' | 'DOMESTIC';
+      label?: string;
+      floor?: string;
+      suite?: string;
+      row?: string;
+      rack?: string;
+      area?: string;
+    };
+  } | null>(null);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteLocation, setDeleteLocation] = useState<SiteLocation | null>(null);
@@ -86,6 +103,8 @@ const SiteLocationsDialog: React.FC<SiteLocationsDialogProps> = ({ open, onOpenC
 
   useEffect(() => {
     if (!open) return;
+    setEditing(null);
+    resetForm();
     load();
   }, [open, siteId]);
 
@@ -99,7 +118,55 @@ const SiteLocationsDialog: React.FC<SiteLocationsDialogProps> = ({ open, onOpenC
     setArea('');
   };
 
-  const handleCreate = async () => {
+  const startEdit = (loc: SiteLocation) => {
+    setEditing(loc);
+    setError(null);
+
+    const tt = (loc.template_type === 'DOMESTIC' ? 'DOMESTIC' : 'DATACENTRE') as 'DATACENTRE' | 'DOMESTIC';
+    setTemplateType(tt);
+    setLabel(String(loc.label ?? ''));
+    setFloor(String(loc.floor ?? ''));
+    setSuite(String(loc.suite ?? ''));
+    setRow(String(loc.row ?? ''));
+    setRack(String(loc.rack ?? ''));
+    setArea(String(loc.area ?? ''));
+  };
+
+  const cancelEdit = () => {
+    setEditing(null);
+    resetForm();
+    setError(null);
+  };
+
+  const buildPayload = () => {
+    const floorV = floor.trim();
+    const suiteV = suite.trim();
+    const rowV = row.trim();
+    const rackV = rack.trim();
+    const areaV = area.trim();
+
+    return {
+      template_type: templateType,
+      // allow clearing label by sending empty string
+      label: label.trim(),
+      floor: floorV,
+      ...(templateType === 'DOMESTIC'
+        ? {
+            area: areaV,
+            suite: '',
+            row: '',
+            rack: '',
+          }
+        : {
+            suite: suiteV,
+            row: rowV,
+            rack: rackV,
+            area: '',
+          }),
+    };
+  };
+
+  const handleCreateOrUpdate = async () => {
     const floorV = floor.trim();
     const suiteV = suite.trim();
     const rowV = row.trim();
@@ -126,26 +193,79 @@ const SiteLocationsDialog: React.FC<SiteLocationsDialogProps> = ({ open, onOpenC
     try {
       setWorking(true);
       setError(null);
-      const resp = await apiClient.createSiteLocation(siteId, {
-        template_type: templateType,
-        label: label.trim() || undefined,
-        floor: floorV,
-        ...(templateType === 'DOMESTIC'
-          ? { area: areaV }
-          : {
-            suite: suiteV,
-            row: rowV,
-            rack: rackV,
-          }),
-      });
-      if (!resp.success) throw new Error(resp.error || 'Failed to create location');
+
+      if (editing?.id) {
+        const usageResp = await apiClient.getSiteLocationUsage(siteId, editing.id);
+        if (!usageResp.success || !usageResp.data) throw new Error(usageResp.error || 'Failed to load location usage');
+
+        const usage = usageResp.data.usage;
+        if ((usage?.total_in_use ?? 0) > 0) {
+          setPendingUpdate({ locationId: editing.id, payload: buildPayload() });
+          setUpdateUsage(usage);
+          setUpdateConfirmOpen(true);
+          return;
+        }
+
+        const resp = await apiClient.updateSiteLocation(siteId, editing.id, buildPayload());
+        if (!resp.success) throw new Error(resp.error || 'Failed to update location');
+      } else {
+        const resp = await apiClient.createSiteLocation(siteId, {
+          template_type: templateType,
+          label: label.trim() || undefined,
+          floor: floorV,
+          ...(templateType === 'DOMESTIC'
+            ? { area: areaV }
+            : {
+                suite: suiteV,
+                row: rowV,
+                rack: rackV,
+              }),
+        });
+        if (!resp.success) throw new Error(resp.error || 'Failed to create location');
+      }
+
+      setEditing(null);
       resetForm();
       await load();
       onChanged?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create location');
+      setError(err instanceof Error ? err.message : editing ? 'Failed to update location' : 'Failed to create location');
     } finally {
       setWorking(false);
+    }
+  };
+
+  const confirmUpdate = async () => {
+    if (!pendingUpdate?.locationId) return;
+
+    try {
+      setWorking(true);
+      setError(null);
+
+      const resp = await apiClient.updateSiteLocation(siteId, pendingUpdate.locationId, pendingUpdate.payload);
+      if (!resp.success) throw new Error(resp.error || 'Failed to update location');
+
+      setUpdateConfirmOpen(false);
+      setPendingUpdate(null);
+      setUpdateUsage(null);
+
+      setEditing(null);
+      resetForm();
+      await load();
+      onChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update location');
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const handleUpdateConfirmOpenChange = (next: boolean) => {
+    if (working) return;
+    setUpdateConfirmOpen(next);
+    if (!next) {
+      setPendingUpdate(null);
+      setUpdateUsage(null);
     }
   };
 
@@ -274,7 +394,7 @@ const SiteLocationsDialog: React.FC<SiteLocationsDialogProps> = ({ open, onOpenC
 
         <div className="space-y-4">
           <div className="rounded-md border p-3 space-y-3">
-            <div className="text-sm font-semibold">Add Location</div>
+            <div className="text-sm font-semibold">{editing ? 'Edit Location' : 'Add Location'}</div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label>Template</Label>
@@ -337,9 +457,14 @@ const SiteLocationsDialog: React.FC<SiteLocationsDialogProps> = ({ open, onOpenC
               )}
             </div>
 
-            <div className="flex justify-end">
-              <Button onClick={handleCreate} disabled={working}>
-                {working ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add Location'}
+            <div className="flex items-center justify-end gap-2">
+              {editing && (
+                <Button variant="outline" onClick={cancelEdit} disabled={working}>
+                  Cancel
+                </Button>
+              )}
+              <Button onClick={handleCreateOrUpdate} disabled={working}>
+                {working ? <Loader2 className="h-4 w-4 animate-spin" /> : editing ? 'Save Changes' : 'Add Location'}
               </Button>
             </div>
           </div>
@@ -362,22 +487,59 @@ const SiteLocationsDialog: React.FC<SiteLocationsDialogProps> = ({ open, onOpenC
                         {formatLocationDisplay(siteName, siteCode, loc)}
                       </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDelete(loc.id)}
-                      className="text-destructive hover:text-destructive"
-                      disabled={working}
-                      title="Delete"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => startEdit(loc)}
+                        disabled={working}
+                        title="Edit"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(loc.id)}
+                        className="text-destructive hover:text-destructive"
+                        disabled={working}
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
         </div>
+
+        <AlertDialog open={updateConfirmOpen} onOpenChange={handleUpdateConfirmOpenChange}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Update Site Location</AlertDialogTitle>
+              <AlertDialogDescription>
+                This location is used by <span className="font-medium text-foreground">{updateUsage?.total_in_use ?? 0}</span>{' '}
+                labels ({updateUsage?.source_count ?? 0} as Source, {updateUsage?.destination_count ?? 0} as Destination). Updating it will affect all existing cable refs that use this location.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={working}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  void confirmUpdate();
+                }}
+                disabled={!pendingUpdate || working}
+              >
+                {working ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Proceed'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <AlertDialog open={deleteOpen} onOpenChange={handleDeleteOpenChange}>
           <AlertDialogContent>

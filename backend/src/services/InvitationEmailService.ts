@@ -91,6 +91,63 @@ export const buildInviteUrl = (token: string, baseUrl: string): string => {
   return `${trimmedBase}/auth/register?token=${encodeURIComponent(token)}`;
 };
 
+export const buildPasswordResetUrl = (token: string, baseUrl: string): string => {
+  const trimmedBase = (baseUrl || '').trim().replace(/\/+$/, '');
+  return `${trimmedBase}/auth/reset-password?token=${encodeURIComponent(token)}`;
+};
+
+export const sendPasswordResetEmailIfConfigured = async (params: {
+  to: string;
+  username: string;
+  requesterName: string;
+  resetUrl: string;
+  expiresAtIso: string;
+}): Promise<InviteEmailSendResult> => {
+  const smtp = await loadSmtpConfig();
+  if (!smtp) {
+    return { email_sent: false, email_error: 'SMTP not configured' };
+  }
+
+  try {
+    const transport = nodemailer.createTransport({
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.secure,
+      auth: { user: smtp.user, pass: smtp.pass },
+    });
+
+    const subject = 'CableIndex password reset';
+    const text =
+      `Hi ${params.username},\n\n` +
+      `${params.requesterName} requested a password reset for your CableIndex account.\n\n` +
+      `Reset your password here:\n${params.resetUrl}\n\n` +
+      `This link expires at: ${params.expiresAtIso}\n`;
+
+    const html = `
+      <p>Hi ${escapeHtml(params.username)},</p>
+      <p><strong>${escapeHtml(params.requesterName)}</strong> requested a password reset for your CableIndex account.</p>
+      <p>
+        Reset your password here:<br />
+        <a href="${escapeHtmlAttr(params.resetUrl)}">${escapeHtml(params.resetUrl)}</a>
+      </p>
+      <p>This link expires at: ${escapeHtml(params.expiresAtIso)}</p>
+    `;
+
+    await transport.sendMail({
+      from: smtp.from,
+      to: params.to,
+      subject,
+      text,
+      html,
+    });
+
+    return { email_sent: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown SMTP error';
+    return { email_sent: false, email_error: message };
+  }
+};
+
 export const sendInviteEmailIfConfigured = async (params: {
   to: string;
   inviteeName: string;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Table,
@@ -48,6 +48,7 @@ import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
 
 import { apiClient } from '../../lib/api';
+import { copyTextToClipboard } from '../../lib/clipboard';
 import { useAuth } from '../../contexts/AuthContext';
 import { SiteMembership, User, UserRole, SiteRole } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -71,11 +72,18 @@ const UserManagement: React.FC = () => {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserWithStats | null>(null);
   const [siteSelections, setSiteSelections] = useState<Record<number, SiteRole>>({});
+  const [identityDraft, setIdentityDraft] = useState<{ username: string; email: string }>({ username: '', email: '' });
+  const [passwordResetLink, setPasswordResetLink] = useState<string>('');
+  const [passwordResetEmailStatus, setPasswordResetEmailStatus] = useState<{ email_sent: boolean; email_error?: string } | null>(null);
+  const passwordResetLinkInputRef = useRef<HTMLInputElement | null>(null);
   const queryClient = useQueryClient();
 
   const resetDialogState = () => {
     setSelectedUser(null);
     setSiteSelections({});
+    setIdentityDraft({ username: '', email: '' });
+    setPasswordResetLink('');
+    setPasswordResetEmailStatus(null);
   };
 
   const handleDetailsOpenChange = (open: boolean) => {
@@ -122,7 +130,8 @@ const UserManagement: React.FC = () => {
   });
 
   const deleteUserMutation = useMutation({
-    mutationFn: async (userId: number) => apiClient.delete(`/admin/users/${userId}`),
+    mutationFn: async (params: { userId: number; cascade?: boolean }) =>
+      apiClient.delete(`/admin/users/${params.userId}${params.cascade ? '?cascade=true' : ''}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
       toast.success('User deleted successfully');
@@ -130,6 +139,56 @@ const UserManagement: React.FC = () => {
     },
     onError: (error: any) => {
       toast.error(error.message || 'Failed to delete user');
+    },
+  });
+
+  const updateUserIdentityMutation = useMutation({
+    mutationFn: async (data: { userId: number; username?: string; email?: string }) =>
+      apiClient.put(`/admin/users/${data.userId}`, {
+        ...(data.username !== undefined ? { username: data.username } : {}),
+        ...(data.email !== undefined ? { email: data.email } : {}),
+      }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      setSelectedUser((prev) => {
+        if (!prev || prev.id !== variables.userId) return prev;
+        return {
+          ...prev,
+          ...(variables.username !== undefined ? { username: variables.username } : {}),
+          ...(variables.email !== undefined ? { email: variables.email } : {}),
+        };
+      });
+      toast.success('User updated successfully');
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to update user');
+    },
+  });
+
+  const passwordResetMutation = useMutation({
+    mutationFn: async (params: { userId: number }) =>
+      apiClient.post<{ reset_url: string; email_sent: boolean; email_error?: string; expires_at: string }>(
+        `/admin/users/${params.userId}/password-reset`,
+        {}
+      ),
+    onSuccess: (response) => {
+      const resetUrl = String((response as any)?.data?.reset_url || '');
+      const email_sent = Boolean((response as any)?.data?.email_sent);
+      const email_error = (response as any)?.data?.email_error ? String((response as any).data.email_error) : undefined;
+
+      setPasswordResetLink(resetUrl);
+      setPasswordResetEmailStatus({ email_sent, ...(email_error ? { email_error } : {}) });
+
+      if (email_sent) {
+        toast.success('Password reset email sent');
+      } else if (email_error === 'SMTP not configured') {
+        toast.error('SMTP not configured — reset link created');
+      } else {
+        toast.error('Email failed — reset link created');
+      }
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to create password reset link');
     },
   });
 
@@ -152,13 +211,14 @@ const UserManagement: React.FC = () => {
     updateUserRoleMutation.mutate({ userId, role: newRole });
   };
 
-  const handleDeleteUser = (userId: number) => {
-    deleteUserMutation.mutate(userId);
+  const handleDeleteUser = (userId: number, options?: { cascade?: boolean }) => {
+    deleteUserMutation.mutate({ userId, cascade: options?.cascade });
   };
 
   const openUserDetails = async (user: UserWithStats) => {
     resetDialogState();
     setSelectedUser(user);
+    setIdentityDraft({ username: user.username || '', email: user.email || '' });
     handleDetailsOpenChange(true);
 
     try {
@@ -175,13 +235,32 @@ const UserManagement: React.FC = () => {
     }
   };
 
-  const handleSaveSites = () => {
+  const handleSaveAll = async () => {
     if (!selectedUser) return;
+    if (cannotEditSelectedUser) return;
+
+    const nextUsername = identityDraft.username.trim();
+    const nextEmail = identityDraft.email.trim();
+
+    const identityPatch: { userId: number; username?: string; email?: string } = { userId: selectedUser.id };
+    if (isGlobalAdmin) {
+      if (nextUsername && nextUsername !== selectedUser.username) identityPatch.username = nextUsername;
+      if (nextEmail && nextEmail !== selectedUser.email) identityPatch.email = nextEmail;
+    }
+
     const sites = Object.entries(siteSelections).map(([siteId, siteRole]) => ({
       site_id: Number(siteId),
       site_role: siteRole,
     }));
-    updateUserSitesMutation.mutate({ userId: selectedUser.id, sites });
+
+    try {
+      if (identityPatch.username !== undefined || identityPatch.email !== undefined) {
+        await updateUserIdentityMutation.mutateAsync(identityPatch);
+      }
+      await updateUserSitesMutation.mutateAsync({ userId: selectedUser.id, sites });
+    } catch {
+      // Mutations already toast; keep dialog open
+    }
   };
 
   const cannotEditSelectedUser = !!selectedUser && !isGlobalAdmin && (selectedUser.role === 'GLOBAL_ADMIN' || selectedUser.id === currentUser?.id);
@@ -349,8 +428,31 @@ const UserManagement: React.FC = () => {
           {selectedUser ? (
             <div className="space-y-4">
               <div>
-                <div className="font-medium">{selectedUser.username}</div>
-                <div className="text-sm text-muted-foreground">{selectedUser.email}</div>
+                {isGlobalAdmin ? (
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-sm font-medium">Username</div>
+                      <Input
+                        value={identityDraft.username}
+                        onChange={(e) => setIdentityDraft((prev) => ({ ...prev, username: e.target.value }))}
+                        disabled={cannotEditSelectedUser || updateUserIdentityMutation.isPending}
+                      />
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium">Email</div>
+                      <Input
+                        value={identityDraft.email}
+                        onChange={(e) => setIdentityDraft((prev) => ({ ...prev, email: e.target.value }))}
+                        disabled={cannotEditSelectedUser || updateUserIdentityMutation.isPending}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="font-medium">{selectedUser.username}</div>
+                    <div className="text-sm text-muted-foreground">{selectedUser.email}</div>
+                  </>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
@@ -453,6 +555,48 @@ const UserManagement: React.FC = () => {
               </div>
 
               {isGlobalAdmin && selectedUser.id !== currentUser?.id && (
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Password Reset</div>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => passwordResetMutation.mutate({ userId: selectedUser.id })}
+                    disabled={passwordResetMutation.isPending}
+                  >
+                    {passwordResetMutation.isPending ? 'Creating link...' : 'Send Password Reset'}
+                  </Button>
+
+                  {passwordResetLink ? (
+                    <div className="space-y-2">
+                      <div className="text-xs text-muted-foreground">
+                        {passwordResetEmailStatus?.email_sent
+                          ? 'Email sent. You can also share the link directly.'
+                          : passwordResetEmailStatus?.email_error
+                            ? `Email not sent: ${passwordResetEmailStatus.email_error}. Share the link directly.`
+                            : 'Share the link directly.'}
+                      </div>
+                      <div className="flex gap-2">
+                        <Input ref={passwordResetLinkInputRef} value={passwordResetLink} readOnly />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={async () => {
+                            const ok = await copyTextToClipboard(passwordResetLink, {
+                              fallbackInput: passwordResetLinkInputRef.current,
+                            });
+                            if (ok) toast.success('Copied reset link');
+                            else toast.error('Failed to copy');
+                          }}
+                        >
+                          Copy
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {isGlobalAdmin && selectedUser.id !== currentUser?.id && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button variant="destructive" className="w-full" disabled={deleteUserMutation.isPending}>
@@ -465,16 +609,22 @@ const UserManagement: React.FC = () => {
                       <AlertDialogTitle>Delete User</AlertDialogTitle>
                       <AlertDialogDescription>
                         Are you sure you want to delete {selectedUser.username}? This action cannot be undone.
-                        All their labels and sites will also be deleted.
+                        By default, sites and labels they created will be reassigned to System.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Cancel</AlertDialogCancel>
                       <AlertDialogAction
+                        onClick={() => handleDeleteUser(selectedUser.id, { cascade: true })}
+                        className="bg-red-600 hover:bg-red-700"
+                      >
+                        Delete (Also Delete Sites/Labels)
+                      </AlertDialogAction>
+                      <AlertDialogAction
                         onClick={() => handleDeleteUser(selectedUser.id)}
                         className="bg-red-600 hover:bg-red-700"
                       >
-                        Delete
+                        Delete (User Only)
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
@@ -489,8 +639,16 @@ const UserManagement: React.FC = () => {
             <Button variant="outline" onClick={() => handleDetailsOpenChange(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSaveSites} disabled={!selectedUser || updateUserSitesMutation.isPending || cannotEditSelectedUser}>
-              {updateUserSitesMutation.isPending ? 'Saving...' : 'Save'}
+            <Button
+              onClick={handleSaveAll}
+              disabled={
+                !selectedUser ||
+                cannotEditSelectedUser ||
+                updateUserSitesMutation.isPending ||
+                updateUserIdentityMutation.isPending
+              }
+            >
+              {updateUserSitesMutation.isPending || updateUserIdentityMutation.isPending ? 'Saving...' : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>

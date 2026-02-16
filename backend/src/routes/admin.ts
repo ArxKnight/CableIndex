@@ -5,14 +5,52 @@ import UserModel from '../models/User.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireAdminAccess, requireGlobalRole, resolveSiteAccess } from '../middleware/permissions.js';
 import connection from '../database/connection.js';
-import { buildInviteUrl, isSmtpConfigured, sendInviteEmailIfConfigured } from '../services/InvitationEmailService.js';
+import {
+  buildInviteUrl,
+  buildPasswordResetUrl,
+  isSmtpConfigured,
+  sendInviteEmailIfConfigured,
+  sendPasswordResetEmailIfConfigured,
+} from '../services/InvitationEmailService.js';
 import { logActivity } from '../services/ActivityLogService.js';
-import { validatePassword } from '../utils/password.js';
+import { hashPassword, validatePassword } from '../utils/password.js';
 import { normalizeUsername } from '../utils/username.js';
 
 const router = express.Router();
 const getUserModel = () => new UserModel();
 const getAdapter = () => connection.getAdapter();
+
+const SYSTEM_USER_EMAIL = 'system@cableindex.invalid';
+const SYSTEM_USER_USERNAME = 'System';
+
+const parseBooleanQueryParam = (value: unknown): boolean => {
+  if (value === true || value === 1) return true;
+  if (typeof value !== 'string') return false;
+  const v = value.trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'yes';
+};
+
+const ensureSystemUserId = async (adapter: ReturnType<typeof getAdapter>): Promise<number> => {
+  const existing = await adapter.query('SELECT id FROM users WHERE email = ? LIMIT 1', [SYSTEM_USER_EMAIL]);
+  const existingId = Number((existing as any[])?.[0]?.id);
+  if (existingId) return existingId;
+
+  const randomPassword = `sys-${crypto.randomBytes(32).toString('hex')}`;
+  const passwordHash = await hashPassword(randomPassword);
+
+  await adapter.execute(
+    'INSERT INTO users (email, password_hash, username, role, is_active) VALUES (?, ?, ?, ?, ?)',
+    [SYSTEM_USER_EMAIL, passwordHash, SYSTEM_USER_USERNAME, 'USER', 0]
+  );
+
+  const created = await adapter.query('SELECT id FROM users WHERE email = ? LIMIT 1', [SYSTEM_USER_EMAIL]);
+  const createdId = Number((created as any[])?.[0]?.id);
+  if (!createdId) {
+    throw new Error('Failed to create System user');
+  }
+
+  return createdId;
+};
 
 const dbDateParam = (date: Date): Date => date;
 
@@ -53,25 +91,41 @@ router.get('/overview', authenticateToken, requireAdminAccess, async (req, res) 
       siteParams = siteIds;
     }
 
-    const pendingRows = await getAdapter().query(
-      `SELECT COUNT(DISTINCT i.id) AS count
-       FROM invitations i
-       JOIN invitation_sites isites ON isites.invitation_id = i.id
-       WHERE i.used_at IS NULL
-         AND i.expires_at > ?
-       ${siteFilter}`,
-      [dbDateParam(now), ...siteParams]
-    );
+    const pendingRows = requesterRole === 'GLOBAL_ADMIN'
+      ? await getAdapter().query(
+        `SELECT COUNT(*) AS count
+         FROM invitations i
+         WHERE i.used_at IS NULL
+           AND i.expires_at > ?`,
+        [dbDateParam(now)]
+      )
+      : await getAdapter().query(
+        `SELECT COUNT(DISTINCT i.id) AS count
+         FROM invitations i
+         JOIN invitation_sites isites ON isites.invitation_id = i.id
+         WHERE i.used_at IS NULL
+           AND i.expires_at > ?
+         ${siteFilter}`,
+        [dbDateParam(now), ...siteParams]
+      );
 
-    const expiredRows = await getAdapter().query(
-      `SELECT COUNT(DISTINCT i.id) AS count
-       FROM invitations i
-       JOIN invitation_sites isites ON isites.invitation_id = i.id
-       WHERE i.used_at IS NULL
-         AND i.expires_at <= ?
-       ${siteFilter}`,
-      [dbDateParam(now), ...siteParams]
-    );
+    const expiredRows = requesterRole === 'GLOBAL_ADMIN'
+      ? await getAdapter().query(
+        `SELECT COUNT(*) AS count
+         FROM invitations i
+         WHERE i.used_at IS NULL
+           AND i.expires_at <= ?`,
+        [dbDateParam(now)]
+      )
+      : await getAdapter().query(
+        `SELECT COUNT(DISTINCT i.id) AS count
+         FROM invitations i
+         JOIN invitation_sites isites ON isites.invitation_id = i.id
+         WHERE i.used_at IS NULL
+           AND i.expires_at <= ?
+         ${siteFilter}`,
+        [dbDateParam(now), ...siteParams]
+      );
 
     const usersWithoutSitesRows = requesterRole === 'GLOBAL_ADMIN'
       ? await getAdapter().query(
@@ -136,6 +190,20 @@ const updateUserSitesSchema = z.object({
     site_role: z.enum(['SITE_ADMIN', 'SITE_USER']).default('SITE_USER'),
   })).optional().default([]),
 });
+
+const updateUserIdentitySchema = z
+  .object({
+    email: z.string().email().optional(),
+    username: z
+      .string()
+      .min(1, 'Username is required')
+      .max(100, 'Username must be less than 100 characters')
+      .transform((v) => normalizeUsername(v))
+      .optional(),
+  })
+  .refine((data) => Boolean(data.email || data.username), {
+    message: 'No fields to update',
+  });
 
 /**
  * POST /api/admin/invite - Invite new user (admin only)
@@ -1170,6 +1238,179 @@ router.put('/users/:id/role', authenticateToken, requireGlobalRole('GLOBAL_ADMIN
 });
 
 /**
+ * PUT /api/admin/users/:id - Update user username/email (Global Admin only)
+ */
+router.put('/users/:id', authenticateToken, requireGlobalRole('GLOBAL_ADMIN'), async (req, res) => {
+  try {
+    const userId = parseInt(String(req.params.id));
+    if (isNaN(userId)) {
+      return res.status(400).json({ success: false, error: 'Invalid user ID' });
+    }
+
+    const validation = updateUserIdentitySchema.safeParse(req.body ?? {});
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid input data',
+        details: validation.error.errors,
+      });
+    }
+
+    const userModel = getUserModel();
+    const existingUser = await userModel.findById(userId);
+    if (!existingUser) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const before = {
+      email: String((existingUser as any).email ?? ''),
+      username: String((existingUser as any).username ?? ''),
+    };
+
+    if (String(before.email).toLowerCase() === SYSTEM_USER_EMAIL.toLowerCase()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot modify the System user',
+      });
+    }
+
+    const nextEmail = validation.data.email;
+    const nextUsername = validation.data.username;
+
+    if (nextEmail && await userModel.emailExists(nextEmail, userId)) {
+      return res.status(409).json({ success: false, error: 'Email already exists' });
+    }
+
+    if (nextUsername && await userModel.usernameExists(nextUsername, userId)) {
+      return res.status(409).json({ success: false, error: 'Username already exists' });
+    }
+
+    const updated = await userModel.update(userId, {
+      ...(nextEmail ? { email: nextEmail } : {}),
+      ...(nextUsername ? { username: nextUsername } : {}),
+    });
+
+    if (!updated) {
+      return res.status(500).json({ success: false, error: 'Failed to update user' });
+    }
+
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'USER_UPDATED',
+        summary: `Updated user ${before.username}${before.email ? ` (${before.email})` : ''}`,
+        metadata: {
+          target_user_id: userId,
+          before,
+          after: {
+            ...(nextEmail ? { email: nextEmail } : {}),
+            ...(nextUsername ? { username: nextUsername } : {}),
+          },
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log user identity update activity:', error);
+    }
+
+    const { password_hash, ...userResponse } = updated as any;
+    return res.json({ success: true, data: userResponse, message: 'User updated successfully' });
+  } catch (error) {
+    console.error('Error updating user identity:', error);
+    return res.status(500).json({ success: false, error: 'Failed to update user' });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/password-reset - Create a password reset link and email it (Global Admin only)
+ */
+router.post('/users/:id/password-reset', authenticateToken, requireGlobalRole('GLOBAL_ADMIN'), async (req, res) => {
+  try {
+    const userId = parseInt(String(req.params.id));
+    if (isNaN(userId)) {
+      return res.status(400).json({ success: false, error: 'Invalid user ID' });
+    }
+
+    const user = await getUserModel().findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const userEmail = String((user as any).email ?? '').trim();
+    const userUsername = String((user as any).username ?? '').trim() || userEmail;
+
+    if (!userEmail) {
+      return res.status(400).json({ success: false, error: 'User email is missing' });
+    }
+
+    if (userEmail.toLowerCase() === SYSTEM_USER_EMAIL.toLowerCase()) {
+      return res.status(400).json({ success: false, error: 'Cannot reset password for the System user' });
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    const adapter = getAdapter();
+    await adapter.execute(
+      `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at, created_by_user_id)
+       VALUES (?, ?, ?, ?)`,
+      [userId, tokenHash, dbDateParam(expiresAt), req.user!.userId]
+    );
+
+    const baseUrl = (process.env.APP_URL && String(process.env.APP_URL).trim())
+      ? String(process.env.APP_URL)
+      : `${req.protocol}://${req.get('host')}`;
+    const reset_url = buildPasswordResetUrl(token, baseUrl);
+
+    const emailResult = await sendPasswordResetEmailIfConfigured({
+      to: userEmail,
+      username: userUsername,
+      requesterName: String(req.user?.email || 'An Admin'),
+      resetUrl: reset_url,
+      expiresAtIso: expiresAt.toISOString(),
+    });
+
+    try {
+      await logActivity({
+        actorUserId: req.user!.userId,
+        action: 'USER_UPDATED',
+        summary: `Requested password reset for ${userUsername}${userEmail ? ` (${userEmail})` : ''}`,
+        metadata: {
+          target_user_id: userId,
+          email: userEmail,
+          username: userUsername,
+          expires_at: expiresAt.toISOString(),
+          email_sent: emailResult.email_sent,
+          email_error: emailResult.email_error ?? null,
+        },
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to log password reset request activity:', error);
+    }
+
+    const responseMessage = emailResult.email_sent
+      ? 'Password reset email sent'
+      : emailResult.email_error === 'SMTP not configured'
+        ? 'Password reset link created (SMTP not configured)'
+        : 'Password reset link created (SMTP error)';
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        reset_url,
+        email_sent: emailResult.email_sent,
+        ...(emailResult.email_error ? { email_error: emailResult.email_error } : {}),
+        expires_at: expiresAt.toISOString(),
+      },
+      message: responseMessage,
+    });
+  } catch (error) {
+    console.error('Error creating password reset link:', error);
+    return res.status(500).json({ success: false, error: 'Failed to create password reset link' });
+  }
+});
+
+/**
  * GET /api/admin/users/:id/sites - List user site memberships
  */
 router.get('/users/:id/sites', authenticateToken, requireAdminAccess, async (req, res) => {
@@ -1428,6 +1669,8 @@ router.delete('/users/:id', authenticateToken, requireGlobalRole('GLOBAL_ADMIN')
   try {
     const userId = parseInt(String(req.params.id));
 
+    const cascadeDelete = parseBooleanQueryParam(req.query.cascade);
+
     const requesterRole = req.user!.role as string;
     if (requesterRole !== 'GLOBAL_ADMIN') {
       return res.status(403).json({
@@ -1455,6 +1698,13 @@ router.delete('/users/:id', authenticateToken, requireGlobalRole('GLOBAL_ADMIN')
     const deletedUsername = String((user as any).username ?? '').trim();
     const deletedEmail = String((user as any).email ?? '').trim();
 
+    if (deletedEmail.toLowerCase() === SYSTEM_USER_EMAIL.toLowerCase()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot delete the System user',
+      });
+    }
+
     // requesterRole is GLOBAL_ADMIN (enforced above)
 
     // Prevent self-deletion
@@ -1465,11 +1715,20 @@ router.delete('/users/:id', authenticateToken, requireGlobalRole('GLOBAL_ADMIN')
       });
     }
 
-    // Hard-delete user and their associated data
+    // Delete user. Default behavior is to reassign created data to "System".
+    // Optional cascade delete is supported via ?cascade=true
     // NOTE: schema uses labels.created_by and sites.created_by (not user_id)
     const adapter = getAdapter();
     try {
       await adapter.beginTransaction();
+
+      if (!cascadeDelete) {
+        const systemUserId = await ensureSystemUserId(adapter);
+
+        // Reassign created content so deleting the user doesn't remove it via FK cascades.
+        await adapter.execute('UPDATE labels SET created_by = ? WHERE created_by = ?', [systemUserId, userId]);
+        await adapter.execute('UPDATE sites SET created_by = ? WHERE created_by = ?', [systemUserId, userId]);
+      }
 
       // Invitations sent by this user
       await adapter.execute(
@@ -1481,9 +1740,11 @@ router.delete('/users/:id', authenticateToken, requireGlobalRole('GLOBAL_ADMIN')
       // Memberships for this user
       await adapter.execute('DELETE FROM site_memberships WHERE user_id = ?', [userId]);
 
-      // Data created/owned by this user
-      await adapter.execute('DELETE FROM labels WHERE created_by = ?', [userId]);
-      await adapter.execute('DELETE FROM sites WHERE created_by = ?', [userId]);
+      if (cascadeDelete) {
+        // Data created/owned by this user
+        await adapter.execute('DELETE FROM labels WHERE created_by = ?', [userId]);
+        await adapter.execute('DELETE FROM sites WHERE created_by = ?', [userId]);
+      }
 
       // Finally delete the user
       await adapter.execute('DELETE FROM users WHERE id = ?', [userId]);
@@ -1503,6 +1764,8 @@ router.delete('/users/:id', authenticateToken, requireGlobalRole('GLOBAL_ADMIN')
           target_user_id: userId,
           username: deletedUsername,
           email: deletedEmail,
+          cascade: cascadeDelete,
+          reassigned_created_content_to_system: !cascadeDelete,
         },
       });
     } catch (error) {

@@ -49,6 +49,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
   const [labelsRefreshToken, setLabelsRefreshToken] = useState(0);
   const [createLabelOpen, setCreateLabelOpen] = useState(false);
   const [createSuccessOpen, setCreateSuccessOpen] = useState(false);
+  const [creatingLabels, setCreatingLabels] = useState(false);
   const [createdLabels, setCreatedLabels] = useState<Label[]>([]);
   const [createdMeta, setCreatedMeta] = useState<{ created_count: number; first_ref_number: number; last_ref_number: number } | null>(null);
   const [rangeStart, setRangeStart] = useState('');
@@ -108,18 +109,21 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
 
   const handleCreateLabel = async (data: CreateLabelData) => {
     if (!site) return;
-    const resp = await apiClient.createLabel({
-      source_location_id: data.source_location_id,
-      destination_location_id: data.destination_location_id,
-      cable_type_id: data.cable_type_id,
-      notes: data.notes,
-      site_id: site.id,
-      quantity: data.quantity,
-    });
+    try {
+      setCreatingLabels(true);
 
-    if (!resp.success || !resp.data?.label) {
-      throw new Error(resp.error || 'Failed to create label');
-    }
+      const resp = await apiClient.createLabel({
+        source_location_id: data.source_location_id,
+        destination_location_id: data.destination_location_id,
+        cable_type_id: data.cable_type_id,
+        notes: data.notes,
+        site_id: site.id,
+        quantity: data.quantity,
+      });
+
+      if (!resp.success || !resp.data?.label) {
+        throw new Error(resp.error || 'Failed to create label');
+      }
 
     const createdCount = Number((resp.data as any)?.created_count ?? ((resp.data as any)?.labels?.length ?? 1));
     const firstRefNumber = Number((resp.data as any)?.first_ref_number ?? (resp.data as any)?.label?.ref_number);
@@ -136,11 +140,14 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
     const labels = (resp.data as any)?.labels && Array.isArray((resp.data as any)?.labels)
       ? ((resp.data as any).labels as Label[])
       : ((resp.data as any)?.label ? ([(resp.data as any).label] as Label[]) : []);
-    setCreatedLabels(labels);
-    setCreateLabelOpen(false);
-    setCreateSuccessOpen(true);
-    setLabelsRefreshToken((t) => t + 1);
-    await loadSite();
+      setCreatedLabels(labels);
+      setCreateLabelOpen(false);
+      setCreateSuccessOpen(true);
+      setLabelsRefreshToken((t) => t + 1);
+      await loadSite();
+    } finally {
+      setCreatingLabels(false);
+    }
   };
 
   const createdRange = useMemo(() => {
@@ -514,7 +521,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
               <LabelForm
                 onSubmit={handleCreateLabel}
                 onCancel={() => setCreateLabelOpen(false)}
-                isLoading={false}
+                isLoading={creatingLabels}
                 lockedSiteId={site.id}
                 lockedSiteCode={site.code}
                 lockedSiteName={site.name}

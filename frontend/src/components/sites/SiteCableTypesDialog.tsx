@@ -46,6 +46,13 @@ const SiteCableTypesDialog: React.FC<SiteCableTypesDialogProps> = ({
 
   const [editing, setEditing] = useState<CableType | null>(null);
 
+  const [updateConfirmOpen, setUpdateConfirmOpen] = useState(false);
+  const [updateUsageCount, setUpdateUsageCount] = useState<number>(0);
+  const [pendingUpdate, setPendingUpdate] = useState<{
+    cableTypeId: number;
+    payload: { name: string; description?: string | null };
+  } | null>(null);
+
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteCableType, setDeleteCableType] = useState<CableType | null>(null);
 
@@ -86,6 +93,11 @@ const SiteCableTypesDialog: React.FC<SiteCableTypesDialogProps> = ({
     setError(null);
   };
 
+  const runUpdate = async (cableTypeId: number, payload: { name: string; description?: string | null }) => {
+    const resp = await apiClient.updateSiteCableType(siteId, cableTypeId, payload);
+    if (!resp.success) throw new Error(resp.error || 'Failed to update cable type');
+  };
+
   const handleSubmit = async () => {
     const trimmedName = name.trim();
     if (!trimmedName) {
@@ -98,11 +110,26 @@ const SiteCableTypesDialog: React.FC<SiteCableTypesDialogProps> = ({
       setError(null);
 
       if (editing?.id) {
-        const resp = await apiClient.updateSiteCableType(siteId, editing.id, {
+        const payload = {
           name: trimmedName,
           description: description.trim() ? description.trim() : null,
-        });
-        if (!resp.success) throw new Error(resp.error || 'Failed to update cable type');
+        };
+
+        // Warn before updating a cable type that is already in use.
+        const usageResp = await apiClient.getSiteCableTypeUsage(siteId, editing.id);
+        if (!usageResp.success || !usageResp.data) {
+          throw new Error(usageResp.error || 'Failed to check cable type usage');
+        }
+
+        const inUse = Number((usageResp.data as any).usage?.cables_using_type ?? 0);
+        if (inUse > 0) {
+          setPendingUpdate({ cableTypeId: editing.id, payload });
+          setUpdateUsageCount(inUse);
+          setUpdateConfirmOpen(true);
+          return;
+        }
+
+        await runUpdate(editing.id, payload);
       } else {
         const resp = await apiClient.createSiteCableType(siteId, {
           name: trimmedName,
@@ -118,6 +145,37 @@ const SiteCableTypesDialog: React.FC<SiteCableTypesDialogProps> = ({
       setError(err instanceof Error ? err.message : 'Failed to save cable type');
     } finally {
       setWorking(false);
+    }
+  };
+
+  const confirmUpdate = async () => {
+    if (!pendingUpdate) return;
+    try {
+      setWorking(true);
+      setError(null);
+
+      await runUpdate(pendingUpdate.cableTypeId, pendingUpdate.payload);
+
+      setUpdateConfirmOpen(false);
+      setPendingUpdate(null);
+      setUpdateUsageCount(0);
+
+      resetForm();
+      await load();
+      onChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update cable type');
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const handleUpdateConfirmOpenChange = (next: boolean) => {
+    if (working) return;
+    setUpdateConfirmOpen(next);
+    if (!next) {
+      setPendingUpdate(null);
+      setUpdateUsageCount(0);
     }
   };
 
@@ -285,6 +343,31 @@ const SiteCableTypesDialog: React.FC<SiteCableTypesDialogProps> = ({
                 disabled={!deleteCableType?.id || working}
               >
                 {working ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Delete'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={updateConfirmOpen} onOpenChange={handleUpdateConfirmOpenChange}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Update Cable Type</AlertDialogTitle>
+              <AlertDialogDescription>
+                This cable type is currently used by <span className="font-medium text-foreground">{updateUsageCount}</span>{' '}
+                {updateUsageCount === 1 ? 'cable' : 'cables'}. Updating it will apply to all existing cable refs that use this cable type.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={working}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  void confirmUpdate();
+                }}
+                disabled={!pendingUpdate || working}
+              >
+                {working ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Proceed'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

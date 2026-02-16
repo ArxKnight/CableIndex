@@ -53,6 +53,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsLabel, setDetailsLabel] = useState<LabelWithSiteInfo | null>(null);
   const [multiSelectEnabled, setMultiSelectEnabled] = useState(false);
+  const [goToPageInput, setGoToPageInput] = useState('');
   const [locations, setLocations] = useState<SiteLocation[]>([]);
   const [loadingLocations, setLoadingLocations] = useState(false);
   const [cableTypes, setCableTypes] = useState<CableType[]>([]);
@@ -96,6 +97,11 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
     total: 0,
     has_more: false,
   });
+
+  const currentLimit = searchParams.limit || 25;
+  const currentOffset = searchParams.offset || 0;
+  const currentPage = Math.floor(currentOffset / currentLimit) + 1;
+  const totalPages = Math.max(1, Math.ceil(pagination.total / currentLimit));
 
   // Load sites for filter dropdown
   useEffect(() => {
@@ -366,7 +372,7 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
   // Handle pagination
   const handlePageChange = (direction: 'prev' | 'next') => {
     const currentOffset = searchParams.offset || 0;
-    const currentLimit = searchParams.limit || 10;
+    const currentLimit = searchParams.limit || 25;
     const newOffset = direction === 'next' 
       ? currentOffset + currentLimit
       : Math.max(0, currentOffset - currentLimit);
@@ -376,6 +382,25 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
       offset: newOffset,
     }));
   };
+
+  const canGoToPage = useMemo(() => {
+    const parsed = Number(goToPageInput);
+    if (!Number.isFinite(parsed)) return false;
+    const page = Math.floor(parsed);
+    if (page < 1 || page > totalPages) return false;
+    return page !== currentPage;
+  }, [goToPageInput, totalPages, currentPage]);
+
+  const handleGoToPage = useCallback(() => {
+    const parsed = Number(goToPageInput);
+    if (!Number.isFinite(parsed)) return;
+    const page = Math.min(totalPages, Math.max(1, Math.floor(parsed)));
+    const newOffset = (page - 1) * currentLimit;
+    setSearchParams((prev) => ({
+      ...prev,
+      offset: newOffset,
+    }));
+  }, [goToPageInput, totalPages, currentLimit]);
 
   // Handle label selection
   const toggleLabelSelection = (labelId: number) => {
@@ -876,16 +901,47 @@ const LabelDatabase: React.FC<LabelDatabaseProps> = ({
       )}
 
       {/* Pagination */}
-      {pagination.total > (searchParams.limit || 10) && (
+      {pagination.total > currentLimit && (
         <div className="flex items-center justify-between">
           <div className="text-sm text-muted-foreground">
-            Showing {(searchParams.offset || 0) + 1} to {Math.min((searchParams.offset || 0) + (searchParams.limit || 10), pagination.total)} of {pagination.total} labels
+            Showing {currentOffset + 1} to {Math.min(currentOffset + currentLimit, pagination.total)} of {pagination.total} labels
           </div>
           
           <div className="flex gap-2">
             <div className="text-sm text-muted-foreground flex items-center px-2">
-              Page {Math.floor((searchParams.offset || 0) / (searchParams.limit || 25)) + 1} of {Math.max(1, Math.ceil(pagination.total / (searchParams.limit || 25)))}
+              Page {currentPage} of {totalPages}
             </div>
+
+            <div className="flex items-center gap-2">
+              <div className="text-sm text-muted-foreground">Go To Page</div>
+              <Input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={totalPages}
+                step={1}
+                value={goToPageInput}
+                onChange={(e) => setGoToPageInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (canGoToPage) handleGoToPage();
+                  }
+                }}
+                className="w-24 h-9"
+                aria-label="Go to page number"
+                placeholder={String(currentPage)}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleGoToPage}
+                disabled={!canGoToPage}
+              >
+                Go
+              </Button>
+            </div>
+
             <Button
               variant="outline"
               size="sm"

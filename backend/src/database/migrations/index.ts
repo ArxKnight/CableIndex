@@ -15,6 +15,7 @@ import { Migration012_LocationTemplates } from './012_location_templates.js';
 import { Migration013_DropSiteLocationName } from './013_drop_site_location_name.js';
 import { Migration014_UserActivity } from './014_user_activity.js';
 import { Migration015_ActivityLog } from './015_activity_log.js';
+import { Migration016_PasswordResetTokens } from './016_password_reset_tokens.js';
 
 export interface Migration {
   id: string;
@@ -61,6 +62,7 @@ const migrations: Migration[] = [
   Migration013_DropSiteLocationName,
   Migration014_UserActivity,
   Migration015_ActivityLog,
+  Migration016_PasswordResetTokens,
 ];
 
 export async function runMigrations(): Promise<void> {

@@ -1,15 +1,52 @@
 import express from 'express';
 import { z } from 'zod';
+import crypto from 'crypto';
 import UserModel from '../models/User.js';
 import RoleService from '../services/RoleService.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireAdmin, requireUserManagement } from '../middleware/permissions.js';
 import { UserRole } from '../types/index.js';
 import { logActivity } from '../services/ActivityLogService.js';
+import connection from '../database/connection.js';
+import { hashPassword } from '../utils/password.js';
 
 const router = express.Router();
 const userModel = new UserModel();
 const roleService = new RoleService();
+
+const getAdapter = () => connection.getAdapter();
+
+const SYSTEM_USER_EMAIL = 'system@cableindex.invalid';
+const SYSTEM_USER_USERNAME = 'System';
+
+const parseBooleanQueryParam = (value: unknown): boolean => {
+  if (value === true || value === 1) return true;
+  if (typeof value !== 'string') return false;
+  const v = value.trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'yes';
+};
+
+const ensureSystemUserId = async (adapter: ReturnType<typeof getAdapter>): Promise<number> => {
+  const existing = await adapter.query('SELECT id FROM users WHERE email = ? LIMIT 1', [SYSTEM_USER_EMAIL]);
+  const existingId = Number((existing as any[])?.[0]?.id);
+  if (existingId) return existingId;
+
+  const randomPassword = `sys-${crypto.randomBytes(32).toString('hex')}`;
+  const passwordHash = await hashPassword(randomPassword);
+
+  await adapter.execute(
+    'INSERT INTO users (email, password_hash, username, role, is_active) VALUES (?, ?, ?, ?, ?)',
+    [SYSTEM_USER_EMAIL, passwordHash, SYSTEM_USER_USERNAME, 'USER', 0]
+  );
+
+  const created = await adapter.query('SELECT id FROM users WHERE email = ? LIMIT 1', [SYSTEM_USER_EMAIL]);
+  const createdId = Number((created as any[])?.[0]?.id);
+  if (!createdId) {
+    throw new Error('Failed to create System user');
+  }
+
+  return createdId;
+};
 
 // Validation schemas
 const updateUserSchema = z.object({
@@ -196,6 +233,7 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
 router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const userId = parseInt(String(req.params.id));
+    const cascadeDelete = parseBooleanQueryParam(req.query.cascade);
     if (isNaN(userId)) {
       return res.status(400).json({
         success: false,
@@ -223,13 +261,32 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     const deletedUsername = String((existingUser as any).username ?? '').trim();
     const deletedEmail = String((existingUser as any).email ?? '').trim();
 
-    // Delete user
-    const deleted = await userModel.delete(userId);
-    if (!deleted) {
-      return res.status(500).json({
+    if (deletedEmail.toLowerCase() === SYSTEM_USER_EMAIL.toLowerCase()) {
+      return res.status(400).json({
         success: false,
-        error: 'Failed to delete user',
+        error: 'Cannot delete the System user',
       });
+    }
+
+    const adapter = getAdapter();
+    try {
+      await adapter.beginTransaction();
+
+      if (!cascadeDelete) {
+        const systemUserId = await ensureSystemUserId(adapter);
+        await adapter.execute('UPDATE labels SET created_by = ? WHERE created_by = ?', [systemUserId, userId]);
+        await adapter.execute('UPDATE sites SET created_by = ? WHERE created_by = ?', [systemUserId, userId]);
+      }
+
+      const deleteResult = await adapter.execute('DELETE FROM users WHERE id = ?', [userId]);
+      if (!deleteResult.affectedRows) {
+        throw new Error('Failed to delete user');
+      }
+
+      await adapter.commit();
+    } catch (err) {
+      await adapter.rollback();
+      throw err;
     }
 
     try {
@@ -241,6 +298,8 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
           target_user_id: userId,
           username: deletedUsername,
           email: deletedEmail,
+          cascade: cascadeDelete,
+          reassigned_created_content_to_system: !cascadeDelete,
         },
       });
     } catch (error) {

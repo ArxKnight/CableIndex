@@ -7,6 +7,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { ApiResponse } from '../types/index.js';
 import connection from '../database/connection.js';
 import { logActivity } from '../services/ActivityLogService.js';
+import crypto from 'crypto';
 
 const router = Router();
 const userModel = new UserModel();
@@ -396,6 +397,134 @@ router.put('/password', authenticateToken, async (req: Request, res: Response) =
 
     console.error('Change password error:', error);
     res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+    } as ApiResponse);
+  }
+});
+
+/**
+ * POST /api/auth/password-reset
+ * Confirm a password reset using a token (public)
+ */
+router.post('/password-reset', async (req: Request, res: Response) => {
+  try {
+    const schema = z.object({
+      token: z.string().min(1, 'Token is required'),
+      password: z.string().min(8, 'Password must be at least 8 characters'),
+    });
+
+    const parsed = schema.parse(req.body);
+
+    const passwordValidation = validatePassword(parsed.password);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password does not meet requirements',
+        details: passwordValidation.errors,
+      } as ApiResponse);
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(parsed.token).digest('hex');
+    const adapter = connection.getAdapter();
+    const now = new Date();
+
+    await adapter.beginTransaction();
+    try {
+      const rows = await adapter.query(
+        `SELECT id, user_id, expires_at, used_at
+         FROM password_reset_tokens
+         WHERE token_hash = ?
+         LIMIT 1`,
+        [tokenHash]
+      );
+
+      const record = (rows as any[])?.[0];
+      if (!record) {
+        await adapter.rollback();
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid or expired password reset token',
+        } as ApiResponse);
+      }
+
+      if (record.used_at) {
+        await adapter.rollback();
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid or expired password reset token',
+        } as ApiResponse);
+      }
+
+      const expiresAt = new Date(record.expires_at);
+      if (Number.isNaN(expiresAt.getTime()) || expiresAt <= now) {
+        await adapter.rollback();
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid or expired password reset token',
+        } as ApiResponse);
+      }
+
+      const userId = Number(record.user_id);
+      if (!Number.isFinite(userId) || userId <= 0) {
+        await adapter.rollback();
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid or expired password reset token',
+        } as ApiResponse);
+      }
+
+      const ok = await userModel.updatePassword(userId, parsed.password);
+      if (!ok) {
+        throw new Error('Failed to update password');
+      }
+
+      const usedResult = await adapter.execute(
+        'UPDATE password_reset_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL',
+        [now, Number(record.id)]
+      );
+      if (usedResult.affectedRows === 0) {
+        throw new Error('Failed to mark reset token as used');
+      }
+
+      await adapter.commit();
+    } catch (error) {
+      await adapter.rollback();
+      throw error;
+    }
+
+    try {
+      const rows = await connection.getAdapter().query(
+        'SELECT u.id FROM password_reset_tokens prt JOIN users u ON u.id = prt.user_id WHERE prt.token_hash = ? LIMIT 1',
+        [tokenHash]
+      );
+      const userId = Number((rows as any[])?.[0]?.id);
+      if (Number.isFinite(userId) && userId > 0) {
+        await logActivity({
+          actorUserId: userId,
+          action: 'PASSWORD_CHANGED',
+          summary: 'Reset password via reset link',
+        });
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to log password reset activity:', error);
+    }
+
+    return res.json({
+      success: true,
+      message: 'Password reset successfully',
+    } as ApiResponse);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        details: error.errors,
+      } as ApiResponse);
+    }
+
+    console.error('Password reset error:', error);
+    return res.status(500).json({
       success: false,
       error: 'Internal server error',
     } as ApiResponse);

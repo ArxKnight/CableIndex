@@ -227,6 +227,13 @@ class ApiClient {
     });
   }
 
+  async resetPassword(data: { token: string; password: string }) {
+    return this.request('/auth/password-reset', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   // Site endpoints
   async getSites(params?: { search?: string; limit?: number; offset?: number; include_counts?: boolean }) {
     const searchParams = new URLSearchParams();
@@ -349,6 +356,10 @@ class ApiClient {
       method: 'PUT',
       body: JSON.stringify(data),
     });
+  }
+
+  async getSiteCableTypeUsage(siteId: number, cableTypeId: number) {
+    return this.request<{ usage: { cables_using_type: number } }>(`/sites/${siteId}/cable-types/${cableTypeId}/usage`);
   }
 
   async deleteSiteCableType(siteId: number, cableTypeId: number) {
@@ -481,8 +492,9 @@ class ApiClient {
     });
   }
 
-  async deleteUser(userId: number) {
-    return this.request(`/admin/users/${userId}`, { method: 'DELETE' });
+  async deleteUser(userId: number, options?: { cascade?: boolean }) {
+    const query = options?.cascade ? '?cascade=true' : '';
+    return this.request(`/admin/users/${userId}${query}`, { method: 'DELETE' });
   }
 
   async inviteUser(

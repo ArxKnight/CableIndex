@@ -220,6 +220,27 @@ export class UserModel {
 
     return rows.length > 0;
   }
+
+  /**
+   * Check if username exists
+   */
+  async usernameExists(username: string, excludeId?: number): Promise<boolean> {
+    const normalizedUsername = normalizeUsername(username);
+    let rows;
+    if (excludeId) {
+      rows = await this.adapter.query(
+        'SELECT 1 FROM users WHERE username = ? AND id != ?',
+        [normalizedUsername, excludeId]
+      );
+    } else {
+      rows = await this.adapter.query(
+        'SELECT 1 FROM users WHERE username = ?',
+        [normalizedUsername]
+      );
+    }
+
+    return rows.length > 0;
+  }
 }
 
 export default UserModel;

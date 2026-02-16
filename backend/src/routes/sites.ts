@@ -139,7 +139,12 @@ const createCableTypeSchema = z.object({
 
 const updateCableTypeSchema = z.object({
   name: z.string().min(1, 'Cable type name is required').max(255, 'Cable type name must be less than 255 characters').optional(),
-  description: z.string().max(1000, 'Description must be less than 1000 characters').optional().or(z.literal('')),
+  // Frontend may send null to clear description
+  description: z.union([
+    z.string().max(1000, 'Description must be less than 1000 characters'),
+    z.literal(''),
+    z.null(),
+  ]).optional(),
 });
 
 /**
@@ -944,6 +949,55 @@ router.get(
       }
 
       console.error('List cable types error:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+      } as ApiResponse);
+    }
+  }
+);
+
+/**
+ * GET /api/sites/:id/cable-types/:cableTypeId/usage
+ * Return usage count for a cable type (site admins only)
+ */
+router.get(
+  '/:id/cable-types/:cableTypeId/usage',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req: Request, res: Response) => {
+    try {
+      const { id } = siteIdSchema.parse(req.params);
+      const { cableTypeId } = cableTypeIdSchema.parse(req.params);
+
+      const cableType = await cableTypeModel.findById(cableTypeId, id);
+      if (!cableType) {
+        return res.status(404).json({
+          success: false,
+          error: 'Cable type not found',
+        } as ApiResponse);
+      }
+
+      const inUseCount = await cableTypeModel.countLabelsUsingType(id, cableTypeId);
+      return res.json({
+        success: true,
+        data: {
+          usage: {
+            cables_using_type: inUseCount,
+          },
+        },
+      } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          details: error.errors,
+        } as ApiResponse);
+      }
+
+      console.error('Cable type usage error:', error);
       return res.status(500).json({
         success: false,
         error: 'Internal server error',

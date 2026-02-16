@@ -64,6 +64,7 @@ async function clearAllTables(adapter: DatabaseAdapter): Promise<void> {
   const tables = [
     'invitation_sites',
     'invitations',
+    'password_reset_tokens',
     'labels',
     'site_memberships',
     'site_counters',

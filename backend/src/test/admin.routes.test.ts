@@ -848,4 +848,84 @@ describe('Admin Routes', () => {
       expect(response.body.error).toContain('Invalid default user role');
     });
   });
+
+  describe('POST /api/admin/users/:id/password-reset + POST /api/auth/password-reset', () => {
+    it('should create a password reset link and persist a token', async () => {
+      const response = await request(app)
+        .post(`/api/admin/users/${regularUser.id}/password-reset`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({})
+        .expect(201);
+
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toHaveProperty('reset_url');
+      expect(response.body.data).toHaveProperty('email_sent');
+      expect(response.body.data).toHaveProperty('expires_at');
+
+      const resetUrlStr = String(response.body.data.reset_url);
+      const url = resetUrlStr.startsWith('http')
+        ? new URL(resetUrlStr)
+        : new URL(resetUrlStr, 'http://example.local');
+      const token = url.searchParams.get('token');
+      expect(token).toBeTruthy();
+
+      // In tests, SMTP is typically not configured; assert the API still returns a link.
+      expect(response.body.data.email_sent).toBe(false);
+      expect(response.body.data.email_error).toBeDefined();
+
+      const tokenHash = crypto.createHash('sha256').update(String(token)).digest('hex');
+      const rows = await db.query(
+        'SELECT user_id, token_hash, expires_at, used_at FROM password_reset_tokens WHERE token_hash = ? LIMIT 1',
+        [tokenHash]
+      );
+      expect(rows).toHaveLength(1);
+      expect(Number(rows[0].user_id)).toBe(regularUser.id);
+      expect(String(rows[0].token_hash)).toBe(tokenHash);
+      expect(rows[0].used_at).toBeNull();
+    });
+
+    it('should reset password using the token and prevent reuse', async () => {
+      const createResponse = await request(app)
+        .post(`/api/admin/users/${regularUser.id}/password-reset`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({})
+        .expect(201);
+
+      const resetUrlStr = String(createResponse.body.data.reset_url);
+      const url = resetUrlStr.startsWith('http')
+        ? new URL(resetUrlStr)
+        : new URL(resetUrlStr, 'http://example.local');
+      const token = String(url.searchParams.get('token') || '');
+      expect(token.length).toBeGreaterThan(0);
+
+      const newPassword = 'NewPassword123!';
+      const resetResponse = await request(app)
+        .post('/api/auth/password-reset')
+        .send({ token, password: newPassword })
+        .expect(200);
+
+      expect(resetResponse.body.success).toBe(true);
+      expect(resetResponse.body.message).toContain('Password reset successfully');
+
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const rows = await db.query(
+        'SELECT used_at FROM password_reset_tokens WHERE token_hash = ? LIMIT 1',
+        [tokenHash]
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].used_at).not.toBeNull();
+
+      // Old password should fail, new password should succeed.
+      const oldLogin = await userModel.verifyCredentials(regularUser.email, 'UserPassword123!');
+      expect(oldLogin).toBeNull();
+      const newLogin = await userModel.verifyCredentials(regularUser.email, newPassword);
+      expect(newLogin).not.toBeNull();
+
+      // Token reuse should be rejected.
+      await request(app)
+        .post('/api/auth/password-reset')
+        .send({ token, password: 'AnotherPassword123!' })
+        .expect(400);
+    });
+  });
 });

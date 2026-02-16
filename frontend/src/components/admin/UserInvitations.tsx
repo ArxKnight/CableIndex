@@ -478,6 +478,11 @@ const UserInvitations: React.FC = () => {
                       </div>
                       <div className="space-y-2">
                         <Label>Sites</Label>
+                        {isGlobalAdmin && hasAvailableSites && (
+                          <p className="text-xs text-muted-foreground">
+                            Optional for Global Admins — you can invite users without assigning them to a site.
+                          </p>
+                        )}
                         <div className="space-y-2 max-h-48 overflow-y-auto border rounded-md p-3">
                           {hasAvailableSites ? (
                             availableSites.map((site: Site) => (
@@ -563,7 +568,10 @@ const UserInvitations: React.FC = () => {
                         >
                           Cancel
                         </Button>
-                        <Button type="submit" disabled={isSubmitting || (hasAvailableSites && !hasSelectedSites)}>
+                        <Button
+                          type="submit"
+                          disabled={isSubmitting || (!isGlobalAdmin && hasAvailableSites && !hasSelectedSites)}
+                        >
                           {isSubmitting ? 'Sending...' : 'Send Invitation'}
                         </Button>
                       </DialogFooter>

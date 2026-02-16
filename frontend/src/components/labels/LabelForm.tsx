@@ -300,7 +300,7 @@ const LabelForm: React.FC<LabelFormProps> = ({
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {label ? 'Updating...' : 'Creating...'}
+                {label ? 'Updating...' : 'Creating Label/s'}
               </>
             ) : (
               label ? 'Update Label' : 'Create Label'

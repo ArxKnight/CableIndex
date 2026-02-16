@@ -10,6 +10,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import Layout from './components/layout/Layout'
 import AuthPage from './pages/AuthPage'
 import InviteSignupPage from './pages/InviteSignupPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import SitesPage from './pages/SitesPage'
 import ToolsPage from './pages/ToolsPage'
 import ProfilePage from './pages/ProfilePage'
@@ -97,6 +98,7 @@ function App() {
                 {/* Auth routes */}
                 <Route path="/auth/login" element={<AuthPage />} />
                 <Route path="/auth/register" element={<InviteSignupPage />} />
+                <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
                 
                 {/* Error pages */}
                 <Route path="/error" element={<ErrorPage />} />
