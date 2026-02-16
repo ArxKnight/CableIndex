@@ -5,8 +5,9 @@ import path from 'path';
 import dotenv from 'dotenv';
 import connection from '../database/connection.js';
 import { MySQLConfig } from '../database/adapters/base.js';
-import { MySQLAdapter } from '../database/adapters/mysql.js';
+import mysql from 'mysql2/promise';
 import { initializeDatabase } from '../database/init.js';
+import { LATEST_MIGRATION_ID } from '../database/migrations/index.js';
 import UserModel from '../models/User.js';
 import { isSetupComplete, setupMarkerPath } from '../utils/setup.js';
 import { validatePassword } from '../utils/password.js';
@@ -14,22 +15,37 @@ import { normalizeUsername } from '../utils/username.js';
 
 const router = express.Router();
 
-// Setup configuration schema
-const setupSchema = z.object({
-  database: z.object({
-    host: z.string(),
-    port: z.number().min(1).max(65535),
-    user: z.string(),
-    password: z.string(),
-    database: z.string(),
-    ssl: z.boolean().optional(),
-  }),
-  admin: z.object({
-    email: z.string().email(),
-    password: z.string().min(8),
-    username: z.string().min(1),
-  }),
+const databaseSchema = z.object({
+  host: z.string(),
+  port: z.number().min(1).max(65535),
+  user: z.string(),
+  password: z.string(),
+  database: z.string(),
+  ssl: z.boolean().optional(),
 });
+
+const adminSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  username: z.string().min(1),
+});
+
+// Setup configuration schema
+const setupSchema = z
+  .object({
+    database: databaseSchema,
+    reuseExistingDatabase: z.boolean().optional(),
+    admin: adminSchema.optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.reuseExistingDatabase && !data.admin) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Admin details are required when not reusing an existing database',
+        path: ['admin'],
+      });
+    }
+  });
 
 type SetupData = z.infer<typeof setupSchema>;
 
@@ -60,33 +76,119 @@ router.get('/status', async (req, res) => {
 
 /**
  * Test database connection
+ *
+ * Note: This must NOT create the database.
+ * It connects to the server, then probes whether the database exists and
+ * whether it appears to be a CableIndex installation.
  */
 router.post('/test-connection', async (req, res) => {
   try {
-    const { database } = setupSchema.pick({ database: true }).parse(req.body);
-    
-    // Create temporary connection to test
-    const testConfig: MySQLConfig = {
+    const { database } = z.object({ database: databaseSchema }).parse(req.body);
+
+    const baseConfig = {
       host: database.host,
       port: database.port,
       user: database.user,
       password: database.password,
-      database: database.database,
       ...(database.ssl ? { ssl: {} } : {}),
     };
 
-    // Test connection without affecting main connection
-    const testAdapter = new MySQLAdapter(testConfig);
-
-    await testAdapter.connect();
-    const isConnected = testAdapter.testConnection();
-    await testAdapter.disconnect();
-
-    res.json({
-      success: true,
-      connected: isConnected,
-      message: isConnected ? 'Connection successful' : 'Connection failed'
+    const serverConn = await mysql.createConnection({
+      ...baseConfig,
+      multipleStatements: false,
     });
+
+    try {
+      await serverConn.ping();
+
+      const dbName = database.database;
+      const [schemas] = await serverConn.execute(
+        'SELECT SCHEMA_NAME AS schema_name FROM information_schema.schemata WHERE SCHEMA_NAME = ? LIMIT 1',
+        [dbName],
+      );
+
+      const databaseExists = Array.isArray(schemas) && schemas.length > 0;
+
+      let cableIndexSchemaDetected = false;
+      let migrationsUpToDate: boolean | null = null;
+      let existingGlobalAdmin: { email: string; username: string; role: string } | null = null;
+      let schemaDetails: { missingTables: string[] } | null = null;
+
+      if (databaseExists) {
+        const dbConn = await mysql.createConnection({
+          ...baseConfig,
+          database: dbName,
+          multipleStatements: false,
+        });
+
+        try {
+          const requiredTables = ['users', 'sites', 'labels', 'app_settings', 'migrations'];
+          const [tables] = await dbConn.execute(
+            'SELECT TABLE_NAME AS table_name FROM information_schema.tables WHERE table_schema = ? AND table_name IN (?, ?, ?, ?, ?)',
+            [dbName, ...requiredTables],
+          );
+
+          const existing = new Set(
+            Array.isArray(tables) ? (tables as any[]).map((t) => String(t.table_name)) : [],
+          );
+          const missingTables = requiredTables.filter((t) => !existing.has(t));
+
+          cableIndexSchemaDetected = missingTables.length === 0;
+          schemaDetails = missingTables.length > 0 ? { missingTables } : null;
+
+          if (existing.has('migrations')) {
+            try {
+              if (!LATEST_MIGRATION_ID) {
+                migrationsUpToDate = null;
+              } else {
+                const [migrationRow] = await dbConn.execute(
+                  'SELECT 1 AS ok FROM migrations WHERE id = ? LIMIT 1',
+                  [LATEST_MIGRATION_ID],
+                );
+                migrationsUpToDate = Array.isArray(migrationRow) && migrationRow.length > 0;
+              }
+            } catch {
+              migrationsUpToDate = null;
+            }
+          }
+
+          if (cableIndexSchemaDetected) {
+            try {
+              const [admins] = await dbConn.execute(
+                'SELECT email, username, role FROM users WHERE role = ? ORDER BY id ASC LIMIT 1',
+                ['GLOBAL_ADMIN'],
+              );
+              if (Array.isArray(admins) && admins.length > 0) {
+                const row = admins[0] as any;
+                existingGlobalAdmin = {
+                  email: String(row.email),
+                  username: String(row.username),
+                  role: String(row.role),
+                };
+              }
+            } catch {
+              existingGlobalAdmin = null;
+            }
+          }
+        } finally {
+          await dbConn.end();
+        }
+      }
+
+      res.json({
+        success: true,
+        connected: true,
+        message: 'Connection successful',
+        databaseExists,
+        cableIndexSchemaDetected,
+        migrationsUpToDate,
+        latestMigrationId: LATEST_MIGRATION_ID ?? null,
+        existingGlobalAdmin,
+        ...(schemaDetails ? { schemaDetails } : {}),
+      });
+    } finally {
+      await serverConn.end();
+    }
   } catch (error) {
     console.error('❌ Database connection test failed:', error);
     console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack trace available');
@@ -94,7 +196,7 @@ router.post('/test-connection', async (req, res) => {
       success: false,
       connected: false,
       error: error instanceof Error ? error.message : 'Connection test failed',
-      details: error instanceof Error ? error.stack : String(error)
+      details: error instanceof Error ? error.stack : String(error),
     });
   }
 });
@@ -112,23 +214,34 @@ router.post('/complete', async (req, res) => {
       });
     }
 
-    const setupData = setupSchema.parse(req.body);
+    const setupData: SetupData = setupSchema.parse(req.body);
+    const reuseExistingDatabase = Boolean(setupData.reuseExistingDatabase);
 
-    const normalizedAdminUsername = normalizeUsername(setupData.admin.username);
-    if (!normalizedAdminUsername) {
-      return res.status(400).json({
-        success: false,
-        error: 'Admin username is required',
-      });
-    }
+    let normalizedAdminUsername: string | null = null;
+    if (!reuseExistingDatabase) {
+      if (!setupData.admin) {
+        return res.status(400).json({
+          success: false,
+          error: 'Admin details are required',
+        });
+      }
 
-    const passwordValidation = validatePassword(setupData.admin.password);
-    if (!passwordValidation.isValid) {
-      return res.status(400).json({
-        success: false,
-        error: 'Password does not meet requirements',
-        details: passwordValidation.errors,
-      });
+      normalizedAdminUsername = normalizeUsername(setupData.admin.username);
+      if (!normalizedAdminUsername) {
+        return res.status(400).json({
+          success: false,
+          error: 'Admin username is required',
+        });
+      }
+
+      const passwordValidation = validatePassword(setupData.admin.password);
+      if (!passwordValidation.isValid) {
+        return res.status(400).json({
+          success: false,
+          error: 'Password does not meet requirements',
+          details: passwordValidation.errors,
+        });
+      }
     }
     
     // Create database configuration
@@ -150,40 +263,55 @@ router.post('/complete', async (req, res) => {
       seedData: false
     });
 
-    // Create admin user
     const userModel = new UserModel();
-    
-    console.log(`📝 Creating admin user: ${setupData.admin.email}`);
-    
-    // Check if user already exists
-    let adminUser = await userModel.findByEmail(setupData.admin.email);
-    
-    if (!adminUser) {
-      // Create new admin user if doesn't exist
-      // NOTE: Pass plain password to create() - it will hash internally
-      console.log(`✓ User does not exist, creating new admin user`);
-      adminUser = await userModel.create({
-        email: setupData.admin.email,
-        password: setupData.admin.password,
-        username: normalizedAdminUsername,
-        role: 'GLOBAL_ADMIN'
-      });
-      console.log(`✓ Admin user created: ${adminUser.id} (${adminUser.email})`);
-    } else {
-      // Update existing user with new credentials
-      console.log(`⚠️  User already exists, updating credentials for: ${adminUser.email}`);
-      adminUser = await userModel.update(adminUser.id, {
-        username: normalizedAdminUsername,
-        role: 'GLOBAL_ADMIN'
-      }) || adminUser;
-      
-      // Update password if user exists
-      // NOTE: updatePassword expects plain password, it hashes internally
-      await userModel.updatePassword(adminUser.id, setupData.admin.password);
-      console.log(`✓ Admin user updated: ${adminUser.id} (${adminUser.email})`);
-    }
+    let adminUser: any;
 
-    console.log(`✓ Admin user setup complete: ${adminUser.email} (ID: ${adminUser.id})`);
+    if (reuseExistingDatabase) {
+      const admins = await connection
+        .getAdapter()
+        .query('SELECT id, email, username, role FROM users WHERE role = ? ORDER BY id ASC LIMIT 1', [
+          'GLOBAL_ADMIN',
+        ]);
+
+      if (admins.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'Existing CableIndex database detected but no GLOBAL_ADMIN user was found. Choose a different database name or create an admin user.',
+        });
+      }
+
+      adminUser = admins[0];
+      console.log(`✓ Reusing existing admin user: ${adminUser.email} (ID: ${adminUser.id})`);
+    } else {
+      console.log(`📝 Creating admin user: ${setupData.admin!.email}`);
+
+      // Check if user already exists
+      adminUser = await userModel.findByEmail(setupData.admin!.email);
+
+      if (!adminUser) {
+        console.log(`✓ User does not exist, creating new admin user`);
+        adminUser = await userModel.create({
+          email: setupData.admin!.email,
+          password: setupData.admin!.password,
+          username: normalizedAdminUsername!,
+          role: 'GLOBAL_ADMIN',
+        });
+        console.log(`✓ Admin user created: ${adminUser.id} (${adminUser.email})`);
+      } else {
+        console.log(`⚠️  User already exists, updating credentials for: ${adminUser.email}`);
+        adminUser =
+          (await userModel.update(adminUser.id, {
+            username: normalizedAdminUsername!,
+            role: 'GLOBAL_ADMIN',
+          })) || adminUser;
+
+        await userModel.updatePassword(adminUser.id, setupData.admin!.password);
+        console.log(`✓ Admin user updated: ${adminUser.id} (${adminUser.email})`);
+      }
+
+      console.log(`✓ Admin user setup complete: ${adminUser.email} (ID: ${adminUser.id})`);
+    }
 
     // Save configuration to environment file
     // Write to /app/.env instead of /app/backend/.env for proper permissions
@@ -257,7 +385,7 @@ router.post('/complete', async (req, res) => {
       fs.writeFileSync(setupMarkerPath, JSON.stringify({
         completedAt: new Date().toISOString(),
         databaseType: 'mysql',
-        adminEmail: setupData.admin.email
+        adminEmail: adminUser?.email
       }, null, 2));
       
       console.log('✅ Setup marker file created');

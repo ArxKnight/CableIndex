@@ -144,9 +144,22 @@ describe('Navigation', () => {
 
   it('should render mobile navigation on small screens', () => {
     renderNavigation();
-    
-    // Mobile navigation should be present (check for mobile container)
-    const mobileNavContainer = document.querySelector('.sm\\:hidden');
+
+    // Mobile menu toggle button should be present; menu items are hidden until opened.
+    expect(screen.getByRole('button', { name: /open menu/i })).toBeInTheDocument();
+
+    const mobileNavContainer = document.querySelector('#mobile-navigation');
     expect(mobileNavContainer).toBeInTheDocument();
+  });
+
+  it('should toggle mobile navigation items when menu button is clicked', async () => {
+    const user = userEvent.setup();
+    renderNavigation();
+
+    // In jsdom, desktop nav links exist in the DOM, so assert mobile menu state via the button label.
+    const menuButton = screen.getByRole('button', { name: /open menu/i });
+    await user.click(menuButton);
+
+    expect(screen.getByRole('button', { name: /close menu/i })).toBeInTheDocument();
   });
 });

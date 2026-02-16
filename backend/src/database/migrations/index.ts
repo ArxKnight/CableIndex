@@ -65,6 +65,8 @@ const migrations: Migration[] = [
   Migration016_PasswordResetTokens,
 ];
 
+export const LATEST_MIGRATION_ID = migrations[migrations.length - 1]?.id;
+
 export async function runMigrations(): Promise<void> {
   const adapter = connection.getAdapter();
   

@@ -1,14 +1,16 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   MapPin, 
+  Menu,
   Moon,
   Sun,
   Wrench,
   Settings, 
   ChevronDown,
   User,
-  LogOut
+  LogOut,
+  X
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePermissions } from '../../hooks/usePermissions';
@@ -59,6 +61,11 @@ const Navigation: React.FC = () => {
   const { canAccess, isAdmin } = usePermissions();
   const { theme, setTheme } = useTheme();
   const logoIconUrl = `${import.meta.env.BASE_URL}cableindex-icon.png`;
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   const handleLogout = async () => {
     try {
@@ -122,6 +129,22 @@ const Navigation: React.FC = () => {
 
           {/* User menu */}
           <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="sm:hidden"
+              aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={mobileMenuOpen}
+              aria-controls="mobile-navigation"
+              onClick={() => setMobileMenuOpen(open => !open)}
+            >
+              {mobileMenuOpen ? (
+                <X className="h-5 w-5" aria-hidden="true" />
+              ) : (
+                <Menu className="h-5 w-5" aria-hidden="true" />
+              )}
+            </Button>
             <div className="flex items-center gap-2" title="Toggle theme">
               <span className="sr-only">Toggle theme</span>
               {theme === 'dark' ? (
@@ -171,31 +194,34 @@ const Navigation: React.FC = () => {
         </div>
 
         {/* Mobile navigation */}
-        <div className="sm:hidden">
-          <div className="pt-2 pb-3 space-y-1">
-            {filteredNavItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = location.pathname === item.href;
-              
-              return (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  className={cn(
-                    'block pl-3 pr-4 py-2 border-l-4 text-base font-medium transition-colors',
-                    isActive
-                      ? 'bg-muted border-primary text-foreground'
-                      : 'border-transparent text-muted-foreground hover:bg-muted hover:border-muted hover:text-foreground'
-                  )}
-                >
-                  <div className="flex items-center">
-                    <Icon className="w-4 h-4 mr-3" />
-                    {item.name}
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
+        <div className="sm:hidden" id="mobile-navigation">
+          {mobileMenuOpen && (
+            <div className="pt-2 pb-3 space-y-1">
+              {filteredNavItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = location.pathname === item.href;
+
+                return (
+                  <Link
+                    key={item.name}
+                    to={item.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={cn(
+                      'block pl-3 pr-4 py-2 border-l-4 text-base font-medium transition-colors',
+                      isActive
+                        ? 'bg-muted border-primary text-foreground'
+                        : 'border-transparent text-muted-foreground hover:bg-muted hover:border-muted hover:text-foreground'
+                    )}
+                  >
+                    <div className="flex items-center">
+                      <Icon className="w-4 h-4 mr-3" />
+                      {item.name}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </nav>
