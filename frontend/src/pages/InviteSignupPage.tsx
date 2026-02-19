@@ -27,6 +27,7 @@ const InviteSignupPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token') || '';
+  const logoUrl = `${import.meta.env.BASE_URL}cableindex-logo.png`;
   const [inviteData, setInviteData] = useState<any>(null);
   const [isValidating, setIsValidating] = useState(false);
   const [isAccepted, setIsAccepted] = useState(false);
@@ -103,6 +104,13 @@ const InviteSignupPage: React.FC = () => {
       <div className="max-w-md w-full space-y-8">
         <div className="bg-card text-card-foreground rounded-lg border border-border shadow-sm p-8">
           <div className="text-center mb-6">
+            <div className="flex justify-center mb-4">
+              <img
+                src={logoUrl}
+                alt="CableIndex"
+                className="h-16 w-auto"
+              />
+            </div>
             <h1 className="text-2xl font-bold">Complete Your Invitation</h1>
             <p className="text-muted-foreground mt-2">
               Set your password to activate your account

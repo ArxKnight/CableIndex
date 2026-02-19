@@ -197,7 +197,25 @@ describe('Admin Routes', () => {
   });
 
   describe('GET /api/admin/invitations', () => {
+    let siteAdminUser: any;
+    let siteAdminToken: string;
+
     beforeEach(async () => {
+      siteAdminUser = await userModel.create({
+        email: 'siteadmin-invites@example.com',
+        username: 'Site Admin Invites',
+        password: 'SiteAdminPassword123!',
+        role: 'USER',
+      });
+      siteAdminToken = generateToken(siteAdminUser);
+
+      // Give this user SITE_ADMIN access to testSite only.
+      await db.execute(
+        `INSERT INTO site_memberships (site_id, user_id, site_role)
+         VALUES (?, ?, ?)`
+        , [testSite.id, siteAdminUser.id, 'SITE_ADMIN']
+      );
+
       const insertInvitation = async (opts: { email: string; token: string; username: string; siteId: number; siteRole: 'SITE_ADMIN' | 'SITE_USER' }) => {
         const tokenHash = crypto.createHash('sha256').update(opts.token).digest('hex');
           const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -263,6 +281,19 @@ describe('Admin Routes', () => {
         .expect(403);
 
       expect(response.body.success).toBe(false);
+    });
+
+    it('should scope invitations to SITE_ADMIN sites for Global Users', async () => {
+      const response = await request(app)
+        .get('/api/admin/invitations')
+        .set('Authorization', `Bearer ${siteAdminToken}`)
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      const emails = (response.body.data as any[]).map((i) => i.email);
+      expect(emails).toContain('invite1@example.com');
+      expect(emails).not.toContain('invite2@example.com');
+      expect(emails).not.toContain('nosites@example.com');
     });
   });
 
@@ -333,6 +364,36 @@ describe('Admin Routes', () => {
       );
       expect(rows).toHaveLength(1);
       expect(rows[0].site_role).toBe('SITE_ADMIN');
+    });
+
+    it('should prevent a Site Admin from removing site access for another user', async () => {
+      const response = await request(app)
+        .put(`/api/admin/users/${regularUser.id}/sites`)
+        .set('Authorization', `Bearer ${siteAdminToken}`)
+        .send({ sites: [] })
+        .expect(403);
+
+      expect(response.body.success).toBe(false);
+      expect(String(response.body.error)).toContain('cannot remove');
+    });
+
+    it('should prevent a Site Admin from demoting another Site Admin to Site User', async () => {
+      // Promote regularUser to SITE_ADMIN first.
+      await db.execute(
+        `UPDATE site_memberships SET site_role = ? WHERE site_id = ? AND user_id = ?`,
+        ['SITE_ADMIN', testSite.id, regularUser.id]
+      );
+
+      const response = await request(app)
+        .put(`/api/admin/users/${regularUser.id}/sites`)
+        .set('Authorization', `Bearer ${siteAdminToken}`)
+        .send({
+          sites: [{ site_id: testSite.id, site_role: 'SITE_USER' }],
+        })
+        .expect(403);
+
+      expect(response.body.success).toBe(false);
+      expect(String(response.body.error)).toContain('cannot demote');
     });
   });
 
@@ -628,6 +689,57 @@ describe('Admin Routes', () => {
         .expect(403);
 
       expect(response.body.success).toBe(false);
+    });
+
+    it('should scope users list for SITE_ADMIN Global Users', async () => {
+      const siteAdminUser = await userModel.create({
+        email: 'siteadmin-users@example.com',
+        username: 'Site Admin Users',
+        password: 'SiteAdminPassword123!',
+        role: 'USER',
+      });
+      const siteAdminToken = generateToken(siteAdminUser);
+
+      // Put the SITE_ADMIN user in testSite, and seed a regular member in testSite.
+      await db.execute(
+        `INSERT INTO site_memberships (site_id, user_id, site_role)
+         VALUES (?, ?, ?)`
+        , [testSite.id, siteAdminUser.id, 'SITE_ADMIN']
+      );
+      await db.execute(
+        `INSERT INTO site_memberships (site_id, user_id, site_role)
+         VALUES (?, ?, ?)`
+        , [testSite.id, regularUser.id, 'SITE_USER']
+      );
+
+      // Create a Global Admin who is not in the site admin's scope (member of extraSite only)
+      const outOfScopeGlobalAdmin = await userModel.create({
+        email: 'global-out@example.com',
+        username: 'Global Out',
+        password: 'AdminPassword123!',
+        role: 'GLOBAL_ADMIN',
+      });
+      await db.execute(
+        `INSERT INTO site_memberships (site_id, user_id, site_role)
+         VALUES (?, ?, ?)`
+        , [extraSite.id, outOfScopeGlobalAdmin.id, 'SITE_ADMIN']
+      );
+
+      const response = await request(app)
+        .get('/api/admin/users')
+        .set('Authorization', `Bearer ${siteAdminToken}`)
+        .expect(200);
+
+      expect(response.body.success).toBe(true);
+      const emails = (response.body.data.users as any[]).map((u) => u.email);
+
+      // Includes users in testSite (including the creator/adminUser) ...
+      expect(emails).toContain(adminUser.email);
+      expect(emails).toContain(siteAdminUser.email);
+      expect(emails).toContain(regularUser.email);
+
+      // ... but excludes Global Admins not in any shared admin-scoped site.
+      expect(emails).not.toContain(outOfScopeGlobalAdmin.email);
     });
   });
 

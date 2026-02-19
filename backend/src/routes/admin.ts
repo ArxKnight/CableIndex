@@ -1080,19 +1080,6 @@ router.get('/users', authenticateToken, requireAdminAccess, async (req, res) => 
         ORDER BY u.created_at DESC`
       );
     } else {
-      const siteRows = await getAdapter().query(
-        `SELECT site_id FROM site_memberships WHERE user_id = ? AND site_role = 'SITE_ADMIN'`,
-        [req.user!.userId]
-      );
-      const siteIds = siteRows.map((row: any) => row.site_id);
-      if (siteIds.length === 0) {
-        return res.json({
-          success: true,
-          data: { users: [] },
-        });
-      }
-
-      const placeholders = siteIds.map(() => '?').join(', ');
       users = await getAdapter().query(
         `SELECT 
           u.id,
@@ -1124,11 +1111,15 @@ router.get('/users', authenticateToken, requireAdminAccess, async (req, res) => 
             GROUP BY actor_user_id
           ) mx ON mx.actor_user_id = al.actor_user_id AND mx.max_created_at = al.created_at
         ) alast ON alast.actor_user_id = u.id
-        JOIN site_memberships sm ON sm.user_id = u.id AND sm.site_id IN (${placeholders})
+        JOIN site_memberships sm ON sm.user_id = u.id
+        JOIN site_memberships sm_admin
+          ON sm_admin.site_id = sm.site_id
+         AND sm_admin.user_id = ?
+         AND sm_admin.site_role = 'SITE_ADMIN'
         LEFT JOIN labels l ON l.site_id = sm.site_id AND l.created_by = u.id
         GROUP BY u.id
         ORDER BY MAX(u.created_at) DESC`,
-        siteIds
+        [req.user!.userId]
       );
     }
 
@@ -1582,6 +1573,48 @@ router.put('/users/:id/sites', authenticateToken, requireAdminAccess, async (req
             success: false,
             error: 'Site Admin cannot modify their own site admin access',
           });
+        }
+      }
+
+      // SITE_ADMIN callers may not remove any site access within their scope,
+      // nor demote a SITE_ADMIN to SITE_USER within their scope.
+      {
+        const nextRoleBySiteId = new Map<number, string>();
+        for (const site of sites) {
+          nextRoleBySiteId.set(Number(site.site_id), String(site.site_role));
+        }
+
+        const scopePlaceholders = allowedSiteIds.map(() => '?').join(', ');
+        const existingRows = await getAdapter().query(
+          `SELECT site_id, site_role
+           FROM site_memberships
+           WHERE user_id = ? AND site_id IN (${scopePlaceholders})`,
+          [userId, ...allowedSiteIds]
+        );
+
+        for (const row of existingRows as any[]) {
+          const siteId = Number(row.site_id);
+          const rawExistingRole = String(row.site_role ?? '');
+          const existingRole = rawExistingRole === 'ADMIN'
+            ? 'SITE_ADMIN'
+            : rawExistingRole === 'USER'
+              ? 'SITE_USER'
+              : rawExistingRole;
+
+          const nextRole = nextRoleBySiteId.get(siteId);
+          if (!nextRole) {
+            return res.status(403).json({
+              success: false,
+              error: 'Site Admin cannot remove site access',
+            });
+          }
+
+          if (existingRole === 'SITE_ADMIN' && nextRole !== 'SITE_ADMIN') {
+            return res.status(403).json({
+              success: false,
+              error: 'Site Admin cannot demote Site Admin users',
+            });
+          }
         }
       }
     }

@@ -238,7 +238,10 @@ const SiteList: React.FC<SiteListProps> = ({
             <p className="text-muted-foreground text-center mb-4">
               {searchTerm 
                 ? 'No sites match your search criteria. Try adjusting your search terms.'
-                : 'Get started by creating your first site for cable management.'
+                : (canCreateSites
+                  ? 'Get started by creating your first site for cable management.'
+                  : 'Get started by asking your Admin for access to a site for cable management.'
+                )
               }
             </p>
             {!searchTerm && (

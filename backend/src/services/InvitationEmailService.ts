@@ -16,6 +16,132 @@ type SmtpConfig = {
   source: 'env' | 'db';
 };
 
+const getLogoUrlFromEnv = (): string | null => {
+  const raw = (process.env.LOGO_URL ?? process.env.SMTP_LOGO_URL ?? '').trim();
+  if (!raw) return null;
+  if (!raw.toLowerCase().startsWith('https://')) return null;
+  return raw;
+};
+
+const safeGetDomainFromUrl = (urlString: string): string => {
+  try {
+    const url = new URL(urlString);
+    return url.host;
+  } catch {
+    return '';
+  }
+};
+
+export const formatExpiryUTC = (expiresAtIso: string): string => {
+  try {
+    const date = new Date(expiresAtIso);
+    if (Number.isNaN(date.getTime())) return expiresAtIso;
+
+    const formatted = date.toLocaleString('en-GB', {
+      timeZone: 'UTC',
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+
+    return `${formatted} UTC`;
+  } catch {
+    return expiresAtIso;
+  }
+};
+
+const buildBrandedEmailHtml = (params: {
+  label: 'Invitation' | 'Password reset';
+  greetingName: string;
+  introLine: string;
+  actionText: string;
+  actionUrl: string;
+  expiryLine: string;
+  domainText: string;
+}): string => {
+  const logoUrl = getLogoUrlFromEnv();
+
+  const headerLeft = logoUrl
+    ? `<img src="${escapeHtmlAttr(logoUrl)}" alt="CableIndex" style="display:block; height:24px; max-height:24px; width:auto;" />`
+    : `<span style="font-size:16px; font-weight:700; color:#ffffff; letter-spacing:0.2px;">CableIndex</span>`;
+
+  const escapedActionUrlAttr = escapeHtmlAttr(params.actionUrl);
+  const escapedActionUrlText = escapeHtml(params.actionUrl);
+
+  const footerDomain = params.domainText ? escapeHtml(params.domainText) : '';
+  const footerDomainLine = footerDomain
+    ? `<p style="margin:0; font-size:12px; color:#64748b;">${footerDomain}</p>`
+    : '';
+
+  return `
+  <!doctype html>
+  <html lang="en">
+    <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>${escapeHtml(params.label)}</title>
+    </head>
+    <body style="margin:0; padding:0; background-color:#f6f8fb;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#f6f8fb; padding:24px 0;">
+        <tr>
+          <td align="center" style="padding:0 12px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%; max-width:600px;">
+              <tr>
+                <td style="background-color:#0b1020; padding:16px 20px; border-radius:12px 12px 0 0;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                    <tr>
+                      <td align="left" style="vertical-align:middle;">${headerLeft}</td>
+                      <td align="right" style="vertical-align:middle;">
+                        <span style="display:inline-block; padding:4px 10px; border:1px solid rgba(255,255,255,0.25); border-radius:999px; font-size:12px; color:#e2e8f0;">${escapeHtml(
+                          params.label
+                        )}</span>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td style="background-color:#ffffff; padding:22px 20px; border-radius:0 0 12px 12px; box-shadow:0 8px 24px rgba(15,23,42,0.08);">
+                  <p style="margin:0 0 12px 0; font-size:14px; color:#0f172a;">Hi ${escapeHtml(params.greetingName)},</p>
+                  <p style="margin:0 0 16px 0; font-size:14px; color:#334155;">${escapeHtml(params.introLine)}</p>
+
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:18px 0 18px 0;">
+                    <tr>
+                      <td align="center" bgcolor="#2563eb" style="border-radius:10px;">
+                        <a href="${escapedActionUrlAttr}" style="display:inline-block; padding:12px 18px; font-size:14px; font-weight:600; color:#ffffff; text-decoration:none; border-radius:10px;">${escapeHtml(
+                          params.actionText
+                        )}</a>
+                      </td>
+                    </tr>
+                  </table>
+
+                  <p style="margin:0 0 10px 0; font-size:13px; color:#334155;">${escapeHtml(params.expiryLine)}</p>
+
+                  <div style="margin-top:18px; padding-top:14px; border-top:1px solid #e2e8f0;">
+                    <p style="margin:0 0 6px 0; font-size:12px; color:#475569;"><strong>Button not working?</strong> Copy and paste this URL into your browser:</p>
+                    <p style="margin:0; font-size:12px; color:#2563eb; word-break:break-word;">
+                      <a href="${escapedActionUrlAttr}" style="color:#2563eb; text-decoration:underline;">${escapedActionUrlText}</a>
+                    </p>
+                  </div>
+
+                  <div style="margin-top:18px; padding-top:14px; border-top:1px solid #e2e8f0;">
+                    <p style="margin:0 0 4px 0; font-size:12px; color:#475569;">— CableIndex Access Team</p>
+                    ${footerDomainLine}
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+  </html>
+  `;
+};
+
 const parseBool = (value: unknown): boolean | undefined => {
   if (value === undefined || value === null) return undefined;
   const trimmed = String(value).trim().toLowerCase();
@@ -117,21 +243,23 @@ export const sendPasswordResetEmailIfConfigured = async (params: {
     });
 
     const subject = 'CableIndex password reset';
+    const friendlyExpiry = formatExpiryUTC(params.expiresAtIso);
+
     const text =
       `Hi ${params.username},\n\n` +
-      `${params.requesterName} requested a password reset for your CableIndex account.\n\n` +
-      `Reset your password here:\n${params.resetUrl}\n\n` +
-      `This link expires at: ${params.expiresAtIso}\n`;
+      `A password reset was requested for your CableIndex account.\n\n` +
+      `Reset password:\n${params.resetUrl}\n\n` +
+      `This link expires at: ${friendlyExpiry}\n`;
 
-    const html = `
-      <p>Hi ${escapeHtml(params.username)},</p>
-      <p><strong>${escapeHtml(params.requesterName)}</strong> requested a password reset for your CableIndex account.</p>
-      <p>
-        Reset your password here:<br />
-        <a href="${escapeHtmlAttr(params.resetUrl)}">${escapeHtml(params.resetUrl)}</a>
-      </p>
-      <p>This link expires at: ${escapeHtml(params.expiresAtIso)}</p>
-    `;
+    const html = buildBrandedEmailHtml({
+      label: 'Password reset',
+      greetingName: params.username,
+      introLine: 'A password reset was requested for your CableIndex account.',
+      actionText: 'Reset password',
+      actionUrl: params.resetUrl,
+      expiryLine: `This link expires at: ${friendlyExpiry}`,
+      domainText: safeGetDomainFromUrl(params.resetUrl),
+    });
 
     await transport.sendMail({
       from: smtp.from,
@@ -168,22 +296,24 @@ export const sendInviteEmailIfConfigured = async (params: {
       auth: { user: smtp.user, pass: smtp.pass },
     });
 
-    const subject = 'You have been invited to CableIndex';
+    const subject = 'Complete your CableIndex registration';
+    const friendlyExpiry = formatExpiryUTC(params.expiresAtIso);
+
     const text =
       `Hi ${params.inviteeName},\n\n` +
-      `${params.inviterName} invited you to CableIndex.\n\n` +
-      `Complete your invitation here:\n${params.inviteUrl}\n\n` +
-      `This invitation expires at: ${params.expiresAtIso}\n`;
+      `You’ve been granted access to CableIndex.\n\n` +
+      `Complete registration:\n${params.inviteUrl}\n\n` +
+      `This invitation expires at: ${friendlyExpiry}\n`;
 
-    const html = `
-      <p>Hi ${escapeHtml(params.inviteeName)},</p>
-      <p><strong>${escapeHtml(params.inviterName)}</strong> invited you to CableIndex.</p>
-      <p>
-        Complete your invitation here:<br />
-        <a href="${escapeHtmlAttr(params.inviteUrl)}">${escapeHtml(params.inviteUrl)}</a>
-      </p>
-      <p>This invitation expires at: ${escapeHtml(params.expiresAtIso)}</p>
-    `;
+    const html = buildBrandedEmailHtml({
+      label: 'Invitation',
+      greetingName: params.inviteeName,
+      introLine: 'You’ve been granted access to CableIndex.',
+      actionText: 'Complete registration',
+      actionUrl: params.inviteUrl,
+      expiryLine: `This invitation expires at: ${friendlyExpiry}`,
+      domainText: safeGetDomainFromUrl(params.inviteUrl),
+    });
 
     await transport.sendMail({
       from: smtp.from,
