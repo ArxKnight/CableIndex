@@ -5,7 +5,7 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
-import { Download, Printer } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { splitLines } from './utils';
 import { downloadBlobAsNamedFile, makeTimestampLocal } from '../../lib/download';
 
@@ -16,7 +16,6 @@ type Layout = {
   pageWidthPx: number;
   pageHeightPx: number;
   marginPx: number;
-  printCssPageSize: string;
 };
 
 const LAYOUTS: Record<PaperSize, Layout> = {
@@ -26,7 +25,6 @@ const LAYOUTS: Record<PaperSize, Layout> = {
     pageWidthPx: 1240,
     pageHeightPx: 1754,
     marginPx: 48,
-    printCssPageSize: 'A4 portrait',
   },
   '4x6': {
     label: '4×6',
@@ -34,7 +32,6 @@ const LAYOUTS: Record<PaperSize, Layout> = {
     pageWidthPx: 600,
     pageHeightPx: 900,
     marginPx: 28,
-    printCssPageSize: '4in 6in',
   },
 };
 
@@ -83,37 +80,6 @@ async function generateQrSheetPng(payload: string, paper: PaperSize): Promise<st
   ctx.drawImage(img, qrX, qrY, qrSize, qrSize);
 
   return canvas.toDataURL('image/png');
-}
-
-function printPng(dataUrl: string, paper: PaperSize) {
-  const layout = LAYOUTS[paper];
-
-  const w = window.open('', '_blank', 'noopener,noreferrer');
-  if (!w) return;
-
-  w.document.open();
-  w.document.write(`<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>QR Gen Print</title>
-  <style>
-    @page { size: ${layout.printCssPageSize}; margin: 0; }
-    html, body { margin: 0; padding: 0; }
-    img { width: 100%; height: auto; display: block; }
-  </style>
-</head>
-<body>
-  <img src="${dataUrl}" />
-  <script>
-    window.onload = () => {
-      window.focus();
-      window.print();
-    };
-  </script>
-</body>
-</html>`);
-  w.document.close();
 }
 
 export function QrGenTool() {
@@ -209,10 +175,6 @@ export function QrGenTool() {
             <Button type="button" onClick={downloadPng} disabled={!pngDataUrl || busy}>
               <Download className="h-4 w-4 mr-2" />
               Download .png
-            </Button>
-            <Button type="button" variant="outline" disabled={!pngDataUrl || busy} onClick={() => printPng(pngDataUrl, paper)}>
-              <Printer className="h-4 w-4 mr-2" />
-              Print
             </Button>
           </div>
 
