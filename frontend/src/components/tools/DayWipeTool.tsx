@@ -26,7 +26,6 @@ export function DayWipeTool() {
   const [days, setDays] = useState<'30' | '14'>('30');
 
   const sids = useMemo(() => splitLines(sidList), [sidList]);
-  const firstSid = useMemo(() => sids.find((s) => s.trim()) || '', [sids]);
   const daysNum = days === '14' ? 14 : 30;
   const dateStr = useMemo(() => formatFutureDateDDMMYY(daysNum), [daysNum]);
   const zpl = useMemo(() => generateDayWipeZpl(sids, daysNum), [sids, daysNum]);
@@ -78,7 +77,7 @@ export function DayWipeTool() {
         zpl={zpl}
         prefix="30Day"
         disabled={sids.length === 0}
-        preview={<DayWipePreview sid={firstSid} dateStr={dateStr} />}
+        preview={<DayWipePreview sid={sidList} dateStr={dateStr} />}
       />
     </div>
   );

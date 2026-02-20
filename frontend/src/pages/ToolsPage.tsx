@@ -2,12 +2,12 @@ import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
-import { Barcode, CalendarDays, Type, Server, ArrowLeftRight, Wrench, Tag, Zap } from 'lucide-react';
-import { DayWipeTool, InRackTool, PortsTool, PduTool, RacksTool, SidTool, TextTool } from '../components/tools';
+import { Barcode, CalendarDays, Type, Server, ArrowLeftRight, Wrench, Tag, Zap, QrCode } from 'lucide-react';
+import { DayWipeTool, InRackTool, PortsTool, PduTool, QrGenTool, RacksTool, SidTool, TextTool } from '../components/tools';
 
-type ToolId = 'sid' | 'daywipe' | 'text' | 'racks' | 'inrack' | 'port' | 'pdu';
+type ToolId = 'sid' | 'daywipe' | 'text' | 'racks' | 'inrack' | 'port' | 'pdu' | 'qr';
 
-const TOOL_IDS: ToolId[] = ['sid', 'daywipe', 'text', 'racks', 'inrack', 'port', 'pdu'];
+const TOOL_IDS: ToolId[] = ['sid', 'daywipe', 'text', 'racks', 'inrack', 'port', 'pdu', 'qr'];
 
 function normalizeToolId(raw: string): ToolId {
   const lowered = raw.toLowerCase();
@@ -52,6 +52,7 @@ export function ToolsPage() {
               <TabsTrigger value="inrack" className="gap-2"><ArrowLeftRight className="h-4 w-4" />IN-RACK</TabsTrigger>
               <TabsTrigger value="port" className="gap-2"><Tag className="h-4 w-4" />PORTS</TabsTrigger>
               <TabsTrigger value="pdu" className="gap-2"><Zap className="h-4 w-4" />PDU</TabsTrigger>
+              <TabsTrigger value="qr" className="gap-2"><QrCode className="h-4 w-4" />QR GEN</TabsTrigger>
             </TabsList>
 
             <TabsContent value="sid"><SidTool /></TabsContent>
@@ -61,6 +62,7 @@ export function ToolsPage() {
             <TabsContent value="inrack"><InRackTool /></TabsContent>
             <TabsContent value="port"><PortsTool /></TabsContent>
             <TabsContent value="pdu"><PduTool /></TabsContent>
+            <TabsContent value="qr"><QrGenTool /></TabsContent>
           </Tabs>
         </CardContent>
       </Card>

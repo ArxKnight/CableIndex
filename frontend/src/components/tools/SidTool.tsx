@@ -21,7 +21,6 @@ export function SidTool() {
   const [sidList, setSidList] = useState('');
 
   const sids = useMemo(() => splitLines(sidList), [sidList]);
-  const firstSid = useMemo(() => sids.find((s) => s.trim()) || '', [sids]);
   const zpl = useMemo(() => generateSidZpl(sids), [sids]);
   const searchFriendly = useMemo(() => sids.join(', '), [sids]);
 
@@ -63,7 +62,7 @@ export function SidTool() {
         zpl={zpl}
         prefix="SID"
         disabled={sids.length === 0}
-        preview={<SidPreview sid={firstSid} />}
+        preview={<SidPreview sid={sidList} />}
       />
     </div>
   );

@@ -26,7 +26,6 @@ function generateRackZpl(racks: string[]): string {
 export function RacksTool() {
   const [rackList, setRackList] = useState('');
   const racks = useMemo(() => splitLines(rackList), [rackList]);
-  const firstRack = useMemo(() => racks.find((r) => r.trim()) || '', [racks]);
   const zpl = useMemo(() => generateRackZpl(racks), [racks]);
 
   return (
@@ -58,7 +57,7 @@ export function RacksTool() {
         zpl={zpl}
         prefix="Racks"
         disabled={racks.length === 0}
-        preview={<RackPreview rack={firstRack} />}
+        preview={<RackPreview rack={rackList} />}
       />
     </div>
   );

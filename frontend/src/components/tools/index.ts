@@ -5,3 +5,4 @@ export { RacksTool } from './RacksTool';
 export { InRackTool } from './InRackTool';
 export { PortsTool } from './PortsTool';
 export { PduTool } from './PduTool';
+export { QrGenTool } from './QrGenTool';

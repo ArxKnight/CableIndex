@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { cn } from '../../lib/utils';
+import { splitLines } from './utils';
 
 export function MatrixPlaceholder({ size = 44, className }: { size?: number; className?: string }) {
   const style = useMemo<React.CSSProperties>(
@@ -39,30 +40,40 @@ export function LabelFrame({
 }
 
 export function SidPreview({ sid }: { sid: string }) {
-  const value = sid.trim();
-  if (!value) return null;
+  const sids = splitLines(sid);
+  if (!sids.length) return null;
 
   return (
-    <LabelFrame className="flex items-center justify-between gap-3">
-      <div className="text-lg font-semibold tracking-wide truncate">{value}</div>
-      <MatrixPlaceholder size={46} />
-    </LabelFrame>
+    <div className="space-y-2">
+      {sids.slice(0, 12).map((value, idx) => (
+        <LabelFrame key={`${idx}-${value}`} className="flex items-center justify-between gap-3">
+          <div className="text-lg font-semibold tracking-wide truncate">{value}</div>
+          <MatrixPlaceholder size={46} />
+        </LabelFrame>
+      ))}
+    </div>
   );
 }
 
 export function DayWipePreview({ sid, dateStr }: { sid: string; dateStr: string }) {
-  const value = sid.trim();
-  if (!value) return null;
-
-  const line = `${value} Wipe ${dateStr}`;
+  const sids = splitLines(sid);
+  if (!sids.length) return null;
 
   return (
-    <LabelFrame>
-      <div className="flex flex-col gap-1 text-center">
-        <div className="text-sm font-semibold">{line}</div>
-        <div className="text-sm font-semibold">{line}</div>
-      </div>
-    </LabelFrame>
+    <div className="space-y-2">
+      {sids.slice(0, 12).map((value, idx) => {
+        const line = `${value} Wipe ${dateStr}`;
+
+        return (
+          <LabelFrame key={`${idx}-${value}`}>
+            <div className="flex flex-col gap-1 text-center">
+              <div className="text-sm font-semibold">{line}</div>
+              <div className="text-sm font-semibold">{line}</div>
+            </div>
+          </LabelFrame>
+        );
+      })}
+    </div>
   );
 }
 
@@ -88,20 +99,28 @@ function rackShortName(full: string): string {
 }
 
 export function RackPreview({ rack }: { rack: string }) {
-  const value = rack.trim();
-  if (!value) return null;
-
-  const short = rackShortName(value);
+  const racks = splitLines(rack);
+  if (!racks.length) return null;
 
   return (
-    <LabelFrame className="h-52 w-36 flex flex-col justify-between">
-      <div className="pt-2 text-center">
-        <div className="text-3xl font-bold tracking-wide">{short}</div>
+    <div className="max-h-[420px] overflow-auto">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {racks.slice(0, 12).map((value, idx) => {
+          const short = rackShortName(value);
+
+          return (
+            <LabelFrame key={`${idx}-${value}`} className="h-52 w-36 flex flex-col justify-between">
+              <div className="pt-2 text-center">
+                <div className="text-3xl font-bold tracking-wide">{short}</div>
+              </div>
+              <div className="pb-2 flex justify-center">
+                <MatrixPlaceholder size={62} />
+              </div>
+            </LabelFrame>
+          );
+        })}
       </div>
-      <div className="pb-2 flex justify-center">
-        <MatrixPlaceholder size={62} />
-      </div>
-    </LabelFrame>
+    </div>
   );
 }
 
@@ -140,16 +159,16 @@ export function PortsPreview(opts: {
 
   return (
     <div className="max-h-[420px] overflow-auto">
-      <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         {ports.map((p) => {
           const portStr = String(p).padStart(2, '0');
           const line2 = `${bankPrefix}${prefix} ${portStr}`.trim();
 
           return (
-            <LabelFrame key={p} className="p-2">
-              <div className="aspect-square flex flex-col items-center justify-center gap-1">
-                <div className="text-[10px] font-semibold leading-tight text-center w-full truncate">{hostname}</div>
-                <div className="text-[10px] font-semibold leading-tight text-center w-full truncate">{line2}</div>
+            <LabelFrame key={p} className="p-1">
+              <div className="h-14 w-14 flex flex-col items-center justify-center gap-1">
+                <div className="text-[11px] font-semibold leading-none text-center w-full truncate">{hostname}</div>
+                <div className="text-[11px] font-semibold leading-none text-center w-full truncate">{line2}</div>
               </div>
             </LabelFrame>
           );
@@ -172,15 +191,15 @@ export function PduPreview(opts: { pduSid: string; fromPort: number; toPort: num
 
   return (
     <div className="max-h-[420px] overflow-auto">
-      <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         {ports.map((p) => {
           const portStr = String(p).padStart(2, '0');
           const line = `${sid} ${portStr}`;
 
           return (
-            <LabelFrame key={p} className="p-2">
-              <div className="aspect-square flex items-center justify-center">
-                <div className="text-[11px] font-semibold text-center w-full truncate">{line}</div>
+            <LabelFrame key={p} className="p-1">
+              <div className="h-14 w-14 flex items-center justify-center">
+                <div className="text-[12px] font-semibold leading-tight text-center w-full truncate">{line}</div>
               </div>
             </LabelFrame>
           );
