@@ -217,7 +217,7 @@ const AppSettings: React.FC = () => {
 
               <div className="space-y-2">
                 <Label htmlFor="smtp_from">From Address</Label>
-                <Input id="smtp_from" placeholder="CableIndex <noreply@example.com>" {...register('smtp_from')} />
+                <Input id="smtp_from" placeholder="InfraDB <noreply@example.com>" {...register('smtp_from')} />
                 {errors.smtp_from && (
                   <p className="text-sm text-red-600">{errors.smtp_from.message}</p>
                 )}

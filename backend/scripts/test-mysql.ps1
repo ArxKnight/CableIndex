@@ -32,7 +32,7 @@ function Wait-MySqlReady {
   $consecutiveReady = 0
   while ($true) {
     # mysqladmin ping returns 0 when the server is accepting connections.
-    docker exec -e MYSQL_PWD=root cableindex-mysql-test mysqladmin ping -h localhost -uroot --silent 2>$null | Out-Null
+    docker exec -e MYSQL_PWD=root infradb-mysql-test mysqladmin ping -h localhost -uroot --silent 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) {
       $consecutiveReady++
       if ($consecutiveReady -ge 3) {
@@ -58,9 +58,9 @@ try {
 
   $env:MYSQL_HOST = '127.0.0.1'
   $env:MYSQL_PORT = '3307'
-  $env:MYSQL_DATABASE = 'cableindex_test'
-  $env:MYSQL_USER = 'cableindex'
-  $env:MYSQL_PASSWORD = 'cableindex'
+  $env:MYSQL_DATABASE = 'infradb_test'
+  $env:MYSQL_USER = 'infradb'
+  $env:MYSQL_PASSWORD = 'infradb'
   $env:MYSQL_ADMIN_USER = 'root'
   $env:MYSQL_ADMIN_PASSWORD = 'root'
   $env:MYSQL_SSL = 'false'

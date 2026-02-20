@@ -497,7 +497,7 @@ describe('Site Routes', () => {
 
       const zip = new AdmZip(response.body);
       const documentXml = zip.readAsText('word/document.xml');
-      expect(documentXml).toContain('CableIndex – Site Cable Report');
+      expect(documentXml).toContain('InfraDB – Site Cable Report');
       expect(documentXml).toContain('Test Site');
       expect(documentXml).toContain('TS');
       expect(documentXml).toContain('Site Location');

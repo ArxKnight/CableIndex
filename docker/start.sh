@@ -1,7 +1,7 @@
 #!/bin/sh
 
-# CableIndex Docker Startup Script
-echo "🚀 Starting CableIndex..."
+# InfraDB Docker Startup Script
+echo "🚀 Starting InfraDB..."
 
 # Load .env file if it exists
 if [ -f /app/.env ]; then
@@ -35,7 +35,7 @@ echo "   Environment: $NODE_ENV"
 echo "   Database Type: MySQL"
 echo "   MySQL Host: ${MYSQL_HOST:-localhost}"
 echo "   MySQL Port: ${MYSQL_PORT:-3306}"
-echo "   MySQL Database: ${MYSQL_DATABASE:-cableindex}"
+echo "   MySQL Database: ${MYSQL_DATABASE:-infradb}"
 echo "   MySQL User: ${MYSQL_USER:-root}"
 
 echo "   Uploads: $UPLOADS_PATH"

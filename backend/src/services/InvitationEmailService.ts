@@ -65,8 +65,8 @@ const buildBrandedEmailHtml = (params: {
   const logoUrl = getLogoUrlFromEnv();
 
   const headerLeft = logoUrl
-    ? `<img src="${escapeHtmlAttr(logoUrl)}" alt="CableIndex" style="display:block; height:24px; max-height:24px; width:auto;" />`
-    : `<span style="font-size:16px; font-weight:700; color:#ffffff; letter-spacing:0.2px;">CableIndex</span>`;
+    ? `<img src="${escapeHtmlAttr(logoUrl)}" alt="InfraDB" style="display:block; height:24px; max-height:24px; width:auto;" />`
+    : `<span style="font-size:16px; font-weight:700; color:#ffffff; letter-spacing:0.2px;">InfraDB</span>`;
 
   const escapedActionUrlAttr = escapeHtmlAttr(params.actionUrl);
   const escapedActionUrlText = escapeHtml(params.actionUrl);
@@ -128,7 +128,7 @@ const buildBrandedEmailHtml = (params: {
                   </div>
 
                   <div style="margin-top:18px; padding-top:14px; border-top:1px solid #e2e8f0;">
-                    <p style="margin:0 0 4px 0; font-size:12px; color:#475569;">— CableIndex Access Team</p>
+                    <p style="margin:0 0 4px 0; font-size:12px; color:#475569;">— InfraDB Access Team</p>
                     ${footerDomainLine}
                   </div>
                 </td>
@@ -242,19 +242,19 @@ export const sendPasswordResetEmailIfConfigured = async (params: {
       auth: { user: smtp.user, pass: smtp.pass },
     });
 
-    const subject = 'CableIndex password reset';
+    const subject = 'InfraDB password reset';
     const friendlyExpiry = formatExpiryUTC(params.expiresAtIso);
 
     const text =
       `Hi ${params.username},\n\n` +
-      `A password reset was requested for your CableIndex account.\n\n` +
+      `A password reset was requested for your InfraDB account.\n\n` +
       `Reset password:\n${params.resetUrl}\n\n` +
       `This link expires at: ${friendlyExpiry}\n`;
 
     const html = buildBrandedEmailHtml({
       label: 'Password reset',
       greetingName: params.username,
-      introLine: 'A password reset was requested for your CableIndex account.',
+      introLine: 'A password reset was requested for your InfraDB account.',
       actionText: 'Reset password',
       actionUrl: params.resetUrl,
       expiryLine: `This link expires at: ${friendlyExpiry}`,
@@ -296,19 +296,19 @@ export const sendInviteEmailIfConfigured = async (params: {
       auth: { user: smtp.user, pass: smtp.pass },
     });
 
-    const subject = 'Complete your CableIndex registration';
+    const subject = 'Complete your InfraDB registration';
     const friendlyExpiry = formatExpiryUTC(params.expiresAtIso);
 
     const text =
       `Hi ${params.inviteeName},\n\n` +
-      `You’ve been granted access to CableIndex.\n\n` +
+      `You’ve been granted access to InfraDB.\n\n` +
       `Complete registration:\n${params.inviteUrl}\n\n` +
       `This invitation expires at: ${friendlyExpiry}\n`;
 
     const html = buildBrandedEmailHtml({
       label: 'Invitation',
       greetingName: params.inviteeName,
-      introLine: 'You’ve been granted access to CableIndex.',
+      introLine: 'You’ve been granted access to InfraDB.',
       actionText: 'Complete registration',
       actionUrl: params.inviteUrl,
       expiryLine: `This invitation expires at: ${friendlyExpiry}`,
@@ -349,8 +349,8 @@ export const sendTestEmailIfConfigured = async (params: {
     await transport.sendMail({
       from: smtp.from,
       to: params.to,
-      subject: 'CableIndex SMTP test email',
-      text: 'This is a test email from CableIndex. Your SMTP settings appear to be working.',
+      subject: 'InfraDB SMTP test email',
+      text: 'This is a test email from InfraDB. Your SMTP settings appear to be working.',
     });
 
     return { email_sent: true };

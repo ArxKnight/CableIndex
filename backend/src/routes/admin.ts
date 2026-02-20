@@ -20,7 +20,7 @@ const router = express.Router();
 const getUserModel = () => new UserModel();
 const getAdapter = () => connection.getAdapter();
 
-const SYSTEM_USER_EMAIL = 'system@cableindex.invalid';
+const SYSTEM_USER_EMAIL = 'system@infradb.invalid';
 const SYSTEM_USER_USERNAME = 'System';
 
 const parseBooleanQueryParam = (value: unknown): boolean => {

@@ -1,4 +1,4 @@
-# Multi-stage build for CableIndex
+# Multi-stage build for InfraDB
 FROM node:22-slim AS base
 
 # Install dependencies only when needed
@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends gosu \
 
 # Create app user
 RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 cableindex
+RUN adduser --system --uid 1001 infradb
 
 # Install production dependencies
 COPY --from=deps /app/backend/node_modules ./backend/node_modules
@@ -59,17 +59,17 @@ RUN chmod +x start.sh entrypoint.sh
 # Create data directory for database and uploads with proper permissions
 # Must be done as root before switching users
 RUN mkdir -p /app/data && \
-    chown -R cableindex:nodejs /app/data && \
+    chown -R infradb:nodejs /app/data && \
     chmod -R 777 /app/data
 RUN mkdir -p /app/uploads && \
-    chown -R cableindex:nodejs /app/uploads && \
+    chown -R infradb:nodejs /app/uploads && \
     chmod -R 777 /app/uploads
 RUN touch /app/.env && \
-    chown cableindex:nodejs /app/.env && \
+    chown infradb:nodejs /app/.env && \
     chmod 666 /app/.env
 
-# Note: We don't switch to cableindex user here anymore
-# The entrypoint will handle permissions and then run as cableindex
+# Note: We don't switch to infradb user here anymore
+# The entrypoint will handle permissions and then run as infradb
 
 # Expose port (configurable via environment)
 EXPOSE 3000

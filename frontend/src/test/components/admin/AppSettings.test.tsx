@@ -30,7 +30,7 @@ const mockSettings = {
   smtp_port: 587,
   smtp_username: 'user@example.com',
   smtp_password_set: true,
-  smtp_from: 'CableIndex <noreply@example.com>',
+  smtp_from: 'InfraDB <noreply@example.com>',
   smtp_secure: false,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
@@ -65,7 +65,7 @@ describe('AppSettings', () => {
       expect(screen.getByDisplayValue('smtp.example.com')).toBeInTheDocument();
       expect(screen.getByDisplayValue('587')).toBeInTheDocument();
       expect(screen.getByDisplayValue('user@example.com')).toBeInTheDocument();
-      expect(screen.getByDisplayValue('CableIndex <noreply@example.com>')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('InfraDB <noreply@example.com>')).toBeInTheDocument();
     });
 
     // Check section headers

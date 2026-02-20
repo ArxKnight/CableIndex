@@ -72,7 +72,7 @@ type ConnectionProbeResult = {
   message?: string;
   error?: string;
   databaseExists?: boolean;
-  cableIndexSchemaDetected?: boolean;
+  infraDbSchemaDetected?: boolean;
   migrationsUpToDate?: boolean | null;
   latestMigrationId?: string | null;
   existingGlobalAdmin?: { email: string; username: string; role: string } | null;
@@ -103,7 +103,7 @@ const SetupPage: React.FC = () => {
         port: 3306,
         user: 'root',
         password: '',
-        database: 'cableindex',
+        database: 'infradb',
         ssl: false,
       },
       reuseExistingDatabase: false,
@@ -129,7 +129,7 @@ const SetupPage: React.FC = () => {
     return Boolean(
       connectionProbe?.connected &&
         connectionProbe.databaseExists &&
-        connectionProbe.cableIndexSchemaDetected &&
+        connectionProbe.infraDbSchemaDetected &&
         connectionProbe.existingGlobalAdmin,
     );
   }, [connectionProbe]);
@@ -178,10 +178,10 @@ const SetupPage: React.FC = () => {
 
         if (
           result.databaseExists &&
-          result.cableIndexSchemaDetected &&
+          result.infraDbSchemaDetected &&
           result.existingGlobalAdmin
         ) {
-          // Default to reuse when we clearly detect an existing CableIndex install.
+          // Default to reuse when we clearly detect an existing InfraDB install.
           setValue('reuseExistingDatabase', true, { shouldDirty: true, shouldValidate: false });
         }
       } else {
@@ -261,7 +261,7 @@ const SetupPage: React.FC = () => {
             <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
             <CardTitle>Setup Complete!</CardTitle>
             <CardDescription>
-              CableIndex has been configured successfully. You'll be redirected to the login page shortly.
+              InfraDB has been configured successfully. You'll be redirected to the login page shortly.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -275,10 +275,10 @@ const SetupPage: React.FC = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="w-6 h-6" />
-            CableIndex Setup
+            InfraDB Setup
           </CardTitle>
           <CardDescription>
-            Welcome! Let's configure your CableIndex installation.
+            Welcome! Let's configure your InfraDB installation.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -332,7 +332,7 @@ const SetupPage: React.FC = () => {
                       <Input
                         id="mysql-database"
                         {...register('database.database')}
-                        placeholder="cableindex"
+                        placeholder="infradb"
                       />
                       {errors.database?.database && (
                         <p className="text-sm text-destructive">{errors.database.database.message}</p>
@@ -375,12 +375,12 @@ const SetupPage: React.FC = () => {
                     )}
                   </div>
 
-                  {connectionStatus === 'success' && connectionProbe?.databaseExists && connectionProbe?.cableIndexSchemaDetected && (
+                  {connectionStatus === 'success' && connectionProbe?.databaseExists && connectionProbe?.infraDbSchemaDetected && (
                     <Alert>
                       <Database className="h-4 w-4" />
                       <AlertDescription className="space-y-2">
                         <div>
-                          A CableIndex database was detected in <span className="font-medium">{watch('database.database')}</span>.
+                          An InfraDB database was detected in <span className="font-medium">{watch('database.database')}</span>.
                         </div>
 
                         {typeof connectionProbe.migrationsUpToDate === 'boolean' && (
@@ -456,7 +456,7 @@ const SetupPage: React.FC = () => {
                     <User className="h-4 w-4" />
                     <AlertDescription className="space-y-2">
                       <div>
-                        Using an existing CableIndex database. Global admin credentials will not be requested.
+                        Using an existing InfraDB database. Global admin credentials will not be requested.
                       </div>
                       {connectionProbe?.existingGlobalAdmin ? (
                         <div className="text-sm text-muted-foreground">

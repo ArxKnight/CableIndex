@@ -1,22 +1,22 @@
-# CableIndex Image Assets
+# InfraDB Image Assets
 
 ## Image Files to Replace
 
-The following placeholder files can be replaced with your CableIndex logo images:
+The following placeholder files can be replaced with your InfraDB logo images:
 
-### 1. cableindex-logo.png
+### 1. infradb-logo.png
 - **Usage**: Full logo with database icon and text for login/register pages
 - **Recommended size**: 256x64px or similar aspect ratio
 - **Format**: PNG with transparent background
 - **Current**: Placeholder text file
 
-### 2. cableindex-title.png  
+### 2. infradb-title.png  
 - **Usage**: Text-only logo for headers and titles
 - **Recommended size**: 400x80px or similar aspect ratio
 - **Format**: PNG with transparent background
 - **Current**: Placeholder text file
 
-### 3. cableindex-icon.png
+### 3. infradb-icon.png
 - **Usage**: Icon only (database with cables) for navigation and favicon
 - **Recommended size**: 64x64px square
 - **Format**: PNG with transparent background
@@ -37,7 +37,7 @@ The following placeholder files can be replaced with your CableIndex logo images
 
 ## Image Locations in Code
 
-- **Navigation**: `frontend/src/components/layout/Navigation.tsx` (uses cableindex-icon.png)
-- **Login Form**: `frontend/src/components/auth/LoginForm.tsx` (uses cableindex-logo.png)  
-- **Register Form**: `frontend/src/components/auth/RegisterForm.tsx` (uses cableindex-logo.png)
-- **HTML Head**: `frontend/index.html` (uses cableindex-icon.png and favicon.ico)
+- **Navigation**: `frontend/src/components/layout/Navigation.tsx` (uses infradb-icon.png)
+- **Login Form**: `frontend/src/components/auth/LoginForm.tsx` (uses infradb-logo.png)  
+- **Register Form**: `frontend/src/components/auth/RegisterForm.tsx` (uses infradb-logo.png)
+- **HTML Head**: `frontend/index.html` (uses infradb-icon.png and favicon.ico)

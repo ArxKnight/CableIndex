@@ -8,16 +8,16 @@ $ErrorActionPreference = "Stop"
 
 Set-Location -Path $PSScriptRoot
 
-Write-Host "Building CableIndex Docker Image..." -ForegroundColor Cyan
+Write-Host "Building InfraDB Docker Image..." -ForegroundColor Cyan
 Write-Host ""
 
-$buildArgs = @("build", "-t", "arxknight/cableindex:$Tag")
+$buildArgs = @("build", "-t", "arxknight/infradb:$Tag")
 if ($NoCache) {
     $buildArgs += "--no-cache"
 }
 $buildArgs += "."
 
-Write-Host "Building image: arxknight/cableindex:$Tag" -ForegroundColor Green
+Write-Host "Building image: arxknight/infradb:$Tag" -ForegroundColor Green
 docker @buildArgs
 
 if ($LASTEXITCODE -ne 0) {
@@ -30,7 +30,7 @@ Write-Host ""
 
 if (-not $NoPush) {
     Write-Host "Pushing image to registry..." -ForegroundColor Cyan
-    docker push "arxknight/cableindex:$Tag"
+    docker push "arxknight/infradb:$Tag"
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Push failed!" -ForegroundColor Red

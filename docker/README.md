@@ -1,14 +1,14 @@
-# CableIndex Docker Setup
+# InfraDB Docker Setup
 
 ## 🐳 Docker Deployment for Unraid
 
-This guide will help you deploy CableIndex on Unraid using Docker.
+This guide will help you deploy InfraDB on Unraid using Docker.
 
 ### Quick Start
 
 1. **Build the Docker image:**
    ```bash
-   docker build -t cableindex:latest .
+  docker build -t infradb:latest .
    ```
 
 2. **Run with Docker Compose:**
@@ -20,7 +20,7 @@ This guide will help you deploy CableIndex on Unraid using Docker.
 
 #### Method 1: Using Community Applications (Recommended)
 1. Install "Community Applications" plugin if not already installed
-2. Search for "cableindex" in Community Applications
+2. Search for "infradb" in Community Applications
 3. Click "Install" and configure the settings
 
 #### Method 2: Manual Template Installation
@@ -37,9 +37,9 @@ This guide will help you deploy CableIndex on Unraid using Docker.
 - **Container Port**: Keep this as 3000 (internal application port)
 
 #### Volume Mappings
-- **Data Directory**: `/mnt/user/appdata/cableindex/data` → `/app/data` (optional)
+- **Data Directory**: `/mnt/user/appdata/infradb/data` → `/app/data` (optional)
   - Contains small app marker files (e.g., setup completion marker)
-- **Uploads Directory**: `/mnt/user/appdata/cableindex/uploads` → `/app/uploads` (optional)
+- **Uploads Directory**: `/mnt/user/appdata/infradb/uploads` → `/app/uploads` (optional)
   - Optional persistence location if you add/use uploaded or generated files
 
 #### Environment Variables
@@ -50,33 +50,33 @@ This guide will help you deploy CableIndex on Unraid using Docker.
 - **MYSQL_PORT**: MySQL server port (default: 3306)
 - **MYSQL_USER**: MySQL username
 - **MYSQL_PASSWORD**: MySQL password
-- **MYSQL_DATABASE**: MySQL database name (default: cableindex)
+- **MYSQL_DATABASE**: MySQL database name (default: infradb)
 - **MYSQL_SSL**: Enable SSL for MySQL connection (default: false)
 
 ### Example Unraid Docker Run Command
 
 ```bash
 docker run -d \
-  --name=cableindex \
+  --name=infradb \
   -p 8080:3000 \
-  -v /mnt/user/appdata/cableindex/data:/app/data \
-  -v /mnt/user/appdata/cableindex/uploads:/app/uploads \
+  -v /mnt/user/appdata/infradb/data:/app/data \
+  -v /mnt/user/appdata/infradb/uploads:/app/uploads \
   -e PORT=3000 \
   -e NODE_ENV=production \
   -e JWT_SECRET=your-secret-key-here \
   --restart unless-stopped \
-  cableindex:latest
+  infradb:latest
 ```
 
 ### Accessing the Application
 
-After deployment, access CableIndex at:
+After deployment, access InfraDB at:
 - **URL**: `http://YOUR_UNRAID_IP:HOST_PORT`
 - **Example**: `http://192.168.1.100:8080`
 
 ### First-Time Setup
 
-When you first access cableindex, you'll be presented with a setup wizard that allows you to:
+When you first access InfraDB, you'll be presented with a setup wizard that allows you to:
 
 1. **Configure MySQL Connection**: Enter connection details (host, port, username, password, database name)
 2. **Create Admin Account**: Set up the initial administrator user
@@ -84,7 +84,7 @@ When you first access cableindex, you'll be presented with a setup wizard that a
 
 ### External MySQL Setup
 
-CableIndex requires MySQL. You can:
+InfraDB requires MySQL. You can:
 1. Use an existing MySQL server on your network
 2. Run a separate MySQL container on Unraid
 3. Use a cloud MySQL service
@@ -92,33 +92,33 @@ CableIndex requires MySQL. You can:
 Example MySQL container setup for Unraid:
 ```bash
 docker run -d \
-  --name=mysql-cableindex \
+  --name=mysql-infradb \
   -e MYSQL_ROOT_PASSWORD=your_password \
-  -e MYSQL_DATABASE=cableindex \
-  -v /mnt/user/appdata/mysql-cableindex:/var/lib/mysql \
+  -e MYSQL_DATABASE=infradb \
+  -v /mnt/user/appdata/mysql-infradb:/var/lib/mysql \
   -p 3306:3306 \
   mysql:8.0
 ```
 
 ### Data Persistence
 
-CableIndex is MySQL-only. Persist your database by persisting your MySQL server/container data.
+InfraDB is MySQL-only. Persist your database by persisting your MySQL server/container data.
 
 Optional mounts:
-- Marker files: `/mnt/user/appdata/cableindex/data/`
-- Uploads: `/mnt/user/appdata/cableindex/uploads/`
+- Marker files: `/mnt/user/appdata/infradb/data/`
+- Uploads: `/mnt/user/appdata/infradb/uploads/`
 
 ### Backup
 
-To backup your cableindex data:
+To backup your InfraDB data:
 1. Stop the container
-2. Copy the entire `/mnt/user/appdata/cableindex/` directory
+2. Copy the entire `/mnt/user/appdata/infradb/` directory
 3. Restart the container
 
 ### Troubleshooting
 
 #### Container Won't Start
-- Check Unraid logs: `docker logs cableindex`
+- Check Unraid logs: `docker logs infradb`
 - Verify port is not in use by another container
 - Ensure volume paths exist and have correct permissions
 
@@ -134,9 +134,9 @@ To backup your cableindex data:
 
 ### Updates
 
-To update cableindex:
+To update InfraDB:
 1. Stop the container
-2. Pull the latest image: `docker pull cableindex:latest`
+2. Pull the latest image: `docker pull infradb:latest`
 3. Restart the container with the same configuration
 
 ### Support

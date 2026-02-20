@@ -77,7 +77,7 @@ describe('cableReportDocx', () => {
 
     const xml = getDocxDocumentXml(buffer);
 
-    expect(xml).toContain('CableIndex – Site Cable Report');
+    expect(xml).toContain('InfraDB – Site Cable Report');
 
     expect(xml).toContain('Site Name');
     expect(xml).toContain('Ivy Office');

@@ -3,15 +3,15 @@ version: '3.8'
 services:
   mysql_test:
     image: mysql:8.0
-    container_name: cableindex-mysql-test
+    container_name: infradb-mysql-test
     ports:
       - "3307:3306"
     environment:
       - MYSQL_ROOT_PASSWORD=root
       - MYSQL_ROOT_HOST=%
-      - MYSQL_DATABASE=cableindex_test
-      - MYSQL_USER=cableindex
-      - MYSQL_PASSWORD=cableindex
+      - MYSQL_DATABASE=infradb_test
+      - MYSQL_USER=infradb
+      - MYSQL_PASSWORD=infradb
     tmpfs:
       - /var/lib/mysql
     healthcheck:

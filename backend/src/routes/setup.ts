@@ -79,7 +79,7 @@ router.get('/status', async (req, res) => {
  *
  * Note: This must NOT create the database.
  * It connects to the server, then probes whether the database exists and
- * whether it appears to be a CableIndex installation.
+ * whether it appears to be an InfraDB installation.
  */
 router.post('/test-connection', async (req, res) => {
   try {
@@ -109,7 +109,7 @@ router.post('/test-connection', async (req, res) => {
 
       const databaseExists = Array.isArray(schemas) && schemas.length > 0;
 
-      let cableIndexSchemaDetected = false;
+      let infraDbSchemaDetected = false;
       let migrationsUpToDate: boolean | null = null;
       let existingGlobalAdmin: { email: string; username: string; role: string } | null = null;
       let schemaDetails: { missingTables: string[] } | null = null;
@@ -133,7 +133,7 @@ router.post('/test-connection', async (req, res) => {
           );
           const missingTables = requiredTables.filter((t) => !existing.has(t));
 
-          cableIndexSchemaDetected = missingTables.length === 0;
+          infraDbSchemaDetected = missingTables.length === 0;
           schemaDetails = missingTables.length > 0 ? { missingTables } : null;
 
           if (existing.has('migrations')) {
@@ -152,7 +152,7 @@ router.post('/test-connection', async (req, res) => {
             }
           }
 
-          if (cableIndexSchemaDetected) {
+          if (infraDbSchemaDetected) {
             try {
               const [admins] = await dbConn.execute(
                 'SELECT email, username, role FROM users WHERE role = ? ORDER BY id ASC LIMIT 1',
@@ -180,7 +180,7 @@ router.post('/test-connection', async (req, res) => {
         connected: true,
         message: 'Connection successful',
         databaseExists,
-        cableIndexSchemaDetected,
+        infraDbSchemaDetected,
         migrationsUpToDate,
         latestMigrationId: LATEST_MIGRATION_ID ?? null,
         existingGlobalAdmin,
@@ -277,7 +277,7 @@ router.post('/complete', async (req, res) => {
         return res.status(400).json({
           success: false,
           error:
-            'Existing CableIndex database detected but no GLOBAL_ADMIN user was found. Choose a different database name or create an admin user.',
+            'Existing InfraDB database detected but no GLOBAL_ADMIN user was found. Choose a different database name or create an admin user.',
         });
       }
 

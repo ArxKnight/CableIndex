@@ -60,7 +60,7 @@ const Navigation: React.FC = () => {
   const { user, logout } = useAuth();
   const { canAccess, isAdmin } = usePermissions();
   const { theme, setTheme } = useTheme();
-  const logoIconUrl = `${import.meta.env.BASE_URL}cableindex-icon.png`;
+  const logoIconUrl = `${import.meta.env.BASE_URL}infradb-icon.png`;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -95,10 +95,10 @@ const Navigation: React.FC = () => {
               <Link to="/sites" className="flex items-center space-x-2">
                 <img 
                   src={logoIconUrl} 
-                  alt="CableIndex" 
+                  alt="InfraDB" 
                   className="h-8 w-8"
                 />
-                <span className="text-xl font-bold text-foreground">CableIndex</span>
+                <span className="text-xl font-bold text-foreground">InfraDB</span>
               </Link>
             </div>
             

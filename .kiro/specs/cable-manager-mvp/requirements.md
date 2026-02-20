@@ -2,7 +2,7 @@
 
 ## Introduction
 
-CableIndex is a professional cable labeling system designed for Brady (and other ZPL-compatible) printers. It provides:
+InfraDB is a professional cable labeling system designed for Brady (and other ZPL-compatible) printers. It provides:
 
 - Site-scoped cable labels with automatic reference numbering
 - A searchable label database with export tools
@@ -137,7 +137,7 @@ This document describes the requirements as the application exists today (early 
 
 ### Requirement 11 — Deployment
 
-**User Story:** As an operator, I want easy deployment options, so I can run CableIndex on a server or NAS.
+**User Story:** As an operator, I want easy deployment options, so I can run InfraDB on a server or NAS.
 
 #### Acceptance Criteria
 

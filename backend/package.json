@@ -1,7 +1,7 @@
 {
-  "name": "cableindex-backend",
+  "name": "infradb-backend",
   "version": "1.0.0",
-  "description": "Backend API for CableIndex",
+  "description": "Backend API for InfraDB",
   "main": "dist/app.js",
   "type": "module",
   "scripts": {

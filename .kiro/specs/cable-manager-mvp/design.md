@@ -2,7 +2,7 @@
 
 ## Overview
 
-CableIndex is a React + TypeScript web application with an Express + TypeScript API backend. It generates ZPL for Brady printers, stores label records per site, and provides role-based access controls.
+InfraDB is a React + TypeScript web application with an Express + TypeScript API backend. It generates ZPL for Brady printers, stores label records per site, and provides role-based access controls.
 
 This document describes the current (2026) design and architecture.
 
@@ -113,7 +113,7 @@ graph TB
 ### Theme System
 
 - Tailwind uses `darkMode: ["class"]`.
-- The theme is stored in `localStorage` under `cableindex-theme`.
+- The theme is stored in `localStorage` under `infradb-theme`.
 - The app toggles the `dark` class on the `<html>` element so all components (including dialogs/menus) inherit the theme.
 
 ## ZPL Generation
@@ -152,6 +152,6 @@ Printed payload (3 lines):
 
 ## Non-Goals
 
-- Database-enforced RLS (CableIndex enforces permissions in the API layer).
+- Database-enforced RLS (InfraDB enforces permissions in the API layer).
 - Supabase edge functions.
 - Electron/desktop packaging (not part of current deployment model).

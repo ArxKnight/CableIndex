@@ -30,9 +30,9 @@ interface SiteWithLabelCount extends Site {
 
 interface SiteDetailsProps {
   siteId: number;
-  onEdit: (site: Site) => void;
-  onDelete: (site: Site) => void;
   onBack: () => void;
+  onEdit?: (site: Site) => void;
+  onDelete?: (site: Site) => void;
 }
 
 const SiteDetails: React.FC<SiteDetailsProps> = ({ 
@@ -261,7 +261,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
       <div className="space-y-4">
         <Button variant="ghost" onClick={onBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Sites
+          Back to Site Hub
         </Button>
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
@@ -275,7 +275,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
       <div className="space-y-4">
         <Button variant="ghost" onClick={onBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Sites
+          Back to Site Hub
         </Button>
         <Alert>
           <AlertDescription>Site not found.</AlertDescription>
@@ -295,11 +295,11 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
         <div className="flex items-center space-x-4">
           <Button variant="ghost" onClick={onBack}>
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Sites
+            Back to Site Hub
           </Button>
           <div>
             <h1 className="text-2xl font-bold">{site.name}</h1>
-            <p className="text-muted-foreground">Site Details</p>
+            <p className="text-muted-foreground">Cable Index</p>
           </div>
         </div>
       </div>
@@ -336,7 +336,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
                   </>
                 )}
 
-                {canManageSite && (
+                {canManageSite && onEdit && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -348,7 +348,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
                   </Button>
                 )}
 
-                {isGlobalAdmin && (
+                {isGlobalAdmin && onDelete && (
                   <Button variant="destructive" size="sm" onClick={() => onDelete(site)}>
                     <Trash2 className="mr-2 h-4 w-4" />
                     Delete Site

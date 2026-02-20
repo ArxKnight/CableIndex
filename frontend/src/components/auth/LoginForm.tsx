@@ -25,7 +25,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const logoUrl = `${import.meta.env.BASE_URL}cableindex-logo.png`;
+  const logoUrl = `${import.meta.env.BASE_URL}infradb-logo.png`;
 
   const {
     register,
@@ -72,11 +72,11 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess }) => {
         <div className="flex justify-center mb-4">
           <img
             src={logoUrl}
-            alt="CableIndex"
+            alt="InfraDB"
             className="h-16 w-auto"
           />
         </div>
-        <h1 className="text-2xl font-bold">Sign In to CableIndex</h1>
+        <h1 className="text-2xl font-bold">Sign In to InfraDB</h1>
         <p className="text-muted-foreground mt-2">
           Enter your credentials to access your account
         </p>

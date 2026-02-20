@@ -1,6 +1,6 @@
-# CableIndex
+# InfraDB
 
-![CableIndex Logo](frontend/public/cableindex-logo.png)
+![InfraDB Logo](frontend/public/infradb-logo.png)
 
 A professional cable labeling system for Brady printers with automatic reference numbering, comprehensive user management, role-based permissions, and MySQL-backed persistence. Features a modern React frontend with Express backend and Docker deployment options.
 
@@ -80,7 +80,7 @@ A professional cable labeling system for Brady printers with automatic reference
 1. **Clone the repository:**
    ```bash
    git clone <repository-url>
-   cd cableindex
+   cd infradb
    ```
 
 2. **Install all dependencies:**
@@ -122,8 +122,8 @@ For production deployment or Unraid users:
 docker-compose up -d
 
 # Or build manually
-docker build -t cableindex:latest .
-docker run -d -p 3000:3000 -v cableindex-data:/app/data cableindex:latest
+docker build -t infradb:latest .
+docker run -d -p 3000:3000 -v infradb-data:/app/data infradb:latest
 ```
 
 See [Docker Setup Guide](docker/README.md) for detailed deployment instructions, including Unraid configuration.
@@ -153,7 +153,7 @@ cd backend && npm run test        # Backend tests only
 ## 📁 Project Structure
 
 ```
-cableindex/
+infradb/
 ├── 📄 build-and-push.ps1           # Build/push helper (Windows)
 ├── 📄 build-docker.sh              # Build helper (Linux)
 ├── 📁 frontend/                    # React frontend application
@@ -310,9 +310,9 @@ APP_URL=http://localhost:3000               # Base URL for invitation links (opt
 # Database Configuration (MySQL only)
 MYSQL_HOST=localhost                        # MySQL server host
 MYSQL_PORT=3306                             # MySQL server port
-MYSQL_USER=cableindex                       # MySQL username
+MYSQL_USER=infradb                          # MySQL username
 MYSQL_PASSWORD=your_password                # MySQL password
-MYSQL_DATABASE=cableindex                   # MySQL database name
+MYSQL_DATABASE=infradb                      # MySQL database name
 MYSQL_SSL=false                             # Enable SSL connection
 
 # Setup Wizard
@@ -324,7 +324,7 @@ SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USER=your-smtp-user
 SMTP_PASS=your-smtp-pass
-SMTP_FROM=CableIndex <noreply@example.com>
+SMTP_FROM=InfraDB <noreply@example.com>
 SMTP_SECURE=false
 ```
 
@@ -337,21 +337,21 @@ VITE_BASE_PATH=/                            # Base path when hosted under a sub-
 
 ### Database Selection Guide
 
-CableIndex requires MySQL.
+InfraDB requires MySQL.
 
 ### Docker Environment Variables
 ```bash
 # Docker Compose Configuration
 PORT=3000                                   # Host port mapping
 JWT_SECRET=your-production-secret           # Production JWT secret
-APP_URL=https://cableindex.example.com      # Optional; used for invitation links
+APP_URL=https://infradb.example.com         # Optional; used for invitation links
 
 # Database Configuration (MySQL only)
 MYSQL_HOST=mysql
 MYSQL_PORT=3306
-MYSQL_USER=cableindex
+MYSQL_USER=infradb
 MYSQL_PASSWORD=your_password
-MYSQL_DATABASE=cableindex
+MYSQL_DATABASE=infradb
 ```
 
 ## 🧪 Testing
@@ -403,15 +403,15 @@ docker-compose up -d
 **Custom Configuration:**
 ```bash
 # Build custom image
-docker build -t cableindex:latest .
+docker build -t infradb:latest .
 
 # Run with custom settings
 docker run -d \
-  --name cableindex \
+   --name infradb \
   -p 8080:3000 \
   -v /path/to/data:/app/data \
   -e JWT_SECRET=your-secret \
-  cableindex:latest
+   infradb:latest
 ```
 
 ### 2. Unraid Deployment
@@ -523,7 +523,7 @@ See [LICENSE](LICENSE).
 **Docker Issues:**
 - Verify port mappings are correct
 - Check volume mounts for data persistence
-- Review container logs: `docker logs cableindex`
+- Review container logs: `docker logs infradb`
 
 **Build Failures:**
 - Clear node_modules and reinstall: `rm -rf node_modules && npm install`
@@ -584,7 +584,7 @@ All labels generate industry-standard ZPL (Zebra Programming Language) code comp
 
 ## 🔐 User Roles & Permissions
 
-CableIndex uses **global roles** for system-wide access and **site roles** for per-site permissions.
+InfraDB uses **global roles** for system-wide access and **site roles** for per-site permissions.
 
 ### Global Roles
 

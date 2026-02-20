@@ -102,7 +102,7 @@ export async function setupTestDatabase(options: InitOptions = {}): Promise<Data
   const base = getMySqlTestConfig();
   if (!testDatabaseName) {
     const suffix = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-    testDatabaseName = `cableindex_test_${suffix}`;
+    testDatabaseName = `infradb_test_${suffix}`;
     testDatabaseCreated = false;
     migrationsEnsured = false;
   }

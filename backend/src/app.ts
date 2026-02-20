@@ -40,7 +40,7 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    service: 'cableindex-backend'
+    service: 'infradb-backend'
   });
 });
 
@@ -48,7 +48,7 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api', (req, res) => {
   res.json({
-    message: 'CableIndex API',
+    message: 'InfraDB API',
     version: '1.0.0'
   });
 });

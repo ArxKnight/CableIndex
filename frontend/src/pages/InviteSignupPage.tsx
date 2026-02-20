@@ -27,7 +27,7 @@ const InviteSignupPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token') || '';
-  const logoUrl = `${import.meta.env.BASE_URL}cableindex-logo.png`;
+  const logoUrl = `${import.meta.env.BASE_URL}infradb-logo.png`;
   const [inviteData, setInviteData] = useState<any>(null);
   const [isValidating, setIsValidating] = useState(false);
   const [isAccepted, setIsAccepted] = useState(false);
@@ -107,7 +107,7 @@ const InviteSignupPage: React.FC = () => {
             <div className="flex justify-center mb-4">
               <img
                 src={logoUrl}
-                alt="CableIndex"
+                alt="InfraDB"
                 className="h-16 w-auto"
               />
             </div>

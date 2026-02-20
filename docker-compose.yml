@@ -3,16 +3,16 @@ version: '3.8'
 services:
   mysql:
     image: mysql:8.0
-    container_name: cableindex-mysql
+    container_name: infradb-mysql
     ports:
       - "3306:3306"
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-root}
-      - MYSQL_DATABASE=${MYSQL_DATABASE:-cableindex}
-      - MYSQL_USER=${MYSQL_USER:-cableindex}
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-cableindex}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-infradb}
+      - MYSQL_USER=${MYSQL_USER:-infradb}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-infradb}
     volumes:
-      - cableindex-mysql:/var/lib/mysql
+      - infradb-mysql:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-root}"]
       interval: 10s
@@ -20,9 +20,9 @@ services:
       retries: 10
       start_period: 30s
 
-  cableindex:
+  infradb:
     build: .
-    container_name: cableindex
+    container_name: infradb
     ports:
       - "${PORT:-3000}:3000"
     environment:
@@ -31,13 +31,13 @@ services:
       - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-this}
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
-      - MYSQL_DATABASE=${MYSQL_DATABASE:-cableindex}
-      - MYSQL_USER=${MYSQL_USER:-cableindex}
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-cableindex}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-infradb}
+      - MYSQL_USER=${MYSQL_USER:-infradb}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-infradb}
       - MYSQL_SSL=${MYSQL_SSL:-false}
       - UPLOADS_PATH=/app/uploads
     volumes:
-      - cableindex-uploads:/app/uploads
+      - infradb-uploads:/app/uploads
     depends_on:
       mysql:
         condition: service_healthy
@@ -50,5 +50,5 @@ services:
       start_period: 40s
 
 volumes:
-  cableindex-mysql:
-  cableindex-uploads:
+  infradb-mysql:
+  infradb-uploads:

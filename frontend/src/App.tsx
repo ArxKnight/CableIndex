@@ -18,6 +18,10 @@ import AdminPage from './pages/AdminPage'
 import SetupPage from './pages/SetupPage'
 import NotFoundPage from './pages/NotFoundPage'
 import ErrorPage from './pages/ErrorPage'
+import SiteHubPage from './pages/SiteHubPage'
+import SiteCablePage from './pages/SiteCablePage'
+import SiteSidIndexPage from './pages/SiteSidIndexPage'
+import SiteStockIndexPage from './pages/SiteStockIndexPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -119,6 +123,46 @@ function App() {
                     <ProtectedRoute>
                       <Layout>
                         <SitesPage />
+                      </Layout>
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/sites/:siteId" 
+                  element={
+                    <ProtectedRoute>
+                      <Layout>
+                        <SiteHubPage />
+                      </Layout>
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/sites/:siteId/cable" 
+                  element={
+                    <ProtectedRoute>
+                      <Layout>
+                        <SiteCablePage />
+                      </Layout>
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/sites/:siteId/sid" 
+                  element={
+                    <ProtectedRoute>
+                      <Layout>
+                        <SiteSidIndexPage />
+                      </Layout>
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/sites/:siteId/stock" 
+                  element={
+                    <ProtectedRoute>
+                      <Layout>
+                        <SiteStockIndexPage />
                       </Layout>
                     </ProtectedRoute>
                   } 

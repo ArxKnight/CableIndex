@@ -50,7 +50,7 @@ describe('Navigation', () => {
   it('should render navigation with logo', () => {
     renderNavigation();
     
-    expect(screen.getByText('CableIndex')).toBeInTheDocument();
+    expect(screen.getByText('InfraDB')).toBeInTheDocument();
   });
 
   it('should render navigation items for regular user', () => {

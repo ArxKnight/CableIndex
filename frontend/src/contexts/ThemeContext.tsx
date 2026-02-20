@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useLayoutEffect, useMemo, useState }
 
 export type Theme = 'dark' | 'light'
 
-const STORAGE_KEY = 'cableindex-theme'
+const STORAGE_KEY = 'infradb-theme'
 
 type ThemeContextValue = {
   theme: Theme

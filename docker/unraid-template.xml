@@ -1,26 +1,26 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>CableIndex</Name>
-  <Repository>arxknight/cableindex:latest</Repository>
+  <Name>InfraDB</Name>
+  <Repository>arxknight/infradb:latest</Repository>
   <Registry>https://hub.docker.com/</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Support>https://github.com/arxknight/cableindex</Support>
-  <Project>https://github.com/arxknight/cableindex</Project>
-  <Overview>CableIndex - A professional cable labeling system for Brady printers with automatic reference numbering, comprehensive user management, and role-based permissions. Features modern React frontend with Express backend optimized for MySQL.</Overview>
+  <Support>https://github.com/arxknight/infradb</Support>
+  <Project>https://github.com/arxknight/infradb</Project>
+  <Overview>InfraDB - A professional cable labeling system for Brady printers with automatic reference numbering, comprehensive user management, and role-based permissions. Features modern React frontend with Express backend optimized for MySQL.</Overview>
   <Category>Tools:</Category>
   <WebUI>http://[IP]:[PORT:3000]/</WebUI>
   <TemplateURL/>
-  <Icon>https://raw.githubusercontent.com/arxknight/cableindex/main/frontend/public/cableindex-icon.png</Icon>
+  <Icon>https://raw.githubusercontent.com/arxknight/infradb/main/frontend/public/infradb-icon.png</Icon>
   <ExtraParams/>
   <PostArgs/>
   <CPUset/>
   <DateInstalled>1640995200</DateInstalled>
   <DonateText/>
   <DonateLink/>
-  <Description>CableIndex - A professional cable labeling system for Brady printers with automatic reference numbering, comprehensive user management, and role-based permissions. Features modern React frontend with Express backend optimized for MySQL.</Description>
+  <Description>InfraDB - A professional cable labeling system for Brady printers with automatic reference numbering, comprehensive user management, and role-based permissions. Features modern React frontend with Express backend optimized for MySQL.</Description>
   <Networking>
     <Mode>bridge</Mode>
     <Publish>
@@ -33,12 +33,12 @@
   </Networking>
   <Data>
     <Volume>
-      <HostDir>/mnt/user/appdata/cableindex/data</HostDir>
+      <HostDir>/mnt/user/appdata/infradb/data</HostDir>
       <ContainerDir>/app/data</ContainerDir>
       <Mode>rw</Mode>
     </Volume>
     <Volume>
-      <HostDir>/mnt/user/appdata/cableindex/uploads</HostDir>
+      <HostDir>/mnt/user/appdata/infradb/uploads</HostDir>
       <ContainerDir>/app/uploads</ContainerDir>
       <Mode>rw</Mode>
     </Volume>
@@ -66,9 +66,9 @@
     </Variable>
   </Environment>
   <Labels/>
-  <Config Name="WebUI Port" Target="3000" Default="3000" Mode="tcp" Description="Port to access CableIndex on your host (container always uses 3000 internally)" Type="Port" Display="always" Required="true" Mask="false">3000</Config>
-  <Config Name="Data Directory" Target="/app/data" Default="/mnt/user/appdata/cableindex/data" Mode="rw" Description="Optional directory for app marker files (setup completion)" Type="Path" Display="advanced" Required="false" Mask="false">/mnt/user/appdata/cableindex/data</Config>
-  <Config Name="Uploads Directory" Target="/app/uploads" Default="/mnt/user/appdata/cableindex/uploads" Mode="rw" Description="Optional directory for uploaded/generated files (if used)" Type="Path" Display="advanced" Required="false" Mask="false">/mnt/user/appdata/cableindex/uploads</Config>
+  <Config Name="WebUI Port" Target="3000" Default="3000" Mode="tcp" Description="Port to access InfraDB on your host (container always uses 3000 internally)" Type="Port" Display="always" Required="true" Mask="false">3000</Config>
+  <Config Name="Data Directory" Target="/app/data" Default="/mnt/user/appdata/infradb/data" Mode="rw" Description="Optional directory for app marker files (setup completion)" Type="Path" Display="advanced" Required="false" Mask="false">/mnt/user/appdata/infradb/data</Config>
+  <Config Name="Uploads Directory" Target="/app/uploads" Default="/mnt/user/appdata/infradb/uploads" Mode="rw" Description="Optional directory for uploaded/generated files (if used)" Type="Path" Display="advanced" Required="false" Mask="false">/mnt/user/appdata/infradb/uploads</Config>
   <Config Name="Environment" Target="NODE_ENV" Default="production" Mode="" Description="Node.js environment" Type="Variable" Display="advanced" Required="false" Mask="false">production</Config>
   <Config Name="JWT Secret" Target="JWT_SECRET" Default="" Mode="" Description="Secret key for JWT tokens (leave empty to auto-generate on first start, but recommended to set a persistent value for production)" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
 </Container>

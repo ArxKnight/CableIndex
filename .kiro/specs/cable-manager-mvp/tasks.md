@@ -13,7 +13,7 @@
   - _Requirements: All requirements depend on proper project setup_
 # Tasks / Roadmap
 
-This file tracks what is implemented in CableIndex today and the next logical roadmap items.
+This file tracks what is implemented in InfraDB today and the next logical roadmap items.
 
 ## Implemented (Current)
 
@@ -34,7 +34,7 @@ This file tracks what is implemented in CableIndex today and the next logical ro
   - [x] Port and PDU generators
 - [x] Site Cable Report export (.docx)
 - [x] Tools page generators (SID, 30DAY, TEXT, RACKS, IN-RACK, PORTS, PDU)
-- [x] Global Day/Night theme toggle with persistence (`cableindex-theme`)
+- [x] Global Day/Night theme toggle with persistence (`infradb-theme`)
 - [x] Docker deployment (single container serving UI + API)
 - [x] Frontend/backend automated tests (Vitest)
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Site } from '../../types';
 import { apiClient } from '../../lib/api';
 import { Button } from '../ui/button';
@@ -24,15 +25,14 @@ interface SiteWithLabelCount extends Site {
 
 interface SiteListProps {
   onCreateSite: () => void;
-  onViewDetails?: (siteId: number) => void;
   refreshTrigger?: number;
 }
 
 const SiteList: React.FC<SiteListProps> = ({ 
   onCreateSite, 
-  onViewDetails,
   refreshTrigger = 0
 }) => {
+  const navigate = useNavigate();
   const { canCreate } = usePermissions();
   const canCreateSites = canCreate('sites');
   const [sites, setSites] = useState<SiteWithLabelCount[]>([]);
@@ -259,8 +259,8 @@ const SiteList: React.FC<SiteListProps> = ({
           {sites.map((site) => (
             <Card
               key={site.id}
-              className={onViewDetails ? 'cursor-pointer hover:shadow-md transition-shadow' : undefined}
-              onClick={() => onViewDetails && onViewDetails(site.id)}
+              className={'cursor-pointer hover:shadow-md transition-shadow'}
+              onClick={() => navigate(`/sites/${site.id}`)}
             >
               <CardHeader className="pb-3 text-center">
                 <CardTitle className="text-lg truncate hover:text-primary transition-colors">

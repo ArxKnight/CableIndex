@@ -2,15 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/cableindex-icon.png" />
+    <link rel="icon" type="image/png" href="/infradb-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CableIndex</title>
+    <title>InfraDB</title>
     <script>
       (() => {
         try {
-          const key = 'cableindex-theme'
+          const key = 'infradb-theme'
           const stored = window.localStorage.getItem(key)
           const theme = stored === 'light' || stored === 'dark' ? stored : 'dark'
+          window.localStorage.setItem(key, theme)
           const root = document.documentElement
           if (theme === 'dark') root.classList.add('dark')
           else root.classList.remove('dark')

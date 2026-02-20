@@ -85,7 +85,7 @@ class DatabaseConnection {
     if (missing.length > 0) {
       const message =
         `Missing required MySQL environment variables: ${missing.join(', ')}. ` +
-        `CableIndex now supports MySQL only.`;
+        `InfraDB now supports MySQL only.`;
       throw new Error(message);
     }
 

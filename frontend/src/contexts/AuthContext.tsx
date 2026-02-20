@@ -108,7 +108,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           if (me.data.user) setUser(me.data.user);
           setMemberships(me.data.memberships);
         }
-        toast.success(`Welcome to CableIndex, ${userData.username}!`);
+        toast.success(`Welcome to InfraDB, ${userData.username}!`);
       } else {
         throw new Error(response.error || 'Registration failed');
       }
