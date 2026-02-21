@@ -12,6 +12,7 @@ import UserModel from '../models/User.js';
 import { isSetupComplete, setupMarkerPath } from '../utils/setup.js';
 import { validatePassword } from '../utils/password.js';
 import { normalizeUsername } from '../utils/username.js';
+import { ensureSidSecretKeyConfigured } from '../utils/sidSecrets.js';
 
 const router = express.Router();
 
@@ -406,6 +407,10 @@ router.post('/complete', async (req, res) => {
       // Don't fail setup if we can't write the marker file
       // The setup is still complete - admin user exists and migrations ran
     }
+
+    // Ensure SID password encryption key exists (auto-generated and persisted).
+    // This prevents the UI from requiring a manual key entry.
+    ensureSidSecretKeyConfigured();
 
     res.json({
       success: true,

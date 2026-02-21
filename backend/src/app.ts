@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import { initializeDatabase, setupDatabaseShutdown } from './database/init.js';
 import connection from './database/connection.js';
 import { isSetupComplete } from './utils/setup.js';
+import { ensureSidSecretKeyConfigured } from './utils/sidSecrets.js';
 import { authRoutes, userRoutes, adminRoutes, siteRoutes, labelRoutes } from './routes/index.js';
 import setupRoutes from './routes/setup.js';
 
@@ -75,6 +76,9 @@ if (process.env.NODE_ENV !== 'test') {
           seedData: process.env.NODE_ENV === 'development'
         });
         console.log('✅ Database lazily initialized');
+
+        // After setup completion, ensure a SID password encryption key exists.
+        ensureSidSecretKeyConfigured();
       } catch (err) {
         console.error('Failed to lazy initialize database:', err);
         return res.status(500).json({ success: false, error: 'Database initialization failed' });
@@ -128,6 +132,9 @@ async function startServer() {
         runMigrations: true,
         seedData: process.env.NODE_ENV === 'development'
       });
+
+      // Ensure SID password encryption key exists (auto-generated if missing).
+      ensureSidSecretKeyConfigured();
     }
 
     // Setup graceful shutdown

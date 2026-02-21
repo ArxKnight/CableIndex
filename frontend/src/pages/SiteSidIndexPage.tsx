@@ -3,19 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Loader2, Plus, Search } from 'lucide-react';
 
 import { apiClient } from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
+import usePermissions from '../hooks/usePermissions';
 import { Button } from '../components/ui/button';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../components/ui/dialog';
-import { Label } from '../components/ui/label';
 import {
   Select,
   SelectContent,
@@ -31,40 +24,31 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
-import usePermissions from '../hooks/usePermissions';
+import { Switch } from '../components/ui/switch';
 
 const SiteSidIndexPage: React.FC = () => {
   const navigate = useNavigate();
   const params = useParams();
   const siteId = Number(params.siteId);
   const permissions = usePermissions();
+  const { user, memberships } = useAuth();
   const canEdit = permissions.canAdministerSite(siteId);
+
+  const canCreateSid = Boolean(
+    user &&
+      (user.role === 'GLOBAL_ADMIN' || (memberships ?? []).some((m) => Number(m.site_id) === siteId))
+  );
 
   const [siteName, setSiteName] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
   const [search, setSearch] = React.useState('');
+  const [searchField, setSearchField] = React.useState<'status' | 'sid' | 'location' | 'hostname' | 'model'>('sid');
+  const [matchExact, setMatchExact] = React.useState(false);
   const [sids, setSids] = React.useState<any[]>([]);
   const [sidsLoading, setSidsLoading] = React.useState(false);
   const [sidsError, setSidsError] = React.useState<string | null>(null);
-
-  const [createOpen, setCreateOpen] = React.useState(false);
-  const [createStatus, setCreateStatus] = React.useState('');
-  const [createSidTypeId, setCreateSidTypeId] = React.useState<number | null>(null);
-  const [createDeviceModelId, setCreateDeviceModelId] = React.useState<number | null>(null);
-  const [createCpuModelId, setCreateCpuModelId] = React.useState<number | null>(null);
-  const [createHostname, setCreateHostname] = React.useState('');
-  const [createSerialNumber, setCreateSerialNumber] = React.useState('');
-  const [createAssetTag, setCreateAssetTag] = React.useState('');
-  const [createLoading, setCreateLoading] = React.useState(false);
-  const [createError, setCreateError] = React.useState<string | null>(null);
-
-  const [picklistsLoading, setPicklistsLoading] = React.useState(false);
-  const [picklistsError, setPicklistsError] = React.useState<string | null>(null);
-  const [sidTypes, setSidTypes] = React.useState<any[]>([]);
-  const [deviceModels, setDeviceModels] = React.useState<any[]>([]);
-  const [cpuModels, setCpuModels] = React.useState<any[]>([]);
 
   React.useEffect(() => {
     const load = async () => {
@@ -100,7 +84,13 @@ const SiteSidIndexPage: React.FC = () => {
         try {
           setSidsLoading(true);
           setSidsError(null);
-          const resp = await apiClient.getSiteSids(siteId, { search: search.trim() || undefined, limit: 200, offset: 0 });
+          const resp = await apiClient.getSiteSids(siteId, {
+            search: search.trim() || undefined,
+            search_field: searchField,
+            exact: matchExact,
+            limit: 200,
+            offset: 0,
+          });
           if (!resp.success) throw new Error(resp.error || 'Failed to load SIDs');
           setSids(resp.data?.sids ?? []);
         } catch (e) {
@@ -114,71 +104,48 @@ const SiteSidIndexPage: React.FC = () => {
     }, 250);
 
     return () => clearTimeout(timeout);
-  }, [siteId, search]);
+  }, [siteId, search, searchField, matchExact]);
 
-  const openCreate = () => {
-    setCreateStatus('');
-    setCreateSidTypeId(null);
-    setCreateDeviceModelId(null);
-    setCreateCpuModelId(null);
-    setCreateHostname('');
-    setCreateSerialNumber('');
-    setCreateAssetTag('');
-    setCreateError(null);
-    setPicklistsError(null);
-    setCreateOpen(true);
+  const formatRackEntry = (sid: any): string => {
+    const raw = sid?.rack_u;
+    if (raw === null || raw === undefined || raw === '') return '—';
+    const cleaned = String(raw).trim().replace(/^u\s*/i, '').trim();
+    if (!cleaned) return '—';
+    return cleaned;
   };
 
-  React.useEffect(() => {
-    if (!createOpen || !canEdit) return;
-    if (!Number.isFinite(siteId) || siteId <= 0) return;
+  const formatSidLocation = (sid: any): string => {
+    const label = (sid?.location_effective_label ?? '').toString().trim();
+    if (!label) return '—';
 
-    const run = async () => {
-      try {
-        setPicklistsLoading(true);
-        setPicklistsError(null);
-        const [typesResp, dmResp, cpuResp] = await Promise.all([
-          apiClient.getSiteSidTypes(siteId),
-          apiClient.getSiteSidDeviceModels(siteId),
-          apiClient.getSiteSidCpuModels(siteId),
-        ]);
-        setSidTypes(typesResp.success ? (typesResp.data?.sid_types ?? []) : []);
-        setDeviceModels(dmResp.success ? (dmResp.data?.device_models ?? []) : []);
-        setCpuModels(cpuResp.success ? (cpuResp.data?.cpu_models ?? []) : []);
-      } catch (e) {
-        setPicklistsError(e instanceof Error ? e.message : 'Failed to load picklists');
-      } finally {
-        setPicklistsLoading(false);
-      }
+    const floorRaw = (sid?.location_floor ?? '').toString().trim();
+    const suiteRaw = (sid?.location_suite ?? '').toString().trim();
+    const rowRaw = (sid?.location_row ?? '').toString().trim();
+    const rackRaw = (sid?.location_rack ?? '').toString().trim();
+    const area = (sid?.location_area ?? '').toString().trim();
+    const template = (sid?.location_template_type ?? '').toString().trim().toUpperCase();
+
+    const withPrefix = (prefix: string, value: string) => {
+      const v = value.trim();
+      if (!v) return '';
+      const up = v.toUpperCase();
+      if (up.startsWith(prefix.toUpperCase())) return v;
+      return `${prefix}${v}`;
     };
 
-    run();
-  }, [createOpen, canEdit, siteId]);
+    const floor = withPrefix('FL', floorRaw);
+    const suite = withPrefix('S', suiteRaw);
+    const row = withPrefix('ROW', rowRaw);
+    const rack = withPrefix('R', rackRaw);
 
-  const submitCreate = async () => {
-    try {
-      setCreateLoading(true);
-      setCreateError(null);
-      const resp = await apiClient.createSiteSid(siteId, {
-        status: createStatus.trim() || null,
-        sid_type_id: createSidTypeId,
-        device_model_id: createDeviceModelId,
-        cpu_model_id: createCpuModelId,
-        hostname: createHostname.trim() || null,
-        serial_number: createSerialNumber.trim() || null,
-        asset_tag: createAssetTag.trim() || null,
-      });
-      if (!resp.success || !resp.data?.sid?.id) {
-        throw new Error(resp.error || 'Failed to create SID');
-      }
-      setCreateOpen(false);
-      navigate(`/sites/${siteId}/sid/${resp.data.sid.id}`);
-    } catch (e) {
-      setCreateError(e instanceof Error ? e.message : 'Failed to create SID');
-    } finally {
-      setCreateLoading(false);
+    const isDomestic = template === 'DOMESTIC' || (area !== '' && suite === '' && row === '' && rack === '');
+    if (isDomestic) {
+      return [label, floor, area].filter((p) => p !== '').join('/');
     }
+
+    return [label, floor, suite, row, rack].filter((p) => p !== '').join('/');
   };
+
 
   if (loading) {
     return (
@@ -217,12 +184,14 @@ const SiteSidIndexPage: React.FC = () => {
           </div>
         </div>
 
-        {canEdit && (
+        {canCreateSid && (
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => navigate(`/sites/${siteId}/sid/admin`)}>
-              SID Admin
-            </Button>
-            <Button onClick={openCreate}>
+            {canEdit && (
+              <Button variant="outline" onClick={() => navigate(`/sites/${siteId}/sid/admin`)}>
+                SID Admin
+              </Button>
+            )}
+            <Button onClick={() => navigate(`/sites/${siteId}/sid/new`)}>
               <Plus className="mr-2 h-4 w-4" />
               Create SID
             </Button>
@@ -236,17 +205,53 @@ const SiteSidIndexPage: React.FC = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
+            <div className="text-sm font-medium">Filter</div>
             <div className="flex items-center gap-2">
+              <div className="w-[220px]">
+                <Select value={searchField} onValueChange={(v) => setSearchField(v as any)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Search field" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="status">Status</SelectItem>
+                    <SelectItem value="sid">SID</SelectItem>
+                    <SelectItem value="location">Rack Location</SelectItem>
+                    <SelectItem value="hostname">Hostname</SelectItem>
+                    <SelectItem value="model">Model</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="relative flex-1">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by SID number, hostname, serial, asset tag…"
+                  placeholder={`Search by ${
+                    searchField === 'sid'
+                      ? 'SID'
+                      : searchField === 'location'
+                        ? 'Rack Location'
+                        : searchField.charAt(0).toUpperCase() + searchField.slice(1)
+                  }…`}
                   className="pl-8"
                 />
               </div>
+
+              <div className="flex items-center gap-2 pl-2">
+                <div className="text-sm text-muted-foreground">Match Exact</div>
+                <Switch
+                  checked={matchExact}
+                  onCheckedChange={(v) => setMatchExact(Boolean(v))}
+                  aria-label="Match exact"
+                />
+              </div>
             </div>
+
+            {searchField === 'sid' && (
+              <div className="text-xs text-muted-foreground">
+                Tip: Search multiple SIDs by separating with commas (e.g. 1215, 1256, 156315).
+              </div>
+            )}
 
             {sidsError && (
               <Alert variant="destructive">
@@ -265,10 +270,12 @@ const SiteSidIndexPage: React.FC = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>SID</TableHead>
-                    <TableHead>Hostname</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Serial</TableHead>
+                    <TableHead>SID</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Rack Entry</TableHead>
+                    <TableHead>Hostname</TableHead>
+                    <TableHead>Model</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -278,10 +285,18 @@ const SiteSidIndexPage: React.FC = () => {
                       className="cursor-pointer"
                       onClick={() => navigate(`/sites/${siteId}/sid/${sid.id}`)}
                     >
-                      <TableCell className="font-medium">{sid.sid_number}</TableCell>
-                      <TableCell>{sid.hostname || '—'}</TableCell>
                       <TableCell>{sid.status || '—'}</TableCell>
-                      <TableCell>{sid.serial_number || '—'}</TableCell>
+                      <TableCell className="font-medium">{sid.sid_number}</TableCell>
+                      <TableCell>{formatSidLocation(sid)}</TableCell>
+                      <TableCell>{formatRackEntry(sid)}</TableCell>
+                      <TableCell>{sid.hostname || '—'}</TableCell>
+                      <TableCell>
+                        {sid.device_model_name
+                          ? sid.device_model_manufacturer
+                            ? `${sid.device_model_manufacturer} — ${sid.device_model_name}`
+                            : sid.device_model_name
+                          : '—'}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -291,144 +306,6 @@ const SiteSidIndexPage: React.FC = () => {
         </CardContent>
       </Card>
 
-      <Dialog open={createOpen && canEdit} onOpenChange={(open) => {
-        setCreateOpen(open);
-        if (!open) {
-          setCreateError(null);
-          setPicklistsError(null);
-          setCreateStatus('');
-          setCreateSidTypeId(null);
-          setCreateDeviceModelId(null);
-          setCreateCpuModelId(null);
-          setCreateHostname('');
-          setCreateSerialNumber('');
-          setCreateAssetTag('');
-        }
-      }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create SID</DialogTitle>
-            <DialogDescription>
-              Enter the SID details. The SID number will be assigned automatically (starting at 1).
-            </DialogDescription>
-          </DialogHeader>
-
-          {createError && (
-            <Alert variant="destructive">
-              <AlertDescription>{createError}</AlertDescription>
-            </Alert>
-          )}
-
-          {picklistsError && (
-            <Alert variant="destructive">
-              <AlertDescription>{picklistsError}</AlertDescription>
-            </Alert>
-          )}
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Input
-                value={createStatus}
-                onChange={(e) => setCreateStatus(e.target.value)}
-                placeholder="e.g. Active"
-                disabled={createLoading}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Type</Label>
-              <Select
-                value={createSidTypeId ? String(createSidTypeId) : ''}
-                onValueChange={(v) => setCreateSidTypeId(v ? Number(v) : null)}
-                disabled={createLoading || picklistsLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={picklistsLoading ? 'Loading…' : 'Select type'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {sidTypes.map((t) => (
-                    <SelectItem key={t.id} value={String(t.id)}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Device Model</Label>
-              <Select
-                value={createDeviceModelId ? String(createDeviceModelId) : ''}
-                onValueChange={(v) => setCreateDeviceModelId(v ? Number(v) : null)}
-                disabled={createLoading || picklistsLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={picklistsLoading ? 'Loading…' : 'Select device model'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {deviceModels.map((m) => (
-                    <SelectItem key={m.id} value={String(m.id)}>
-                      {m.manufacturer ? `${m.manufacturer} — ${m.name}` : m.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>CPU Model</Label>
-              <Select
-                value={createCpuModelId ? String(createCpuModelId) : ''}
-                onValueChange={(v) => setCreateCpuModelId(v ? Number(v) : null)}
-                disabled={createLoading || picklistsLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={picklistsLoading ? 'Loading…' : 'Select CPU model'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {cpuModels.map((m) => (
-                    <SelectItem key={m.id} value={String(m.id)}>
-                      {m.manufacturer ? `${m.manufacturer} — ${m.name}` : m.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Hostname</Label>
-              <Input value={createHostname} onChange={(e) => setCreateHostname(e.target.value)} disabled={createLoading} />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Serial Number</Label>
-              <Input value={createSerialNumber} onChange={(e) => setCreateSerialNumber(e.target.value)} disabled={createLoading} />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Asset Tag</Label>
-              <Input value={createAssetTag} onChange={(e) => setCreateAssetTag(e.target.value)} disabled={createLoading} />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setCreateOpen(false)} disabled={createLoading}>
-              Cancel
-            </Button>
-            <Button onClick={submitCreate} disabled={createLoading}>
-              {createLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating…
-                </>
-              ) : (
-                'Create'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

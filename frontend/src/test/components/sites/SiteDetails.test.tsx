@@ -47,8 +47,6 @@ const mockSite = {
 
 const mockProps = {
   siteId: 1,
-  onEdit: vi.fn(),
-  onDelete: vi.fn(),
   onBack: vi.fn(),
 };
 
@@ -128,49 +126,13 @@ describe('SiteDetails', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
-      expect(screen.getByText('Test Location')).toBeInTheDocument();
-      expect(screen.getByText('Test Description')).toBeInTheDocument();
+      expect(screen.getByText('Cable Index')).toBeInTheDocument();
+      expect(screen.getByText('Bulk Operations')).toBeInTheDocument();
+      expect(screen.getByText('Labels')).toBeInTheDocument();
     });
   });
 
-  it('should format dates correctly', async () => {
-    render(
-      <MemoryRouter>
-        <SiteDetails {...mockProps} />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText(/Jan 1, 2024/)).toBeInTheDocument(); // created date
-      expect(screen.getByText(/Jan 2, 2024/)).toBeInTheDocument(); // updated date
-    });
-  });
-
-  it('should call onEdit when edit button is clicked', async () => {
-    // Make viewer a SITE_ADMIN for this site
-    (globalThis as any).__TEST_AUTH__ = {
-      ...(globalThis as any).__TEST_AUTH__,
-      memberships: [{ site_id: 1, site_role: 'SITE_ADMIN' }],
-    };
-
-    const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <SiteDetails {...mockProps} />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
-    });
-
-    const editButton = screen.getByText('Edit Site');
-    await user.click(editButton);
-
-    expect(mockProps.onEdit).toHaveBeenCalledWith(mockSite);
-  });
-
-  it('should not show Edit Site & Delete Site buttons for non-admin user', async () => {
+  it('should not show Edit Site & Delete Site buttons on Cable Index', async () => {
     render(
       <MemoryRouter>
         <SiteDetails {...mockProps} />
@@ -185,26 +147,12 @@ describe('SiteDetails', () => {
     expect(screen.queryByText('Delete Site')).not.toBeInTheDocument();
   });
 
-  it('should call onDelete when delete button is clicked (Global Admin only)', async () => {
-    // Make viewer a GLOBAL_ADMIN
+  it('should show Cable Admin button for site admins', async () => {
     (globalThis as any).__TEST_AUTH__ = {
       ...(globalThis as any).__TEST_AUTH__,
-      user: {
-        id: 1,
-        email: 'admin@example.com',
-        username: 'Admin',
-        role: 'GLOBAL_ADMIN',
-      },
-      memberships: [],
+      memberships: [{ site_id: 1, site_role: 'SITE_ADMIN' }],
     };
 
-    const user = userEvent.setup();
-    const siteWithoutLabels = { ...mockSite, label_count: 0 };
-    vi.mocked(apiClient.getSite).mockResolvedValue({
-      success: true,
-      data: { site: siteWithoutLabels },
-    });
-
     render(
       <MemoryRouter>
         <SiteDetails {...mockProps} />
@@ -215,25 +163,10 @@ describe('SiteDetails', () => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
     });
 
-    const deleteButton = screen.getByText('Delete Site');
-    await user.click(deleteButton);
-
-    expect(mockProps.onDelete).toHaveBeenCalledWith(siteWithoutLabels);
+    expect(screen.getByText('Cable Admin')).toBeInTheDocument();
   });
 
-  it('should allow delete button click even when site has labels (Global Admin only)', async () => {
-    (globalThis as any).__TEST_AUTH__ = {
-      ...(globalThis as any).__TEST_AUTH__,
-      user: {
-        id: 1,
-        email: 'admin@example.com',
-        username: 'Admin',
-        role: 'GLOBAL_ADMIN',
-      },
-      memberships: [],
-    };
-
-    const user = userEvent.setup();
+  it('should not show Cable Admin button for non-admin users', async () => {
     render(
       <MemoryRouter>
         <SiteDetails {...mockProps} />
@@ -244,24 +177,7 @@ describe('SiteDetails', () => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
     });
 
-    const deleteButton = screen.getByText('Delete Site');
-    expect(deleteButton).toBeEnabled();
-    await user.click(deleteButton);
-    expect(mockProps.onDelete).toHaveBeenCalledWith(mockSite);
-  });
-
-  it('should not show a persistent delete warning', async () => {
-    render(
-      <MemoryRouter>
-        <SiteDetails {...mockProps} />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
-    });
-
-    expect(screen.queryByText(/cannot be deleted/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Cable Admin')).not.toBeInTheDocument();
   });
 
   it('should call onBack when back button is clicked', async () => {
@@ -276,7 +192,7 @@ describe('SiteDetails', () => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
     });
 
-    const backButton = screen.getByText('Back to Sites');
+    const backButton = screen.getByText('Back to Site Hub');
     await user.click(backButton);
 
     expect(mockProps.onBack).toHaveBeenCalled();
@@ -302,7 +218,7 @@ describe('SiteDetails', () => {
 
     await waitFor(() => {
       expect(screen.getByText('API Error')).toBeInTheDocument();
-      expect(screen.getByText('Back to Sites')).toBeInTheDocument();
+      expect(screen.getByText('Back to Site Hub')).toBeInTheDocument();
     });
   });
 

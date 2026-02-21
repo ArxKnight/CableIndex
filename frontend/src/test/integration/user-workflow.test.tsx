@@ -428,8 +428,15 @@ describe('User Workflow Integration Tests', () => {
       expect(screen.getByRole('heading', { name: 'Test Site' })).toBeInTheDocument();
     });
 
+    // Go to Cable Index (label creation lives there)
+    await user.click(await screen.findByAltText('Cable Index'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Bulk Operations')).toBeInTheDocument();
+    });
+
     // Click create label button (site-scoped)
-    const createButton = screen.getByRole('button', { name: /create your first label/i });
+    const createButton = await screen.findByRole('button', { name: /open label creation dialog/i });
     await user.click(createButton);
 
     // Fill in label form

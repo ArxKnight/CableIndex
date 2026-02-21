@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Label, Site } from '../../types';
 import { apiClient } from '../../lib/api';
 import { toast } from 'sonner';
@@ -11,14 +12,7 @@ import { LabelDatabase, LabelForm } from '../labels';
 import type { CreateLabelData } from '../../types';
 import { usePermissions } from '../../hooks/usePermissions';
 import { downloadBlobAsNamedFile, downloadBlobAsNamedTextFile, makeTimestampLocal } from '../../lib/download';
-import SiteLocationsDialog from './SiteLocationsDialog';
-import SiteCableTypesDialog from './SiteCableTypesDialog';
 import { 
-  MapPin, 
-  Calendar, 
-  FileText, 
-  Edit, 
-  Trash2, 
   Loader2,
   ArrowLeft,
   Tag
@@ -37,11 +31,10 @@ interface SiteDetailsProps {
 
 const SiteDetails: React.FC<SiteDetailsProps> = ({ 
   siteId, 
-  onEdit, 
-  onDelete, 
   onBack 
 }) => {
-  const { canCreate, canAdministerSite, isGlobalAdmin } = usePermissions();
+  const navigate = useNavigate();
+  const { canCreate, canAdministerSite } = usePermissions();
   const canManageSite = canAdministerSite(siteId);
   const [site, setSite] = useState<SiteWithLabelCount | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,9 +47,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
   const [createdMeta, setCreatedMeta] = useState<{ created_count: number; first_ref_number: number; last_ref_number: number } | null>(null);
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
-  const [locationsOpen, setLocationsOpen] = useState(false);
   const [locationCount, setLocationCount] = useState<number | null>(null);
-  const [cableTypesOpen, setCableTypesOpen] = useState(false);
   const [cableTypeCount, setCableTypeCount] = useState<number | null>(null);
   const [isGeneratingCableReport, setIsGeneratingCableReport] = useState(false);
 
@@ -237,16 +228,6 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
     }
   };
 
-  const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -287,6 +268,9 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
   const locationsMissing = locationCount === 0;
   const cableTypesMissing = cableTypeCount === 0;
   const canCreateLabelForSite = canCreateLabels && !locationsMissing && !cableTypesMissing;
+  const goCableAdmin = (tab: 'locations' | 'cableTypes') => {
+    navigate(`/sites/${siteId}/cable/admin?tab=${tab}`);
+  };
 
   return (
     <div className="pt-4 space-y-6">
@@ -302,113 +286,27 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
             <p className="text-muted-foreground">Cable Index</p>
           </div>
         </div>
+
+        {canManageSite ? (
+          <Button
+            variant="outline"
+            className="border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+            onClick={() => goCableAdmin('locations')}
+          >
+            Cable Admin
+          </Button>
+        ) : null}
       </div>
 
-      {/* Site Information */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <CardTitle className="flex items-center whitespace-nowrap shrink-0">
-                <FileText className="mr-2 h-5 w-5" />
-                Site Information
-              </CardTitle>
-
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                {canManageSite && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
-                      onClick={() => setLocationsOpen(true)}
-                    >
-                      Manage Site Locations
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
-                      onClick={() => setCableTypesOpen(true)}
-                    >
-                      Manage Cable Types
-                    </Button>
-                  </>
-                )}
-
-                {canManageSite && onEdit && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
-                    onClick={() => onEdit(site)}
-                  >
-                    <Edit className="mr-2 h-4 w-4" />
-                    Edit Site
-                  </Button>
-                )}
-
-                {isGlobalAdmin && onDelete && (
-                  <Button variant="destructive" size="sm" onClick={() => onDelete(site)}>
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete Site
-                  </Button>
-                )}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <label className="text-sm font-medium text-muted-foreground">Site Name</label>
-              <p className="text-sm">{site.name}</p>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-muted-foreground">Site Abbreviation</label>
-              <p className="text-sm font-mono">{site.code}</p>
-            </div>
-            
-            {site.location && (
-              <div>
-                <label className="text-sm font-medium text-muted-foreground flex items-center">
-                  <MapPin className="mr-1 h-3 w-3" />
-                  Site Location
-                </label>
-                <p className="text-sm">{site.location}</p>
-              </div>
-            )}
-            
-            {site.description && (
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Site Description</label>
-                <p className="text-sm whitespace-pre-wrap">{site.description}</p>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-medium text-muted-foreground flex items-center">
-                  <Calendar className="mr-1 h-3 w-3" />
-                  Site Created
-                </label>
-                <p className="text-sm">{formatDateTime(site.created_at)}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Site Last Updated</label>
-                <p className="text-sm">{formatDateTime(site.updated_at)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center">
-              <Tag className="mr-2 h-5 w-5" />
-              Bulk Operations
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+      {/* Bulk Operations */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center">
+            <Tag className="mr-2 h-5 w-5" />
+            Bulk Operations
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
             <div className="space-y-2 rounded-md border p-3">
               <div className="text-center">
                 <div className="text-sm font-semibold">Cross-Rack Reference Range</div>
@@ -462,9 +360,8 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
                 </Button>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Labels Section */}
       <Card>
@@ -479,13 +376,13 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
 
             {locationsMissing ? (
               canManageSite ? (
-                <Button aria-label="Open site locations dialog" onClick={() => setLocationsOpen(true)}>
+                <Button aria-label="Open cable admin locations" onClick={() => goCableAdmin('locations')}>
                   Create Your First Site Location
                 </Button>
               ) : null
             ) : cableTypesMissing ? (
               canManageSite ? (
-                <Button aria-label="Open cable types dialog" onClick={() => setCableTypesOpen(true)}>
+                <Button aria-label="Open cable admin cable types" onClick={() => goCableAdmin('cableTypes')}>
                   Create Your First Cable Type
                 </Button>
               ) : null
@@ -594,9 +491,9 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
             }
             emptyStateAction={
               locationsMissing && canManageSite
-                ? { label: 'Create Your First Site Location', onClick: () => setLocationsOpen(true) }
+                ? { label: 'Create Your First Site Location', onClick: () => goCableAdmin('locations') }
                 : cableTypesMissing && canManageSite
-                  ? { label: 'Create Your First Cable Type', onClick: () => setCableTypesOpen(true) }
+                  ? { label: 'Create Your First Cable Type', onClick: () => goCableAdmin('cableTypes') }
                   : undefined
             }
             onLabelsChanged={() => {
@@ -604,28 +501,6 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
               loadSite();
             }}
           />
-
-          {canManageSite && (
-            <SiteLocationsDialog
-              open={locationsOpen}
-              onOpenChange={setLocationsOpen}
-              siteId={site.id}
-              siteCode={site.code}
-              siteName={site.name}
-              onChanged={loadSite}
-            />
-          )}
-
-          {canManageSite && (
-            <SiteCableTypesDialog
-              open={cableTypesOpen}
-              onOpenChange={setCableTypesOpen}
-              siteId={site.id}
-              siteCode={site.code}
-              siteName={site.name}
-              onChanged={loadSite}
-            />
-          )}
         </CardContent>
       </Card>
     </div>

@@ -19,6 +19,14 @@ import { Migration016_PasswordResetTokens } from './016_password_reset_tokens.js
 import { Migration017_SidIndex } from './017_sid_index.js';
 import { Migration018_SiteCountersNextSid } from './018_site_counters_next_sid.js';
 import { Migration019_SidNotesPins } from './019_sid_notes_pins.js';
+import { Migration020_SidCpuModelsCoresThreads } from './020_sid_cpu_models_cores_threads.js';
+import { Migration021_SidRackU } from './021_sid_rack_u.js';
+import { Migration022_SidPlatforms } from './022_sid_platforms.js';
+import { Migration023_SidHistoryPasswords } from './023_sid_history_passwords.js';
+import { Migration024_SidRackUStringRamDecimal } from './024_sid_racku_string_ram_decimal.js';
+import { Migration025_SidRemoveAssetTagSystemNotes } from './025_sid_remove_asset_tag_system_notes.js';
+import { Migration026_SidStatusPicklist } from './026_sid_status_picklist.js';
+import { Migration027_SidPasswordTypes } from './027_sid_password_types.js';
 
 export interface Migration {
   id: string;
@@ -69,6 +77,14 @@ const migrations: Migration[] = [
   Migration017_SidIndex,
   Migration018_SiteCountersNextSid,
   Migration019_SidNotesPins,
+  Migration020_SidCpuModelsCoresThreads,
+  Migration021_SidRackU,
+  Migration022_SidPlatforms,
+  Migration023_SidHistoryPasswords,
+  Migration024_SidRackUStringRamDecimal,
+  Migration025_SidRemoveAssetTagSystemNotes,
+  Migration026_SidStatusPicklist,
+  Migration027_SidPasswordTypes,
 ];
 
 export const LATEST_MIGRATION_ID = migrations[migrations.length - 1]?.id;

@@ -20,6 +20,7 @@ import NotFoundPage from './pages/NotFoundPage'
 import ErrorPage from './pages/ErrorPage'
 import SiteHubPage from './pages/SiteHubPage'
 import SiteCablePage from './pages/SiteCablePage'
+import SiteCableAdminPage from './pages/SiteCableAdminPage'
 import SiteSidIndexPage from './pages/SiteSidIndexPage'
 import SiteSidAdminPage from './pages/SiteSidAdminPage'
 import SiteStockIndexPage from './pages/SiteStockIndexPage'
@@ -150,6 +151,16 @@ function App() {
                   } 
                 />
                 <Route 
+                  path="/sites/:siteId/cable/admin" 
+                  element={
+                    <ProtectedRoute>
+                      <Layout>
+                        <SiteCableAdminPage />
+                      </Layout>
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
                   path="/sites/:siteId/sid" 
                   element={
                     <ProtectedRoute>
@@ -165,6 +176,16 @@ function App() {
                     <ProtectedRoute>
                       <Layout>
                         <SiteSidAdminPage />
+                      </Layout>
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/sites/:siteId/sid/new" 
+                  element={
+                    <ProtectedRoute>
+                      <Layout>
+                        <SidDetailPage mode="create" />
                       </Layout>
                     </ProtectedRoute>
                   } 

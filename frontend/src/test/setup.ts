@@ -145,9 +145,33 @@ vi.mock('../lib/api', () => {
 // Mock React Router
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom');
+
+  const navigateImpl = (to: any, options?: any) => {
+    if (typeof to === 'number') {
+      window.history.go(to);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      return;
+    }
+
+    const target = typeof to === 'string'
+      ? to
+      : typeof to === 'object' && to !== null
+        ? (to.pathname ?? '')
+        : '';
+
+    if (!target) return;
+
+    if (options?.replace) {
+      window.history.replaceState({}, '', target);
+    } else {
+      window.history.pushState({}, '', target);
+    }
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
   return {
     ...actual,
-    useNavigate: () => vi.fn(),
+    useNavigate: () => vi.fn(navigateImpl),
   };
 });
 

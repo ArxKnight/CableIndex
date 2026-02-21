@@ -367,9 +367,20 @@ class ApiClient {
   }
 
   // SID Index endpoints
-  async getSiteSids(siteId: number, params?: { search?: string; limit?: number; offset?: number }) {
+  async getSiteSids(
+    siteId: number,
+    params?: {
+      search?: string;
+      search_field?: 'any' | 'status' | 'sid' | 'location' | 'hostname' | 'model';
+      exact?: boolean;
+      limit?: number;
+      offset?: number;
+    }
+  ) {
     const searchParams = new URLSearchParams();
     if (params?.search) searchParams.append('search', params.search);
+    if (params?.search_field) searchParams.append('search_field', params.search_field);
+    if (params?.exact) searchParams.append('exact', '1');
     if (params?.limit) searchParams.append('limit', params.limit.toString());
     if (params?.offset) searchParams.append('offset', params.offset.toString());
     const query = searchParams.toString();
@@ -382,8 +393,18 @@ class ApiClient {
     cpu_model_id?: number | null;
     hostname?: string | null;
     serial_number?: string | null;
-    asset_tag?: string | null;
     status?: string | null;
+    cpu_count?: number | null;
+    cpu_cores?: number | null;
+    cpu_threads?: number | null;
+    ram_gb?: number | null;
+    platform_id?: number | null;
+    os_name?: string | null;
+    os_version?: string | null;
+    mgmt_ip?: string | null;
+    mgmt_mac?: string | null;
+    location_id?: number | null;
+    rack_u?: string | null;
   }) {
     return this.request<{ sid: any }>(`/sites/${siteId}/sids`, {
       method: 'POST',
@@ -391,8 +412,61 @@ class ApiClient {
     });
   }
 
-  async getSiteSid(siteId: number, sidId: number) {
-    return this.request<{ sid: any; notes: any[]; nics: any[] }>(`/sites/${siteId}/sids/${sidId}`);
+  async getSiteSid(siteId: number, sidId: number, opts?: { log_view?: boolean }) {
+    const searchParams = new URLSearchParams();
+    if (opts?.log_view === false) searchParams.append('log_view', '0');
+    const query = searchParams.toString();
+    return this.request<{ sid: any; notes: any[]; nics: any[] }>(`/sites/${siteId}/sids/${sidId}${query ? `?${query}` : ''}`);
+  }
+
+  async getSiteSidHistory(siteId: number, sidId: number) {
+    return this.request<{ history: any[] }>(`/sites/${siteId}/sids/${sidId}/history`);
+  }
+
+  async getSiteSidPassword(siteId: number, sidId: number) {
+    return this.request<{ password: any }>(`/sites/${siteId}/sids/${sidId}/password`);
+  }
+
+  async getSiteSidPasswords(siteId: number, sidId: number) {
+    return this.request<{ passwords: any[]; key_configured: boolean }>(`/sites/${siteId}/sids/${sidId}/passwords`);
+  }
+
+  async updateSiteSidPassword(
+    siteId: number,
+    sidId: number,
+    data: { username?: string | null; password?: string | null }
+  ) {
+    return this.request<{ updated: boolean }>(`/sites/${siteId}/sids/${sidId}/password`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSiteSidPasswordByType(
+    siteId: number,
+    sidId: number,
+    passwordTypeId: number,
+    data: { username?: string | null; password?: string | null }
+  ) {
+    return this.request<{ updated: boolean }>(`/sites/${siteId}/sids/${sidId}/passwords/${passwordTypeId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getSiteSidPasswordTypes(siteId: number) {
+    return this.request<{ password_types: any[] }>(`/sites/${siteId}/sid/password-types`);
+  }
+
+  async createSiteSidPasswordType(siteId: number, data: { name: string; description?: string | null }) {
+    return this.request<{ password_type: any }>(`/sites/${siteId}/sid/password-types`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSiteSidPasswordType(siteId: number, rowId: number) {
+    return this.request<{ deleted: boolean }>(`/sites/${siteId}/sid/password-types/${rowId}`, { method: 'DELETE' });
   }
 
   async updateSiteSid(siteId: number, sidId: number, data: Record<string, any>) {
@@ -476,7 +550,40 @@ class ApiClient {
     return this.request<{ cpu_models: any[] }>(`/sites/${siteId}/sid/cpu-models`);
   }
 
-  async createSiteSidCpuModel(siteId: number, data: { manufacturer?: string | null; name: string; description?: string | null }) {
+  async getSiteSidPlatforms(siteId: number) {
+    return this.request<{ platforms: any[] }>(`/sites/${siteId}/sid/platforms`);
+  }
+
+  async getSiteSidStatuses(siteId: number) {
+    return this.request<{ statuses: any[] }>(`/sites/${siteId}/sid/statuses`);
+  }
+
+  async createSiteSidStatus(siteId: number, data: { name: string; description?: string | null }) {
+    return this.request<{ status: any }>(`/sites/${siteId}/sid/statuses`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSiteSidStatus(siteId: number, rowId: number) {
+    return this.request<{ deleted: boolean }>(`/sites/${siteId}/sid/statuses/${rowId}`, { method: 'DELETE' });
+  }
+
+  async createSiteSidPlatform(siteId: number, data: { name: string; description?: string | null }) {
+    return this.request<{ platform: any }>(`/sites/${siteId}/sid/platforms`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSiteSidPlatform(siteId: number, rowId: number) {
+    return this.request<{ deleted: boolean }>(`/sites/${siteId}/sid/platforms/${rowId}`, { method: 'DELETE' });
+  }
+
+  async createSiteSidCpuModel(
+    siteId: number,
+    data: { manufacturer?: string | null; name: string; cpu_cores: number; cpu_threads: number; description?: string | null }
+  ) {
     return this.request<{ cpu_model: any }>(`/sites/${siteId}/sid/cpu-models`, {
       method: 'POST',
       body: JSON.stringify(data),

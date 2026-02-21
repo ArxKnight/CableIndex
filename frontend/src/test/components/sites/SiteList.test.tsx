@@ -29,7 +29,6 @@ const mockSites = [
 
 const mockProps = {
   onCreateSite: vi.fn(),
-  onViewDetails: vi.fn(),
 };
 
 describe('SiteList', () => {
@@ -144,18 +143,6 @@ describe('SiteList', () => {
 
     await user.click(screen.getByText('Create Site'));
     expect(mockProps.onCreateSite).toHaveBeenCalled();
-  });
-
-  it('should call onViewDetails when site card is clicked', async () => {
-    const user = userEvent.setup();
-    render(<SiteList {...mockProps} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('Office Site')).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByText('Office Site'));
-    expect(mockProps.onViewDetails).toHaveBeenCalledWith(1);
   });
 
   it('should display empty state when no sites exist', async () => {
