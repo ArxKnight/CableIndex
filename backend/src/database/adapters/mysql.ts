@@ -118,7 +118,8 @@ export class MySQLAdapter extends BaseDatabaseAdapter {
     if (!this.pool) throw new Error('Database not connected');
     
     try {
-      const [rows] = await this.pool.execute<RowDataPacket[]>(sql, params);
+      const executor = this.connection ?? this.pool;
+      const [rows] = await executor.execute<RowDataPacket[]>(sql, params);
       return Array.isArray(rows) ? rows : [rows as any];
     } catch (error) {
       console.error('MySQL query error:', error);
@@ -130,7 +131,8 @@ export class MySQLAdapter extends BaseDatabaseAdapter {
     if (!this.pool) throw new Error('Database not connected');
     
     try {
-      const [result] = await this.pool.execute<ResultSetHeader>(sql, params);
+      const executor = this.connection ?? this.pool;
+      const [result] = await executor.execute<ResultSetHeader>(sql, params);
       const mysqlResult = result as ResultSetHeader;
       return {
         insertId: mysqlResult.insertId,

@@ -13,17 +13,25 @@ export async function isSetupComplete(): Promise<boolean> {
     return true;
   }
 
-  if (fs.existsSync(SETUP_MARKER_PATH)) {
-    process.env.SETUP_COMPLETE = 'true';
-    return true;
-  }
-
   const hasMySqlEnv = Boolean(
     process.env.MYSQL_HOST &&
     process.env.MYSQL_DATABASE &&
     process.env.MYSQL_USER &&
     process.env.MYSQL_PASSWORD
   );
+
+  if (fs.existsSync(SETUP_MARKER_PATH)) {
+    // A marker without DB env typically means the marker persisted (e.g. /app/data is a volume)
+    // but /app/.env did not. In that case we must treat setup as incomplete, otherwise
+    // startup will crash trying to connect with missing credentials.
+    if (!hasMySqlEnv) {
+      console.warn('⚠️  Setup marker found but MySQL environment variables are missing; treating setup as incomplete');
+      return false;
+    }
+
+    process.env.SETUP_COMPLETE = 'true';
+    return true;
+  }
 
   if (!hasMySqlEnv) {
     return false;

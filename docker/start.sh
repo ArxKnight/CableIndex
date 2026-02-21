@@ -4,11 +4,13 @@
 echo "🚀 Starting InfraDB..."
 
 # Load .env file if it exists
-if [ -f /app/.env ]; then
+if [ -f /app/.env ] && grep -qE '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*=' /app/.env; then
   set -a
   . /app/.env
   set +a
   echo "📋 Loaded configuration from /app/.env"
+else
+  echo "ℹ️  No /app/.env variables found (or file missing)."
 fi
 
 # Set default values
@@ -33,10 +35,10 @@ echo "   Environment: $NODE_ENV"
 
 # Log database configuration
 echo "   Database Type: MySQL"
-echo "   MySQL Host: ${MYSQL_HOST:-localhost}"
+echo "   MySQL Host: ${MYSQL_HOST:-<not set>}"
 echo "   MySQL Port: ${MYSQL_PORT:-3306}"
-echo "   MySQL Database: ${MYSQL_DATABASE:-infradb}"
-echo "   MySQL User: ${MYSQL_USER:-root}"
+echo "   MySQL Database: ${MYSQL_DATABASE:-<not set>}"
+echo "   MySQL User: ${MYSQL_USER:-<not set>}"
 
 echo "   Uploads: $UPLOADS_PATH"
 

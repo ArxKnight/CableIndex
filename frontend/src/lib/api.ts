@@ -366,6 +366,142 @@ class ApiClient {
     return this.request(`/sites/${siteId}/cable-types/${cableTypeId}`, { method: 'DELETE' });
   }
 
+  // SID Index endpoints
+  async getSiteSids(siteId: number, params?: { search?: string; limit?: number; offset?: number }) {
+    const searchParams = new URLSearchParams();
+    if (params?.search) searchParams.append('search', params.search);
+    if (params?.limit) searchParams.append('limit', params.limit.toString());
+    if (params?.offset) searchParams.append('offset', params.offset.toString());
+    const query = searchParams.toString();
+    return this.request<{ sids: any[]; pagination: any }>(`/sites/${siteId}/sids${query ? `?${query}` : ''}`);
+  }
+
+  async createSiteSid(siteId: number, data: {
+    sid_type_id?: number | null;
+    device_model_id?: number | null;
+    cpu_model_id?: number | null;
+    hostname?: string | null;
+    serial_number?: string | null;
+    asset_tag?: string | null;
+    status?: string | null;
+  }) {
+    return this.request<{ sid: any }>(`/sites/${siteId}/sids`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getSiteSid(siteId: number, sidId: number) {
+    return this.request<{ sid: any; notes: any[]; nics: any[] }>(`/sites/${siteId}/sids/${sidId}`);
+  }
+
+  async updateSiteSid(siteId: number, sidId: number, data: Record<string, any>) {
+    return this.request<{ sid: any }>(`/sites/${siteId}/sids/${sidId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSiteSid(siteId: number, sidId: number) {
+    return this.request<{ deleted: boolean }>(`/sites/${siteId}/sids/${sidId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async addSiteSidNote(siteId: number, sidId: number, data: { note_text: string; type?: 'NOTE' | 'CLOSING' }) {
+    return this.request<{ note: any }>(`/sites/${siteId}/sids/${sidId}/notes`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async setSiteSidNotePinned(siteId: number, sidId: number, noteId: number, pinned: boolean) {
+    return this.request<{ note: any }>(`/sites/${siteId}/sids/${sidId}/notes/${noteId}/pin`, {
+      method: 'PATCH',
+      body: JSON.stringify({ pinned }),
+    });
+  }
+
+  async replaceSiteSidNics(
+    siteId: number,
+    sidId: number,
+    data: {
+      nics: Array<{
+        name: string;
+        mac_address?: string | null;
+        ip_address?: string | null;
+        site_vlan_id?: number | null;
+        switch_sid_id?: number | null;
+        switch_port?: string | null;
+      }>;
+    }
+  ) {
+    return this.request<{ nics: any[] }>(`/sites/${siteId}/sids/${sidId}/nics`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getSiteSidTypes(siteId: number) {
+    return this.request<{ sid_types: any[] }>(`/sites/${siteId}/sid/types`);
+  }
+
+  async createSiteSidType(siteId: number, data: { name: string; description?: string | null }) {
+    return this.request<{ sid_type: any }>(`/sites/${siteId}/sid/types`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSiteSidType(siteId: number, rowId: number) {
+    return this.request<{ deleted: boolean }>(`/sites/${siteId}/sid/types/${rowId}`, { method: 'DELETE' });
+  }
+
+  async getSiteSidDeviceModels(siteId: number) {
+    return this.request<{ device_models: any[] }>(`/sites/${siteId}/sid/device-models`);
+  }
+
+  async createSiteSidDeviceModel(siteId: number, data: { manufacturer?: string | null; name: string; description?: string | null }) {
+    return this.request<{ device_model: any }>(`/sites/${siteId}/sid/device-models`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSiteSidDeviceModel(siteId: number, rowId: number) {
+    return this.request<{ deleted: boolean }>(`/sites/${siteId}/sid/device-models/${rowId}`, { method: 'DELETE' });
+  }
+
+  async getSiteSidCpuModels(siteId: number) {
+    return this.request<{ cpu_models: any[] }>(`/sites/${siteId}/sid/cpu-models`);
+  }
+
+  async createSiteSidCpuModel(siteId: number, data: { manufacturer?: string | null; name: string; description?: string | null }) {
+    return this.request<{ cpu_model: any }>(`/sites/${siteId}/sid/cpu-models`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSiteSidCpuModel(siteId: number, rowId: number) {
+    return this.request<{ deleted: boolean }>(`/sites/${siteId}/sid/cpu-models/${rowId}`, { method: 'DELETE' });
+  }
+
+  async getSiteSidVlans(siteId: number) {
+    return this.request<{ vlans: any[] }>(`/sites/${siteId}/sid/vlans`);
+  }
+
+  async createSiteSidVlan(siteId: number, data: { vlan_id: number; name: string; description?: string | null }) {
+    return this.request<{ vlan: any }>(`/sites/${siteId}/sid/vlans`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSiteSidVlan(siteId: number, rowId: number) {
+    return this.request<{ deleted: boolean }>(`/sites/${siteId}/sid/vlans/${rowId}`, { method: 'DELETE' });
+  }
+
   // Label endpoints
   async getLabels(params: {
     site_id: number;

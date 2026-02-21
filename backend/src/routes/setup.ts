@@ -206,12 +206,24 @@ router.post('/test-connection', async (req, res) => {
  */
 router.post('/complete', async (req, res) => {
   try {
-    // Check if setup is already complete
-    if (fs.existsSync(setupMarkerPath)) {
+    // Check if setup is already complete.
+    // If the marker exists but DB env vars are missing, allow re-running setup.
+    const hasMySqlEnv = Boolean(
+      process.env.MYSQL_HOST &&
+      process.env.MYSQL_DATABASE &&
+      process.env.MYSQL_USER &&
+      process.env.MYSQL_PASSWORD
+    );
+
+    if (fs.existsSync(setupMarkerPath) && hasMySqlEnv) {
       return res.status(400).json({
         success: false,
         error: 'Setup has already been completed'
       });
+    }
+
+    if (fs.existsSync(setupMarkerPath) && !hasMySqlEnv) {
+      console.warn('⚠️  Setup marker exists but MySQL env vars are missing; allowing setup to run again');
     }
 
     const setupData: SetupData = setupSchema.parse(req.body);

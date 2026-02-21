@@ -52,9 +52,11 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 COPY --from=frontend-builder /app/frontend/public ./frontend/public
 
 # Copy startup script and create entrypoint
-COPY docker/start.sh ./
-COPY docker/entrypoint.sh ./
-RUN chmod +x start.sh entrypoint.sh
+COPY docker/start.sh /app/start.sh
+COPY docker/entrypoint.sh /app/entrypoint.sh
+# Ensure scripts are executable and have Unix line endings (avoids "/bin/sh\r: not found" / "no such file" on Windows checkouts)
+RUN sed -i 's/\r$//' /app/start.sh /app/entrypoint.sh \
+    && chmod +x /app/start.sh /app/entrypoint.sh
 
 # Create data directory for database and uploads with proper permissions
 # Must be done as root before switching users
@@ -79,5 +81,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:' + (process.env.PORT || 3000) + '/api/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
 
 # Use entrypoint to fix permissions, then start app
-ENTRYPOINT ["./entrypoint.sh"]
-CMD ["./start.sh"]
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["/app/start.sh"]

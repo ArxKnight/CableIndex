@@ -162,22 +162,21 @@ const SiteHubPage: React.FC = () => {
   const canDelete = !requiresExtraConfirmation || (nameMatches && deleteCascadeConfirmed);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 md:px-6 lg:px-10">
       <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <Button variant="ghost" onClick={() => navigate('/sites')}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Sites
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold">{site.name}</h1>
-            <p className="text-muted-foreground">Site Hub</p>
-          </div>
-        </div>
+        <Button variant="ghost" onClick={() => navigate('/sites')}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to Sites
+        </Button>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
+      <div className="text-center">
+        <h1 className="text-2xl font-bold">{site.name}</h1>
+        <p className="text-muted-foreground">Site Hub</p>
+      </div>
+
+      <div>
+        <Card className="w-full">
           <CardHeader>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="flex items-center whitespace-nowrap shrink-0">
@@ -233,21 +232,69 @@ const SiteHubPage: React.FC = () => {
             )}
           </CardContent>
         </Card>
+      </div>
 
-        <Card>
+      <div>
+        <Card className="w-full">
           <CardHeader>
-            <CardTitle>Sections</CardTitle>
+            <CardTitle className="text-center">Site Applications</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <Button className="w-full justify-start" onClick={() => navigate(`/sites/${site.id}/cable`)}>
-              Cable Index
-            </Button>
-            <Button className="w-full justify-start" onClick={() => navigate(`/sites/${site.id}/sid`)}>
-              SID Index
-            </Button>
-            <Button className="w-full justify-start" onClick={() => navigate(`/sites/${site.id}/stock`)}>
-              Stock Index
-            </Button>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-4 md:gap-6 sm:grid-cols-3 sm:justify-items-center">
+              <div className="w-full space-y-2 text-center sm:max-w-xs">
+                <Button
+                  variant="outline"
+                  className="w-full h-auto min-h-32 flex-col items-center justify-center gap-3 whitespace-normal text-center p-6 sm:aspect-square sm:min-h-0"
+                  onClick={() => navigate(`/sites/${site.id}/cable`)}
+                >
+                  <img
+                    src="/cableindex-title.png"
+                    alt="Cable Index"
+                    className="max-h-20 md:max-h-24 w-auto object-contain"
+                    loading="lazy"
+                  />
+                </Button>
+                <p className="text-sm text-muted-foreground text-center">
+                  Create, Manage & Print Cable Labels for this site
+                </p>
+              </div>
+
+              <div className="w-full space-y-2 text-center sm:max-w-xs">
+                <Button
+                  variant="outline"
+                  className="w-full h-auto min-h-32 flex-col items-center justify-center gap-3 whitespace-normal text-center p-6 sm:aspect-square sm:min-h-0"
+                  onClick={() => navigate(`/sites/${site.id}/sid`)}
+                >
+                  <img
+                    src="/sidindex-title.png"
+                    alt="SID Index"
+                    className="max-h-20 md:max-h-24 w-auto object-contain"
+                    loading="lazy"
+                  />
+                </Button>
+                <p className="text-sm text-muted-foreground text-center">
+                  Create & Manage Server/Device IDs (SIDS) for this site
+                </p>
+              </div>
+
+              <div className="w-full space-y-2 text-center sm:max-w-xs">
+                <Button
+                  variant="outline"
+                  className="w-full h-auto min-h-32 flex-col items-center justify-center gap-3 whitespace-normal text-center p-6 sm:aspect-square sm:min-h-0"
+                  onClick={() => navigate(`/sites/${site.id}/stock`)}
+                >
+                  <img
+                    src="/stockindex-title.png"
+                    alt="Stock Index"
+                    className="max-h-20 md:max-h-24 w-auto object-contain"
+                    loading="lazy"
+                  />
+                </Button>
+                <p className="text-sm text-muted-foreground text-center">
+                  Create & Manage Stock IDs for this site
+                </p>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>

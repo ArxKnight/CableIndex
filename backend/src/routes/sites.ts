@@ -147,6 +147,101 @@ const updateCableTypeSchema = z.object({
   ]).optional(),
 });
 
+// SID Index schemas
+const sidIdSchema = z.object({
+  sidId: z.coerce.number().min(1, 'Invalid SID ID'),
+});
+
+const getSidsQuerySchema = z
+  .object({
+    search: z.string().optional(),
+    limit: z.coerce.number().min(1).max(1000).default(50).optional(),
+    offset: z.coerce.number().min(0).default(0).optional(),
+  })
+  .passthrough();
+
+const createSidSchema = z.object({
+  sid_type_id: z.coerce.number().int().positive().optional().nullable(),
+  device_model_id: z.coerce.number().int().positive().optional().nullable(),
+  cpu_model_id: z.coerce.number().int().positive().optional().nullable(),
+  hostname: z.string().max(255).optional().nullable(),
+  serial_number: z.string().max(255).optional().nullable(),
+  asset_tag: z.string().max(255).optional().nullable(),
+  status: z.string().max(64).optional().nullable(),
+  cpu_count: z.coerce.number().int().positive().optional().nullable(),
+  cpu_cores: z.coerce.number().int().positive().optional().nullable(),
+  cpu_threads: z.coerce.number().int().positive().optional().nullable(),
+  ram_gb: z.coerce.number().int().positive().optional().nullable(),
+  os_name: z.string().max(255).optional().nullable(),
+  os_version: z.string().max(255).optional().nullable(),
+  mgmt_ip: z.string().max(64).optional().nullable(),
+  mgmt_mac: z.string().max(64).optional().nullable(),
+  location_id: z.coerce.number().int().positive().optional().nullable(),
+});
+
+const updateSidSchema = createSidSchema.partial();
+
+const createSidNoteSchema = z.object({
+  note_text: z.string().min(1, 'Note text is required').max(10000),
+  type: z.enum(['NOTE', 'CLOSING']).optional(),
+});
+
+const sidNoteIdSchema = z.object({
+  noteId: z.coerce.number().min(1, 'Invalid note ID'),
+});
+
+const setSidNotePinnedSchema = z.object({
+  pinned: z.boolean(),
+});
+
+const replaceSidNicsSchema = z.object({
+  nics: z
+    .array(
+      z
+        .object({
+          name: z.string().min(1).max(255),
+          mac_address: z.string().max(64).optional().nullable(),
+          ip_address: z.string().max(64).optional().nullable(),
+          site_vlan_id: z.coerce.number().int().positive().optional().nullable(),
+          switch_sid_id: z.coerce.number().int().positive().optional().nullable(),
+          switch_port: z.string().max(255).optional().nullable(),
+        })
+        .superRefine((val, ctx) => {
+          const hasSwitch = Number.isFinite(val.switch_sid_id as any) && (val.switch_sid_id as any) > 0;
+          const hasPort = (val.switch_port ?? '').toString().trim() !== '';
+          if (hasSwitch !== hasPort) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['switch_port'],
+              message: 'Switch and port must be set together',
+            });
+          }
+        })
+    )
+    .default([]),
+});
+
+function isDuplicateKeyError(error: unknown): boolean {
+  const anyErr = error as any;
+  const code = anyErr?.code || anyErr?.errno;
+  return code === 'ER_DUP_ENTRY' || code === 1062;
+}
+
+async function assertPicklistRowBelongsToSite(params: {
+  adapter: ReturnType<typeof getAdapter>;
+  table: 'sid_types' | 'sid_device_models' | 'sid_cpu_models' | 'site_vlans';
+  rowId: number;
+  siteId: number;
+}): Promise<void> {
+  const rows = await params.adapter.query(`SELECT id FROM ${params.table} WHERE id = ? AND site_id = ?`, [
+    params.rowId,
+    params.siteId,
+  ]);
+  if (!rows.length) {
+    throw new Error('Not found');
+  }
+}
+
 /**
  * GET /api/sites
  * Get all sites for the authenticated user with optional filtering
@@ -278,6 +373,1217 @@ router.get('/:id', authenticateToken, resolveSiteAccess(req => Number(req.params
     } as ApiResponse);
   }
 });
+
+/**
+ * GET /api/sites/:id/sids
+ * List SIDs (site-scoped)
+ */
+router.get(
+  '/:id/sids',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  async (req: Request, res: Response) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const queryValidation = getSidsQuerySchema.safeParse(req.query);
+      if (!queryValidation.success) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid query parameters',
+          details: queryValidation.error.errors,
+        } as ApiResponse);
+      }
+
+      const { search, limit = 50, offset = 0 } = queryValidation.data;
+      const safeLimit = Number.isFinite(limit) ? Math.min(1000, Math.max(1, Math.floor(limit))) : 50;
+      const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0;
+      const adapter = getAdapter();
+
+      const where: string[] = ['s.site_id = ?'];
+      const params: any[] = [siteId];
+
+      if (search && search.trim() !== '') {
+        where.push('(s.sid_number LIKE ? OR s.hostname LIKE ? OR s.serial_number LIKE ? OR s.asset_tag LIKE ?)');
+        const pattern = `%${search.trim()}%`;
+        params.push(pattern, pattern, pattern, pattern);
+      }
+
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+      const totalRows = await adapter.query(`SELECT COUNT(*) as count FROM sids s ${whereSql}`, params);
+      const total = Number(totalRows[0]?.count ?? 0);
+
+      const rows = await adapter.query(
+        `SELECT
+          s.id,
+          s.site_id,
+          s.sid_number,
+          s.hostname,
+          s.serial_number,
+          s.asset_tag,
+          s.status,
+          s.sid_type_id,
+          st.name as sid_type_name,
+          s.device_model_id,
+          dm.name as device_model_name,
+          s.cpu_model_id,
+          cm.name as cpu_model_name,
+          s.created_at,
+          s.updated_at
+        FROM sids s
+        LEFT JOIN sid_types st ON st.id = s.sid_type_id
+        LEFT JOIN sid_device_models dm ON dm.id = s.device_model_id
+        LEFT JOIN sid_cpu_models cm ON cm.id = s.cpu_model_id
+        ${whereSql}
+        ORDER BY s.sid_number ASC
+        LIMIT ${safeLimit} OFFSET ${safeOffset}`,
+        params
+      );
+
+      return res.json({
+        success: true,
+        data: {
+          sids: rows,
+          pagination: {
+            total,
+            limit: safeLimit,
+            offset: safeOffset,
+            has_more: safeOffset + safeLimit < total,
+          },
+        },
+      } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          details: error.errors,
+        } as ApiResponse);
+      }
+
+      console.error('Get sids error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+/**
+ * POST /api/sites/:id/sids
+ * Create a SID
+ */
+router.post(
+  '/:id/sids',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req: Request, res: Response) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const body = createSidSchema.parse(req.body);
+      const adapter = getAdapter();
+
+      await adapter.beginTransaction();
+      try {
+        // Ensure a counter row exists; seed counters from existing data if missing.
+        await adapter.execute(
+          `INSERT INTO site_counters (site_id, next_ref, next_sid)
+           VALUES (
+             ?,
+             (SELECT COALESCE(MAX(ref_number), 0) + 1 FROM labels WHERE site_id = ?),
+             (SELECT COALESCE(MAX(CAST(sid_number AS UNSIGNED)), 0) + 1
+              FROM sids
+              WHERE site_id = ?
+                AND sid_number REGEXP '^[0-9]+$')
+           )
+           ON DUPLICATE KEY UPDATE next_sid = next_sid`,
+          [siteId, siteId, siteId]
+        );
+
+        // Lock the counter row to allocate a unique SID number.
+        const counterRows = await adapter.query(
+          `SELECT next_sid FROM site_counters WHERE site_id = ? FOR UPDATE`,
+          [siteId]
+        );
+
+        const currentNextSid = counterRows[0]?.next_sid ? Number(counterRows[0].next_sid) : 1;
+
+        const sidNumberToUse = currentNextSid;
+        const newNextSid = currentNextSid + 1;
+
+        await adapter.execute(
+          `UPDATE site_counters SET next_sid = ? WHERE site_id = ?`,
+          [newNextSid, siteId]
+        );
+
+        const sidNumber = String(sidNumberToUse);
+
+        const insert = await adapter.execute(
+          `INSERT INTO sids (
+            site_id, sid_number, sid_type_id, device_model_id, cpu_model_id,
+            hostname, serial_number, asset_tag, status,
+            cpu_count, cpu_cores, cpu_threads, ram_gb,
+            os_name, os_version,
+            mgmt_ip, mgmt_mac,
+            location_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            siteId,
+            sidNumber,
+            body.sid_type_id ?? null,
+            body.device_model_id ?? null,
+            body.cpu_model_id ?? null,
+            body.hostname ?? null,
+            body.serial_number ?? null,
+            body.asset_tag ?? null,
+            body.status ?? null,
+            body.cpu_count ?? null,
+            body.cpu_cores ?? null,
+            body.cpu_threads ?? null,
+            body.ram_gb ?? null,
+            body.os_name ?? null,
+            body.os_version ?? null,
+            body.mgmt_ip ?? null,
+            body.mgmt_mac ?? null,
+            body.location_id ?? null,
+          ]
+        );
+
+        const sidId = Number(insert.insertId ?? adapter.getLastInsertId());
+        await adapter.commit();
+
+        try {
+          await logActivity({
+            actorUserId: req.user!.userId,
+            action: 'SID_CREATED',
+            summary: `Created SID ${sidNumber}`,
+            siteId,
+            metadata: { site_id: siteId, sid_id: sidId, sid_number: sidNumber },
+          });
+        } catch (err) {
+          console.warn('⚠️ Failed to log SID create activity:', err);
+        }
+
+        return res.status(201).json({
+          success: true,
+          data: {
+            sid: {
+              id: sidId,
+              site_id: siteId,
+              sid_number: sidNumber,
+            },
+          },
+        } as ApiResponse);
+      } catch (error) {
+        try {
+          await adapter.rollback();
+        } catch {
+          // ignore rollback failures
+        }
+
+        if (isDuplicateKeyError(error)) {
+          return res.status(409).json({ success: false, error: 'Duplicate SID number' } as ApiResponse);
+        }
+        throw error;
+      }
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      console.error('Create sid error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+/**
+ * GET /api/sites/:id/sids/:sidId
+ * Get a SID with notes and networking
+ */
+router.get(
+  '/:id/sids/:sidId',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  async (req: Request, res: Response) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const { sidId } = sidIdSchema.parse(req.params);
+      const adapter = getAdapter();
+
+      const sidRows = await adapter.query(
+        `SELECT
+          s.*, 
+          st.name as sid_type_name,
+          dm.name as device_model_name,
+          cm.name as cpu_model_name,
+          sl.floor as location_floor,
+          sl.suite as location_suite,
+          sl.\`row\` as location_row,
+          sl.rack as location_rack,
+          sl.area as location_area,
+          sl.label as location_label,
+          sl.template_type as location_template_type
+        FROM sids s
+        LEFT JOIN sid_types st ON st.id = s.sid_type_id
+        LEFT JOIN sid_device_models dm ON dm.id = s.device_model_id
+        LEFT JOIN sid_cpu_models cm ON cm.id = s.cpu_model_id
+        LEFT JOIN site_locations sl ON sl.id = s.location_id
+        WHERE s.site_id = ? AND s.id = ?`,
+        [siteId, sidId]
+      );
+
+      if (!sidRows.length) {
+        return res.status(404).json({ success: false, error: 'SID not found' } as ApiResponse);
+      }
+
+      const notes = await adapter.query(
+        `SELECT
+          n.id,
+          n.sid_id,
+          n.created_by,
+          u.username as created_by_username,
+          u.email as created_by_email,
+          n.type,
+          n.note_text,
+          n.pinned,
+          n.pinned_at,
+          n.pinned_by,
+          n.created_at
+        FROM sid_notes n
+        JOIN users u ON u.id = n.created_by
+        WHERE n.sid_id = ?
+        ORDER BY n.pinned DESC, n.pinned_at DESC, n.created_at DESC`,
+        [sidId]
+      );
+
+      const nics = await adapter.query(
+        `SELECT
+          n.id,
+          n.sid_id,
+          n.name,
+          n.mac_address,
+          n.ip_address,
+          n.site_vlan_id,
+          v.vlan_id as vlan_id,
+          v.name as vlan_name,
+          c.switch_sid_id,
+          sw.sid_number as switch_sid_number,
+          c.switch_port
+        FROM sid_nics n
+        LEFT JOIN site_vlans v ON v.id = n.site_vlan_id
+        LEFT JOIN sid_connections c ON c.nic_id = n.id
+        LEFT JOIN sids sw ON sw.id = c.switch_sid_id
+        WHERE n.sid_id = ?
+        ORDER BY n.name ASC`,
+        [sidId]
+      );
+
+      return res.json({ success: true, data: { sid: sidRows[0], notes, nics } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      console.error('Get sid error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+/**
+ * PUT /api/sites/:id/sids/:sidId
+ * Update SID fields
+ */
+router.put(
+  '/:id/sids/:sidId',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req: Request, res: Response) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const { sidId } = sidIdSchema.parse(req.params);
+      const body = updateSidSchema.parse(req.body);
+      const adapter = getAdapter();
+
+      const existing = await adapter.query('SELECT id, sid_number FROM sids WHERE id = ? AND site_id = ?', [sidId, siteId]);
+      if (!existing.length) {
+        return res.status(404).json({ success: false, error: 'SID not found' } as ApiResponse);
+      }
+
+      const fields: string[] = [];
+      const params: any[] = [];
+
+      for (const [key, value] of Object.entries(body)) {
+        if (value === undefined) continue;
+        fields.push(`${key} = ?`);
+        if (key === 'sid_number' && typeof value === 'string') {
+          params.push(value.trim());
+        } else {
+          params.push(value);
+        }
+      }
+
+      if (!fields.length) {
+        return res.json({ success: true, data: { sid: existing[0] } } as ApiResponse);
+      }
+
+      try {
+        await adapter.execute(`UPDATE sids SET ${fields.join(', ')} WHERE id = ? AND site_id = ?`, [...params, sidId, siteId]);
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return res.status(409).json({ success: false, error: 'Duplicate SID number' } as ApiResponse);
+        }
+        throw error;
+      }
+
+      try {
+        await logActivity({
+          actorUserId: req.user!.userId,
+          action: 'SID_UPDATED',
+          summary: `Updated SID ${existing[0].sid_number}`,
+          siteId,
+          metadata: { site_id: siteId, sid_id: sidId },
+        });
+      } catch (err) {
+        console.warn('⚠️ Failed to log SID update activity:', err);
+      }
+
+      const updated = await adapter.query('SELECT * FROM sids WHERE id = ? AND site_id = ?', [sidId, siteId]);
+      return res.json({ success: true, data: { sid: updated[0] } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      console.error('Update sid error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+/**
+ * DELETE /api/sites/:id/sids/:sidId
+ */
+router.delete(
+  '/:id/sids/:sidId',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req: Request, res: Response) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const { sidId } = sidIdSchema.parse(req.params);
+      const adapter = getAdapter();
+
+      const existing = await adapter.query('SELECT id, sid_number FROM sids WHERE id = ? AND site_id = ?', [sidId, siteId]);
+      if (!existing.length) {
+        return res.status(404).json({ success: false, error: 'SID not found' } as ApiResponse);
+      }
+
+      await adapter.execute('DELETE FROM sids WHERE id = ? AND site_id = ?', [sidId, siteId]);
+
+      try {
+        await logActivity({
+          actorUserId: req.user!.userId,
+          action: 'SID_DELETED',
+          summary: `Deleted SID ${existing[0].sid_number}`,
+          siteId,
+          metadata: { site_id: siteId, sid_id: sidId, sid_number: existing[0].sid_number },
+        });
+      } catch (err) {
+        console.warn('⚠️ Failed to log SID delete activity:', err);
+      }
+
+      return res.json({ success: true, data: { deleted: true } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      console.error('Delete sid error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+/**
+ * POST /api/sites/:id/sids/:sidId/notes
+ */
+router.post(
+  '/:id/sids/:sidId/notes',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  async (req: Request, res: Response) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const { sidId } = sidIdSchema.parse(req.params);
+      const body = createSidNoteSchema.parse(req.body);
+      const adapter = getAdapter();
+
+      const existing = await adapter.query('SELECT id, sid_number FROM sids WHERE id = ? AND site_id = ?', [sidId, siteId]);
+      if (!existing.length) {
+        return res.status(404).json({ success: false, error: 'SID not found' } as ApiResponse);
+      }
+
+      const type = body.type ?? 'NOTE';
+
+      const insert = await adapter.execute(
+        'INSERT INTO sid_notes (sid_id, created_by, type, note_text) VALUES (?, ?, ?, ?)',
+        [sidId, req.user!.userId, type, body.note_text]
+      );
+
+      const noteId = Number(insert.insertId ?? adapter.getLastInsertId());
+
+      try {
+        await logActivity({
+          actorUserId: req.user!.userId,
+          action: type === 'CLOSING' ? 'SID_CLOSING_NOTE' : 'SID_NOTE_ADDED',
+          summary: `${type === 'CLOSING' ? 'Added closing note' : 'Added note'} for SID ${existing[0].sid_number}`,
+          siteId,
+          metadata: { site_id: siteId, sid_id: sidId, note_id: noteId, note_type: type },
+        });
+      } catch (err) {
+        console.warn('⚠️ Failed to log SID note activity:', err);
+      }
+
+      const noteRows = await adapter.query(
+        `SELECT n.id, n.sid_id, n.created_by, u.username as created_by_username, u.email as created_by_email, n.type, n.note_text, n.pinned, n.pinned_at, n.pinned_by, n.created_at
+         FROM sid_notes n JOIN users u ON u.id = n.created_by
+         WHERE n.id = ?`,
+        [noteId]
+      );
+
+      return res.status(201).json({ success: true, data: { note: noteRows[0] } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      console.error('Create sid note error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+/**
+ * PATCH /api/sites/:id/sids/:sidId/notes/:noteId/pin
+ * Pin/unpin a SID note.
+ * - Users can pin only their own notes (unless SITE_ADMIN)
+ * - Only SITE_ADMIN can unpin
+ */
+router.patch(
+  '/:id/sids/:sidId/notes/:noteId/pin',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  async (req: Request, res: Response) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const { sidId } = sidIdSchema.parse(req.params);
+      const { noteId } = sidNoteIdSchema.parse(req.params);
+      const body = setSidNotePinnedSchema.parse(req.body);
+      const adapter = getAdapter();
+
+      const rows = await adapter.query(
+        `SELECT n.id, n.sid_id, n.created_by, n.pinned
+         FROM sid_notes n
+         JOIN sids s ON s.id = n.sid_id
+         WHERE n.id = ? AND n.sid_id = ? AND s.site_id = ?`,
+        [noteId, sidId, siteId]
+      );
+
+      const note = rows[0] as any;
+      if (!note) {
+        return res.status(404).json({ success: false, error: 'Note not found' } as ApiResponse);
+      }
+
+      const isAdmin = req.siteRole === 'SITE_ADMIN';
+
+      if (body.pinned) {
+        if (!isAdmin && Number(note.created_by) !== Number(req.user!.userId)) {
+          return res.status(403).json({ success: false, error: 'Insufficient permissions' } as ApiResponse);
+        }
+      } else {
+        if (!isAdmin) {
+          return res.status(403).json({ success: false, error: 'Site admin access required' } as ApiResponse);
+        }
+      }
+
+      if (body.pinned) {
+        await adapter.execute(
+          `UPDATE sid_notes
+           SET pinned = 1, pinned_at = CURRENT_TIMESTAMP(3), pinned_by = ?
+           WHERE id = ?`,
+          [req.user!.userId, noteId]
+        );
+      } else {
+        await adapter.execute(
+          `UPDATE sid_notes
+           SET pinned = 0, pinned_at = NULL, pinned_by = NULL
+           WHERE id = ?`,
+          [noteId]
+        );
+      }
+
+      const noteRows = await adapter.query(
+        `SELECT n.id, n.sid_id, n.created_by, u.username as created_by_username, u.email as created_by_email, n.type, n.note_text, n.pinned, n.pinned_at, n.pinned_by, n.created_at
+         FROM sid_notes n
+         JOIN users u ON u.id = n.created_by
+         WHERE n.id = ?`,
+        [noteId]
+      );
+
+      return res.json({ success: true, data: { note: noteRows[0] } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      console.error('Set sid note pinned error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+/**
+ * PUT /api/sites/:id/sids/:sidId/nics
+ * Replace NIC list (and switch connections)
+ */
+router.put(
+  '/:id/sids/:sidId/nics',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req: Request, res: Response) => {
+    const adapter = getAdapter();
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const { sidId } = sidIdSchema.parse(req.params);
+      const body = replaceSidNicsSchema.parse(req.body);
+
+      const existing = await adapter.query('SELECT id FROM sids WHERE id = ? AND site_id = ?', [sidId, siteId]);
+      if (!existing.length) {
+        return res.status(404).json({ success: false, error: 'SID not found' } as ApiResponse);
+      }
+
+      // Validate referenced switch SIDs belong to the same site
+      const switchIds = Array.from(
+        new Set(
+          body.nics
+            .map(n => n.switch_sid_id)
+            .filter((v): v is number => Number.isFinite(v as any) && (v as any) > 0)
+        )
+      );
+      if (switchIds.length) {
+        const rows = await adapter.query(
+          `SELECT id FROM sids WHERE site_id = ? AND id IN (${switchIds.map(() => '?').join(',')})`,
+          [siteId, ...switchIds]
+        );
+        const found = new Set(rows.map((r: any) => Number(r.id)));
+        const missing = switchIds.filter(id => !found.has(id));
+        if (missing.length) {
+          return res.status(400).json({ success: false, error: 'Invalid switch SID', details: { missing } } as ApiResponse);
+        }
+      }
+
+      await adapter.beginTransaction();
+      try {
+        // Remove old connections and nics
+        await adapter.execute('DELETE FROM sid_connections WHERE sid_id = ? AND site_id = ?', [sidId, siteId]);
+        await adapter.execute('DELETE FROM sid_nics WHERE sid_id = ?', [sidId]);
+
+        for (const nic of body.nics) {
+          const inserted = await adapter.execute(
+            'INSERT INTO sid_nics (sid_id, name, mac_address, ip_address, site_vlan_id) VALUES (?, ?, ?, ?, ?)',
+            [sidId, nic.name, nic.mac_address ?? null, nic.ip_address ?? null, nic.site_vlan_id ?? null]
+          );
+          const nicId = Number(inserted.insertId ?? adapter.getLastInsertId());
+
+          if (nic.switch_sid_id && nic.switch_port) {
+            const port = nic.switch_port.trim();
+            if (port) {
+              try {
+                await adapter.execute(
+                  'INSERT INTO sid_connections (site_id, sid_id, nic_id, switch_sid_id, switch_port) VALUES (?, ?, ?, ?, ?)',
+                  [siteId, sidId, nicId, nic.switch_sid_id, port]
+                );
+              } catch (error) {
+                if (isDuplicateKeyError(error)) {
+                  const err: any = new Error('SWITCH_PORT_IN_USE');
+                  err.kind = 'SWITCH_PORT_IN_USE';
+                  err.details = { switch_sid_id: nic.switch_sid_id, switch_port: port };
+                  throw err;
+                }
+                throw error;
+              }
+            }
+          }
+        }
+
+        await adapter.commit();
+      } catch (error) {
+        await adapter.rollback();
+        if ((error as any)?.kind === 'SWITCH_PORT_IN_USE') {
+          return res.status(409).json({
+            success: false,
+            error: 'Switch port already in use',
+            code: 'SWITCH_PORT_IN_USE',
+            details: (error as any).details,
+          } as any);
+        }
+        throw error;
+      }
+
+      const nics = await adapter.query(
+        `SELECT
+          n.id,
+          n.sid_id,
+          n.name,
+          n.mac_address,
+          n.ip_address,
+          n.site_vlan_id,
+          v.vlan_id as vlan_id,
+          v.name as vlan_name,
+          c.switch_sid_id,
+          sw.sid_number as switch_sid_number,
+          c.switch_port
+        FROM sid_nics n
+        LEFT JOIN site_vlans v ON v.id = n.site_vlan_id
+        LEFT JOIN sid_connections c ON c.nic_id = n.id
+        LEFT JOIN sids sw ON sw.id = c.switch_sid_id
+        WHERE n.sid_id = ?
+        ORDER BY n.name ASC`,
+        [sidId]
+      );
+
+      return res.json({ success: true, data: { nics } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      console.error('Replace sid nics error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+// --- SID picklists (site-admin) ---
+const createPicklistSchema = z.object({
+  name: z.string().min(1).max(255),
+  manufacturer: z.string().max(255).optional().nullable(),
+  description: z.string().max(5000).optional().nullable(),
+});
+const updatePicklistSchema = createPicklistSchema.partial();
+
+const createVlanSchema = z.object({
+  vlan_id: z.coerce.number().int().min(1).max(4094),
+  name: z.string().min(1).max(255),
+  description: z.string().max(5000).optional().nullable(),
+});
+const updateVlanSchema = createVlanSchema.partial();
+
+router.get(
+  '/:id/sid/types',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rows = await getAdapter().query('SELECT * FROM sid_types WHERE site_id = ? ORDER BY name ASC', [siteId]);
+      return res.json({ success: true, data: { sid_types: rows } } as ApiResponse);
+    } catch (error) {
+      console.error('Get sid types error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.post(
+  '/:id/sid/types',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const body = createPicklistSchema.parse(req.body);
+      try {
+        const insert = await getAdapter().execute(
+          'INSERT INTO sid_types (site_id, name, description) VALUES (?, ?, ?)',
+          [siteId, body.name.trim(), body.description ?? null]
+        );
+        const id = Number(insert.insertId ?? getAdapter().getLastInsertId());
+        const rows = await getAdapter().query('SELECT * FROM sid_types WHERE id = ?', [id]);
+        return res.status(201).json({ success: true, data: { sid_type: rows[0] } } as ApiResponse);
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return res.status(409).json({ success: false, error: 'Duplicate name' } as ApiResponse);
+        }
+        throw error;
+      }
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      console.error('Create sid type error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.put(
+  '/:id/sid/types/:rowId',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      const body = updatePicklistSchema.parse(req.body);
+      await assertPicklistRowBelongsToSite({ adapter: getAdapter(), table: 'sid_types', rowId, siteId });
+
+      const fields: string[] = [];
+      const params: any[] = [];
+      if (body.name !== undefined) {
+        fields.push('name = ?');
+        params.push(body.name.trim());
+      }
+      if (body.description !== undefined) {
+        fields.push('description = ?');
+        params.push(body.description ?? null);
+      }
+      if (!fields.length) {
+        const rows = await getAdapter().query('SELECT * FROM sid_types WHERE id = ?', [rowId]);
+        return res.json({ success: true, data: { sid_type: rows[0] } } as ApiResponse);
+      }
+
+      try {
+        await getAdapter().execute(`UPDATE sid_types SET ${fields.join(', ')} WHERE id = ? AND site_id = ?`, [...params, rowId, siteId]);
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return res.status(409).json({ success: false, error: 'Duplicate name' } as ApiResponse);
+        }
+        throw error;
+      }
+      const rows = await getAdapter().query('SELECT * FROM sid_types WHERE id = ?', [rowId]);
+      return res.json({ success: true, data: { sid_type: rows[0] } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Update sid type error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.delete(
+  '/:id/sid/types/:rowId',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      await assertPicklistRowBelongsToSite({ adapter: getAdapter(), table: 'sid_types', rowId, siteId });
+      await getAdapter().execute('DELETE FROM sid_types WHERE id = ? AND site_id = ?', [rowId, siteId]);
+      return res.json({ success: true, data: { deleted: true } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Delete sid type error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+// Device models
+router.get(
+  '/:id/sid/device-models',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rows = await getAdapter().query('SELECT * FROM sid_device_models WHERE site_id = ? ORDER BY name ASC', [siteId]);
+      return res.json({ success: true, data: { device_models: rows } } as ApiResponse);
+    } catch (error) {
+      console.error('Get device models error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.post(
+  '/:id/sid/device-models',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const body = createPicklistSchema.parse(req.body);
+      try {
+        const insert = await getAdapter().execute(
+          'INSERT INTO sid_device_models (site_id, manufacturer, name, description) VALUES (?, ?, ?, ?)',
+          [siteId, body.manufacturer ?? null, body.name.trim(), body.description ?? null]
+        );
+        const id = Number(insert.insertId ?? getAdapter().getLastInsertId());
+        const rows = await getAdapter().query('SELECT * FROM sid_device_models WHERE id = ?', [id]);
+        return res.status(201).json({ success: true, data: { device_model: rows[0] } } as ApiResponse);
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return res.status(409).json({ success: false, error: 'Duplicate name' } as ApiResponse);
+        }
+        throw error;
+      }
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      console.error('Create device model error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.put(
+  '/:id/sid/device-models/:rowId',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      const body = updatePicklistSchema.parse(req.body);
+      await assertPicklistRowBelongsToSite({ adapter: getAdapter(), table: 'sid_device_models', rowId, siteId });
+
+      const fields: string[] = [];
+      const params: any[] = [];
+      if (body.manufacturer !== undefined) {
+        fields.push('manufacturer = ?');
+        params.push(body.manufacturer ?? null);
+      }
+      if (body.name !== undefined) {
+        fields.push('name = ?');
+        params.push(body.name.trim());
+      }
+      if (body.description !== undefined) {
+        fields.push('description = ?');
+        params.push(body.description ?? null);
+      }
+      if (!fields.length) {
+        const rows = await getAdapter().query('SELECT * FROM sid_device_models WHERE id = ?', [rowId]);
+        return res.json({ success: true, data: { device_model: rows[0] } } as ApiResponse);
+      }
+
+      try {
+        await getAdapter().execute(
+          `UPDATE sid_device_models SET ${fields.join(', ')} WHERE id = ? AND site_id = ?`,
+          [...params, rowId, siteId]
+        );
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return res.status(409).json({ success: false, error: 'Duplicate name' } as ApiResponse);
+        }
+        throw error;
+      }
+      const rows = await getAdapter().query('SELECT * FROM sid_device_models WHERE id = ?', [rowId]);
+      return res.json({ success: true, data: { device_model: rows[0] } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Update device model error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.delete(
+  '/:id/sid/device-models/:rowId',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      await assertPicklistRowBelongsToSite({ adapter: getAdapter(), table: 'sid_device_models', rowId, siteId });
+      await getAdapter().execute('DELETE FROM sid_device_models WHERE id = ? AND site_id = ?', [rowId, siteId]);
+      return res.json({ success: true, data: { deleted: true } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Delete device model error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+// CPU models
+router.get(
+  '/:id/sid/cpu-models',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rows = await getAdapter().query('SELECT * FROM sid_cpu_models WHERE site_id = ? ORDER BY name ASC', [siteId]);
+      return res.json({ success: true, data: { cpu_models: rows } } as ApiResponse);
+    } catch (error) {
+      console.error('Get cpu models error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.post(
+  '/:id/sid/cpu-models',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const body = createPicklistSchema.parse(req.body);
+      try {
+        const insert = await getAdapter().execute(
+          'INSERT INTO sid_cpu_models (site_id, manufacturer, name, description) VALUES (?, ?, ?, ?)',
+          [siteId, body.manufacturer ?? null, body.name.trim(), body.description ?? null]
+        );
+        const id = Number(insert.insertId ?? getAdapter().getLastInsertId());
+        const rows = await getAdapter().query('SELECT * FROM sid_cpu_models WHERE id = ?', [id]);
+        return res.status(201).json({ success: true, data: { cpu_model: rows[0] } } as ApiResponse);
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return res.status(409).json({ success: false, error: 'Duplicate name' } as ApiResponse);
+        }
+        throw error;
+      }
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      console.error('Create cpu model error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.put(
+  '/:id/sid/cpu-models/:rowId',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      const body = updatePicklistSchema.parse(req.body);
+      await assertPicklistRowBelongsToSite({ adapter: getAdapter(), table: 'sid_cpu_models', rowId, siteId });
+
+      const fields: string[] = [];
+      const params: any[] = [];
+      if (body.manufacturer !== undefined) {
+        fields.push('manufacturer = ?');
+        params.push(body.manufacturer ?? null);
+      }
+      if (body.name !== undefined) {
+        fields.push('name = ?');
+        params.push(body.name.trim());
+      }
+      if (body.description !== undefined) {
+        fields.push('description = ?');
+        params.push(body.description ?? null);
+      }
+      if (!fields.length) {
+        const rows = await getAdapter().query('SELECT * FROM sid_cpu_models WHERE id = ?', [rowId]);
+        return res.json({ success: true, data: { cpu_model: rows[0] } } as ApiResponse);
+      }
+
+      try {
+        await getAdapter().execute(
+          `UPDATE sid_cpu_models SET ${fields.join(', ')} WHERE id = ? AND site_id = ?`,
+          [...params, rowId, siteId]
+        );
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return res.status(409).json({ success: false, error: 'Duplicate name' } as ApiResponse);
+        }
+        throw error;
+      }
+      const rows = await getAdapter().query('SELECT * FROM sid_cpu_models WHERE id = ?', [rowId]);
+      return res.json({ success: true, data: { cpu_model: rows[0] } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Update cpu model error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.delete(
+  '/:id/sid/cpu-models/:rowId',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      await assertPicklistRowBelongsToSite({ adapter: getAdapter(), table: 'sid_cpu_models', rowId, siteId });
+      await getAdapter().execute('DELETE FROM sid_cpu_models WHERE id = ? AND site_id = ?', [rowId, siteId]);
+      return res.json({ success: true, data: { deleted: true } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Delete cpu model error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+// VLANs
+router.get(
+  '/:id/sid/vlans',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rows = await getAdapter().query('SELECT * FROM site_vlans WHERE site_id = ? ORDER BY vlan_id ASC', [siteId]);
+      return res.json({ success: true, data: { vlans: rows } } as ApiResponse);
+    } catch (error) {
+      console.error('Get VLANs error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.post(
+  '/:id/sid/vlans',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const body = createVlanSchema.parse(req.body);
+      try {
+        const insert = await getAdapter().execute(
+          'INSERT INTO site_vlans (site_id, vlan_id, name, description) VALUES (?, ?, ?, ?)',
+          [siteId, body.vlan_id, body.name.trim(), body.description ?? null]
+        );
+        const id = Number(insert.insertId ?? getAdapter().getLastInsertId());
+        const rows = await getAdapter().query('SELECT * FROM site_vlans WHERE id = ?', [id]);
+        return res.status(201).json({ success: true, data: { vlan: rows[0] } } as ApiResponse);
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return res.status(409).json({ success: false, error: 'Duplicate VLAN ID' } as ApiResponse);
+        }
+        throw error;
+      }
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      console.error('Create VLAN error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.put(
+  '/:id/sid/vlans/:rowId',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      const body = updateVlanSchema.parse(req.body);
+      await assertPicklistRowBelongsToSite({ adapter: getAdapter(), table: 'site_vlans', rowId, siteId });
+
+      const fields: string[] = [];
+      const params: any[] = [];
+      if (body.vlan_id !== undefined) {
+        fields.push('vlan_id = ?');
+        params.push(body.vlan_id);
+      }
+      if (body.name !== undefined) {
+        fields.push('name = ?');
+        params.push(body.name.trim());
+      }
+      if (body.description !== undefined) {
+        fields.push('description = ?');
+        params.push(body.description ?? null);
+      }
+      if (!fields.length) {
+        const rows = await getAdapter().query('SELECT * FROM site_vlans WHERE id = ?', [rowId]);
+        return res.json({ success: true, data: { vlan: rows[0] } } as ApiResponse);
+      }
+
+      try {
+        await getAdapter().execute(`UPDATE site_vlans SET ${fields.join(', ')} WHERE id = ? AND site_id = ?`, [
+          ...params,
+          rowId,
+          siteId,
+        ]);
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return res.status(409).json({ success: false, error: 'Duplicate VLAN ID' } as ApiResponse);
+        }
+        throw error;
+      }
+      const rows = await getAdapter().query('SELECT * FROM site_vlans WHERE id = ?', [rowId]);
+      return res.json({ success: true, data: { vlan: rows[0] } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Update VLAN error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.delete(
+  '/:id/sid/vlans/:rowId',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      await assertPicklistRowBelongsToSite({ adapter: getAdapter(), table: 'site_vlans', rowId, siteId });
+      await getAdapter().execute('DELETE FROM site_vlans WHERE id = ? AND site_id = ?', [rowId, siteId]);
+      return res.json({ success: true, data: { deleted: true } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Delete VLAN error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
 
 /**
  * POST /api/sites

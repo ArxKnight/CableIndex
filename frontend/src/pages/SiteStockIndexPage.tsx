@@ -53,7 +53,7 @@ const SiteStockIndexPage: React.FC = () => {
 
   if (error) {
     return (
-      <div className="space-y-4">
+      <div className="pt-4 space-y-4">
         <Button variant="ghost" onClick={() => navigate(`/sites/${siteId}`)}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Site Hub
@@ -66,7 +66,7 @@ const SiteStockIndexPage: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="pt-4 space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <Button variant="ghost" onClick={() => navigate(`/sites/${siteId}`)}>

@@ -21,7 +21,9 @@ import ErrorPage from './pages/ErrorPage'
 import SiteHubPage from './pages/SiteHubPage'
 import SiteCablePage from './pages/SiteCablePage'
 import SiteSidIndexPage from './pages/SiteSidIndexPage'
+import SiteSidAdminPage from './pages/SiteSidAdminPage'
 import SiteStockIndexPage from './pages/SiteStockIndexPage'
+import SidDetailPage from './pages/SidDetailPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -153,6 +155,26 @@ function App() {
                     <ProtectedRoute>
                       <Layout>
                         <SiteSidIndexPage />
+                      </Layout>
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/sites/:siteId/sid/admin" 
+                  element={
+                    <ProtectedRoute>
+                      <Layout>
+                        <SiteSidAdminPage />
+                      </Layout>
+                    </ProtectedRoute>
+                  } 
+                />
+                <Route 
+                  path="/sites/:siteId/sid/:sidId" 
+                  element={
+                    <ProtectedRoute>
+                      <Layout>
+                        <SidDetailPage />
                       </Layout>
                     </ProtectedRoute>
                   } 
