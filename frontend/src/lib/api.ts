@@ -4,12 +4,16 @@ import { ApiResponse, AuthTokens } from '../types';
 export class ApiError extends Error {
   status: number;
   code?: string;
+  details?: unknown;
+  response?: unknown;
 
-  constructor(message: string, params: { status: number; code?: string }) {
+  constructor(message: string, params: { status: number; code?: string; details?: unknown; response?: unknown }) {
     super(message);
     this.name = 'ApiError';
     this.status = params.status;
     this.code = params.code;
+    this.details = params.details;
+    this.response = params.response;
   }
 }
 
@@ -138,7 +142,12 @@ class ApiClient {
           toast.error(errorMessage);
         }
 
-        throw new ApiError(errorMessage, { status: response.status, code: errorCode });
+        throw new ApiError(errorMessage, {
+          status: response.status,
+          code: errorCode,
+          details: (data as any)?.details,
+          response: data,
+        });
       }
 
       return data;
@@ -431,6 +440,17 @@ class ApiClient {
     return this.request<{ passwords: any[]; key_configured: boolean }>(`/sites/${siteId}/sids/${sidId}/passwords`);
   }
 
+  async createSiteSidTypedPassword(
+    siteId: number,
+    sidId: number,
+    data: { password_type_id: number; username: string; password: string }
+  ) {
+    return this.request<{ created: boolean }>(`/sites/${siteId}/sids/${sidId}/passwords`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   async updateSiteSidPassword(
     siteId: number,
     sidId: number,
@@ -458,9 +478,20 @@ class ApiClient {
     return this.request<{ password_types: any[] }>(`/sites/${siteId}/sid/password-types`);
   }
 
+  async getSiteSidPasswordTypeUsage(siteId: number, rowId: number) {
+    return this.request<{ sids_using: number }>(`/sites/${siteId}/sid/password-types/${rowId}/usage`);
+  }
+
   async createSiteSidPasswordType(siteId: number, data: { name: string; description?: string | null }) {
     return this.request<{ password_type: any }>(`/sites/${siteId}/sid/password-types`, {
       method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSiteSidPasswordType(siteId: number, rowId: number, data: { name?: string; description?: string | null }) {
+    return this.request<{ password_type: any }>(`/sites/${siteId}/sid/password-types/${rowId}`, {
+      method: 'PUT',
       body: JSON.stringify(data),
     });
   }
@@ -501,10 +532,13 @@ class ApiClient {
     sidId: number,
     data: {
       nics: Array<{
+        card_name?: string | null;
         name: string;
         mac_address?: string | null;
         ip_address?: string | null;
         site_vlan_id?: number | null;
+        nic_type_id?: number | null;
+        nic_speed_id?: number | null;
         switch_sid_id?: number | null;
         switch_port?: string | null;
       }>;
@@ -516,13 +550,87 @@ class ApiClient {
     });
   }
 
+  async getSiteSidIpAddresses(siteId: number, sidId: number) {
+    return this.request<{ ip_addresses: string[] }>(`/sites/${siteId}/sids/${sidId}/ip-addresses`);
+  }
+
+  async replaceSiteSidIpAddresses(siteId: number, sidId: number, data: { ip_addresses: string[] }) {
+    return this.request<{ ip_addresses: string[] }>(`/sites/${siteId}/sids/${sidId}/ip-addresses`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getSiteSidNicTypes(siteId: number) {
+    return this.request<{ nic_types: any[] }>(`/sites/${siteId}/sid/nic-types`);
+  }
+
+  async getSiteSidNicTypeUsage(siteId: number, rowId: number) {
+    return this.request<{ sids_using: number }>(`/sites/${siteId}/sid/nic-types/${rowId}/usage`);
+  }
+
+  async createSiteSidNicType(siteId: number, data: { name: string; description?: string | null }) {
+    return this.request<{ nic_type: any }>(`/sites/${siteId}/sid/nic-types`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSiteSidNicType(siteId: number, rowId: number, data: { name?: string; description?: string | null }) {
+    return this.request<{ nic_type: any }>(`/sites/${siteId}/sid/nic-types/${rowId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSiteSidNicType(siteId: number, rowId: number) {
+    return this.request<{ deleted: boolean }>(`/sites/${siteId}/sid/nic-types/${rowId}`, { method: 'DELETE' });
+  }
+
+  async getSiteSidNicSpeeds(siteId: number) {
+    return this.request<{ nic_speeds: any[] }>(`/sites/${siteId}/sid/nic-speeds`);
+  }
+
+  async getSiteSidNicSpeedUsage(siteId: number, rowId: number) {
+    return this.request<{ sids_using: number }>(`/sites/${siteId}/sid/nic-speeds/${rowId}/usage`);
+  }
+
+  async createSiteSidNicSpeed(siteId: number, data: { name: string; description?: string | null }) {
+    return this.request<{ nic_speed: any }>(`/sites/${siteId}/sid/nic-speeds`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSiteSidNicSpeed(siteId: number, rowId: number, data: { name?: string; description?: string | null }) {
+    return this.request<{ nic_speed: any }>(`/sites/${siteId}/sid/nic-speeds/${rowId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSiteSidNicSpeed(siteId: number, rowId: number) {
+    return this.request<{ deleted: boolean }>(`/sites/${siteId}/sid/nic-speeds/${rowId}`, { method: 'DELETE' });
+  }
+
   async getSiteSidTypes(siteId: number) {
     return this.request<{ sid_types: any[] }>(`/sites/${siteId}/sid/types`);
+  }
+
+  async getSiteSidTypeUsage(siteId: number, rowId: number) {
+    return this.request<{ sids_using: number }>(`/sites/${siteId}/sid/types/${rowId}/usage`);
   }
 
   async createSiteSidType(siteId: number, data: { name: string; description?: string | null }) {
     return this.request<{ sid_type: any }>(`/sites/${siteId}/sid/types`, {
       method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSiteSidType(siteId: number, rowId: number, data: { name?: string; description?: string | null }) {
+    return this.request<{ sid_type: any }>(`/sites/${siteId}/sid/types/${rowId}`, {
+      method: 'PUT',
       body: JSON.stringify(data),
     });
   }
@@ -535,9 +643,24 @@ class ApiClient {
     return this.request<{ device_models: any[] }>(`/sites/${siteId}/sid/device-models`);
   }
 
+  async getSiteSidDeviceModelUsage(siteId: number, rowId: number) {
+    return this.request<{ sids_using: number }>(`/sites/${siteId}/sid/device-models/${rowId}/usage`);
+  }
+
   async createSiteSidDeviceModel(siteId: number, data: { manufacturer?: string | null; name: string; description?: string | null }) {
     return this.request<{ device_model: any }>(`/sites/${siteId}/sid/device-models`, {
       method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSiteSidDeviceModel(
+    siteId: number,
+    rowId: number,
+    data: { manufacturer?: string | null; name?: string; description?: string | null }
+  ) {
+    return this.request<{ device_model: any }>(`/sites/${siteId}/sid/device-models/${rowId}`, {
+      method: 'PUT',
       body: JSON.stringify(data),
     });
   }
@@ -550,17 +673,36 @@ class ApiClient {
     return this.request<{ cpu_models: any[] }>(`/sites/${siteId}/sid/cpu-models`);
   }
 
+  async getSiteSidCpuModelUsage(siteId: number, rowId: number) {
+    return this.request<{ sids_using: number }>(`/sites/${siteId}/sid/cpu-models/${rowId}/usage`);
+  }
+
   async getSiteSidPlatforms(siteId: number) {
     return this.request<{ platforms: any[] }>(`/sites/${siteId}/sid/platforms`);
+  }
+
+  async getSiteSidPlatformUsage(siteId: number, rowId: number) {
+    return this.request<{ sids_using: number }>(`/sites/${siteId}/sid/platforms/${rowId}/usage`);
   }
 
   async getSiteSidStatuses(siteId: number) {
     return this.request<{ statuses: any[] }>(`/sites/${siteId}/sid/statuses`);
   }
 
+  async getSiteSidStatusUsage(siteId: number, rowId: number) {
+    return this.request<{ sids_using: number }>(`/sites/${siteId}/sid/statuses/${rowId}/usage`);
+  }
+
   async createSiteSidStatus(siteId: number, data: { name: string; description?: string | null }) {
     return this.request<{ status: any }>(`/sites/${siteId}/sid/statuses`, {
       method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSiteSidStatus(siteId: number, rowId: number, data: { name?: string; description?: string | null }) {
+    return this.request<{ status: any }>(`/sites/${siteId}/sid/statuses/${rowId}`, {
+      method: 'PUT',
       body: JSON.stringify(data),
     });
   }
@@ -572,6 +714,13 @@ class ApiClient {
   async createSiteSidPlatform(siteId: number, data: { name: string; description?: string | null }) {
     return this.request<{ platform: any }>(`/sites/${siteId}/sid/platforms`, {
       method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSiteSidPlatform(siteId: number, rowId: number, data: { name?: string; description?: string | null }) {
+    return this.request<{ platform: any }>(`/sites/${siteId}/sid/platforms/${rowId}`, {
+      method: 'PUT',
       body: JSON.stringify(data),
     });
   }
@@ -590,6 +739,17 @@ class ApiClient {
     });
   }
 
+  async updateSiteSidCpuModel(
+    siteId: number,
+    rowId: number,
+    data: { manufacturer?: string | null; name?: string; cpu_cores?: number; cpu_threads?: number; description?: string | null }
+  ) {
+    return this.request<{ cpu_model: any }>(`/sites/${siteId}/sid/cpu-models/${rowId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
   async deleteSiteSidCpuModel(siteId: number, rowId: number) {
     return this.request<{ deleted: boolean }>(`/sites/${siteId}/sid/cpu-models/${rowId}`, { method: 'DELETE' });
   }
@@ -598,9 +758,20 @@ class ApiClient {
     return this.request<{ vlans: any[] }>(`/sites/${siteId}/sid/vlans`);
   }
 
+  async getSiteSidVlanUsage(siteId: number, rowId: number) {
+    return this.request<{ sids_using: number }>(`/sites/${siteId}/sid/vlans/${rowId}/usage`);
+  }
+
   async createSiteSidVlan(siteId: number, data: { vlan_id: number; name: string; description?: string | null }) {
     return this.request<{ vlan: any }>(`/sites/${siteId}/sid/vlans`, {
       method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSiteSidVlan(siteId: number, rowId: number, data: { vlan_id?: number; name?: string; description?: string | null }) {
+    return this.request<{ vlan: any }>(`/sites/${siteId}/sid/vlans/${rowId}`, {
+      method: 'PUT',
       body: JSON.stringify(data),
     });
   }

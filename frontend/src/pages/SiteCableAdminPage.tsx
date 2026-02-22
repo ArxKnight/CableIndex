@@ -73,7 +73,7 @@ const SiteCableAdminPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="p-6 flex items-center gap-2 text-muted-foreground">
+      <div className="mx-auto w-full max-w-6xl p-6 flex items-center gap-2 text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
         Loading...
       </div>
@@ -82,7 +82,7 @@ const SiteCableAdminPage: React.FC = () => {
 
   if (error) {
     return (
-      <div className="p-6 space-y-4">
+      <div className="mx-auto w-full max-w-6xl p-6 space-y-4">
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
@@ -95,7 +95,7 @@ const SiteCableAdminPage: React.FC = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="mx-auto w-full max-w-6xl p-6 space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">

@@ -239,7 +239,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
 
   if (error) {
     return (
-      <div className="pt-4 space-y-4">
+      <div className="mx-auto w-full max-w-6xl px-6 pt-4 space-y-4">
         <Button variant="ghost" onClick={onBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Site Hub
@@ -253,7 +253,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
 
   if (!site) {
     return (
-      <div className="pt-4 space-y-4">
+      <div className="mx-auto w-full max-w-6xl px-6 pt-4 space-y-4">
         <Button variant="ghost" onClick={onBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Site Hub
@@ -273,7 +273,7 @@ const SiteDetails: React.FC<SiteDetailsProps> = ({
   };
 
   return (
-    <div className="pt-4 space-y-6">
+    <div className="mx-auto w-full max-w-6xl px-6 pt-4 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">

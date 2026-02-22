@@ -144,6 +144,36 @@ export function encryptSidSecret(plaintext: string): string {
   ].join(':');
 }
 
+export function decryptSidSecret(payload: string): string {
+  const key = getKey({ allowCreate: false });
+
+  const raw = String(payload ?? '').trim();
+  if (!raw) {
+    throw new Error('SID secret payload is empty');
+  }
+
+  const parts = raw.split(':');
+  if (parts.length !== 4 || parts[0] !== 'v1') {
+    throw new Error('Unsupported SID secret format');
+  }
+
+  const iv = Buffer.from(parts[1]!, 'base64');
+  const tag = Buffer.from(parts[2]!, 'base64');
+  const ciphertext = Buffer.from(parts[3]!, 'base64');
+
+  if (iv.length !== 12) {
+    throw new Error('Invalid SID secret IV');
+  }
+  if (tag.length !== 16) {
+    throw new Error('Invalid SID secret tag');
+  }
+
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(tag);
+  const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return plaintext.toString('utf8');
+}
+
 export function hasSidSecretKeyConfigured(): boolean {
   try {
     getKey({ allowCreate: false });

@@ -18,6 +18,22 @@ describe('Database (MySQL)', () => {
     expect(connection.testConnection()).toBe(true);
   });
 
+  it('does not retain a released connection after connect', () => {
+    const adapter = connection.getAdapter() as any;
+    // The MySQL adapter should only keep a connection while a transaction is active.
+    expect(adapter.transactionConnection ?? null).toBeNull();
+  });
+
+  it('clears the transaction connection after commit', async () => {
+    const adapter = connection.getAdapter() as any;
+
+    await adapter.beginTransaction();
+    expect(adapter.transactionConnection).not.toBeNull();
+
+    await adapter.commit();
+    expect(adapter.transactionConnection).toBeNull();
+  });
+
   it('initializes the migrations table', async () => {
     await initializeDatabase({ runMigrations: true, seedData: false });
 

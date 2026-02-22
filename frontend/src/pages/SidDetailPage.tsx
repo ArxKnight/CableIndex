@@ -1,11 +1,12 @@
 import React from 'react';
+import { toast } from 'sonner';
 import {
   useNavigate,
   useParams,
 } from 'react-router-dom';
-import { ArrowLeft, Loader2, Pin, PinOff, Save } from 'lucide-react';
+import { ArrowLeft, Loader2, Pencil, Pin, PinOff, Save } from 'lucide-react';
 
-import { apiClient } from '../lib/api';
+import { ApiError, apiClient } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import usePermissions from '../hooks/usePermissions';
 import { Button } from '../components/ui/button';
@@ -24,6 +25,16 @@ import {
   DialogTitle,
 } from '../components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -38,6 +49,7 @@ import {
   TableHeader,
   TableRow,
 } from '../components/ui/table';
+import LocationHierarchyDropdown from '../components/locations/LocationHierarchyDropdown';
 
 type SidRecord = any;
 
@@ -51,6 +63,39 @@ type PendingNavigation =
   | { kind: 'path'; to: string }
   | { kind: 'back' }
   | null;
+
+type PendingNetworkingRemoval =
+  | { kind: 'card'; cardName: string }
+  | { kind: 'nic'; globalNicIndex: number; nextSelectedNicTab: string; label: string }
+  | null;
+
+function isNotePinned(note: any): boolean {
+  return note?.pinned === true;
+}
+
+function sortNotesPinnedFirst(input: any[]): any[] {
+  const list = Array.isArray(input) ? input.slice() : [];
+  list.sort((a, b) => {
+    const ap = isNotePinned(a) ? 1 : 0;
+    const bp = isNotePinned(b) ? 1 : 0;
+    if (bp !== ap) return bp - ap;
+
+    if (ap === 1) {
+      const aPinnedAt = new Date(a?.pinned_at ?? a?.created_at ?? 0).getTime();
+      const bPinnedAt = new Date(b?.pinned_at ?? b?.created_at ?? 0).getTime();
+      if (bPinnedAt !== aPinnedAt) return bPinnedAt - aPinnedAt;
+    }
+
+    const aCreated = new Date(a?.created_at ?? 0).getTime();
+    const bCreated = new Date(b?.created_at ?? 0).getTime();
+    if (bCreated !== aCreated) return bCreated - aCreated;
+
+    const aId = Number(a?.id ?? 0);
+    const bId = Number(b?.id ?? 0);
+    return bId - aId;
+  });
+  return list;
+}
 
 function formatNoteHeader(createdAt: any, username: any): string {
   const d = new Date(createdAt);
@@ -117,12 +162,22 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
   const [platforms, setPlatforms] = React.useState<any[]>([]);
   const [statuses, setStatuses] = React.useState<any[]>([]);
   const [vlans, setVlans] = React.useState<any[]>([]);
+  const [nicTypes, setNicTypes] = React.useState<any[]>([]);
+  const [nicSpeeds, setNicSpeeds] = React.useState<any[]>([]);
   const [locations, setLocations] = React.useState<any[]>([]);
   const [siteSids, setSiteSids] = React.useState<any[]>([]);
 
   const [activeTab, setActiveTab] = React.useState('main');
   const [mainSubtab, setMainSubtab] = React.useState<'notes' | 'passwords' | 'history'>('notes');
   const [hardwareSubtab, setHardwareSubtab] = React.useState<'configuration' | 'parts'>('configuration');
+  const [networkingSubtab, setNetworkingSubtab] = React.useState<'configuration' | 'ip_addresses'>('configuration');
+  const [networkingCardTab, setNetworkingCardTab] = React.useState<string>('On-Board Network Card');
+  const [networkingNicTab, setNetworkingNicTab] = React.useState<string>('0');
+
+  const [addNetworkCardOpen, setAddNetworkCardOpen] = React.useState(false);
+  const [newNetworkCardName, setNewNetworkCardName] = React.useState('');
+  const [newNetworkCardError, setNewNetworkCardError] = React.useState<string | null>(null);
+  const [pendingNetworkingRemoval, setPendingNetworkingRemoval] = React.useState<PendingNetworkingRemoval>(null);
   const [saveLoading, setSaveLoading] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
@@ -152,6 +207,12 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
   const [createPasswordTypeId, setCreatePasswordTypeId] = React.useState<string>('');
   const [createPasswordUsername, setCreatePasswordUsername] = React.useState('');
   const [createPasswordValue, setCreatePasswordValue] = React.useState('');
+
+  const [editPasswordOpen, setEditPasswordOpen] = React.useState(false);
+  const [editPasswordTypeId, setEditPasswordTypeId] = React.useState<number | null>(null);
+  const [editPasswordTypeName, setEditPasswordTypeName] = React.useState('');
+  const [editPasswordUsername, setEditPasswordUsername] = React.useState('');
+  const [editPasswordValue, setEditPasswordValue] = React.useState('');
 
   // Closing note guard
   const [closingOpen, setClosingOpen] = React.useState(false);
@@ -265,6 +326,8 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
         platformResp,
         statusesResp,
         vlanResp,
+        nicTypesResp,
+        nicSpeedsResp,
         locResp,
         siteSidsResp,
       ] = await Promise.all([
@@ -278,6 +341,8 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
         apiClient.getSiteSidPlatforms(siteId),
         apiClient.getSiteSidStatuses(siteId),
         apiClient.getSiteSidVlans(siteId),
+        apiClient.getSiteSidNicTypes(siteId),
+        apiClient.getSiteSidNicSpeeds(siteId),
         apiClient.getSiteLocations(siteId),
         apiClient.getSiteSids(siteId, { limit: 500, offset: 0 }),
       ]);
@@ -305,14 +370,19 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
           os_version: null,
           mgmt_ip: null,
           mgmt_mac: null,
+          primary_ip: null,
+          subnet_ip: null,
+          gateway_ip: null,
+          switch_port_count: null,
           location_id: null,
+          pdu_power: null,
           rack_u: null,
         });
         setNotes([]);
         setNics([]);
       } else {
         setSid(sidResp.data?.sid ?? null);
-        setNotes(sidResp.data?.notes ?? []);
+        setNotes(sortNotesPinnedFirst(sidResp.data?.notes ?? []));
         setNics(sidResp.data?.nics ?? []);
         shouldLogViewRef.current = false;
       }
@@ -321,8 +391,23 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
       setDeviceModels(dmResp.success ? (dmResp.data?.device_models ?? []) : []);
       setCpuModels(cpuResp.success ? (cpuResp.data?.cpu_models ?? []) : []);
       setPlatforms(platformResp.success ? (platformResp.data?.platforms ?? []) : []);
-      setStatuses(statusesResp.success ? (statusesResp.data?.statuses ?? []) : []);
+
+      const loadedStatuses = statusesResp.success ? (statusesResp.data?.statuses ?? []) : [];
+      setStatuses(loadedStatuses);
+      if (isCreate) {
+        const hasNewSidStatus = (loadedStatuses ?? []).some((s: any) => String(s?.name ?? '').trim() === 'New SID');
+        if (hasNewSidStatus) {
+          setSid((prev: SidRecord | null) => {
+            if (!prev) return prev;
+            const current = String(prev.status ?? '').trim();
+            if (current) return prev;
+            return { ...prev, status: 'New SID' };
+          });
+        }
+      }
       setVlans(vlanResp.success ? (vlanResp.data?.vlans ?? []) : []);
+      setNicTypes(nicTypesResp.success ? (nicTypesResp.data?.nic_types ?? []) : []);
+      setNicSpeeds(nicSpeedsResp.success ? (nicSpeedsResp.data?.nic_speeds ?? []) : []);
       setLocations(locResp.success ? (locResp.data?.locations ?? []) : []);
       setSiteSids(siteSidsResp.success ? (siteSidsResp.data?.sids ?? []) : []);
     } catch (e) {
@@ -351,7 +436,7 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
     if (!isCreate) return [] as Array<{ key: string; label: string; href?: string }>; 
 
     const missing: Array<{ key: string; label: string; href?: string }> = [];
-    if ((sidTypes ?? []).length === 0) missing.push({ key: 'types', label: 'SID Types', href: `/sites/${siteId}/sid/admin?tab=types` });
+    if ((sidTypes ?? []).length === 0) missing.push({ key: 'types', label: 'Device Types', href: `/sites/${siteId}/sid/admin?tab=types` });
     if ((statuses ?? []).length === 0) missing.push({ key: 'statuses', label: 'SID Statuses', href: `/sites/${siteId}/sid/admin?tab=statuses` });
     if ((platforms ?? []).length === 0) missing.push({ key: 'platforms', label: 'Platforms', href: `/sites/${siteId}/sid/admin?tab=platforms` });
     if ((locations ?? []).length === 0) missing.push({ key: 'locations', label: 'Locations', href: `/sites/${siteId}/cable` });
@@ -361,6 +446,82 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
   }, [isCreate, sidTypes, statuses, platforms, locations, deviceModels, cpuModels, siteId]);
 
   const createPrereqsReady = missingCreatePrereqs.length === 0;
+
+  const DEFAULT_NETWORK_CARD_NAME = 'On-Board Network Card';
+
+  const isSwitchSid = React.useMemo(() => {
+    const selectedTypeId = Number(sid?.sid_type_id ?? 0);
+    const selectedType = (sidTypes ?? []).find((t) => Number(t?.id) === selectedTypeId);
+    const name = String(selectedType?.name ?? sid?.sid_type_name ?? '').trim().toLowerCase();
+    return name === 'switch' || name.includes('switch');
+  }, [sid?.sid_type_id, sid?.sid_type_name, sidTypes]);
+
+  const switchSids = React.useMemo(() => {
+    const list = Array.isArray(siteSids) ? siteSids : [];
+    return list
+      .filter((s) => Number(s?.id) !== Number(sidId))
+      .filter((s) => String(s?.sid_type_name ?? '').trim().toLowerCase().includes('switch'))
+      .slice()
+      .sort((a, b) => {
+        const ah = String(a?.hostname ?? '').trim();
+        const bh = String(b?.hostname ?? '').trim();
+        if (ah && bh) return ah.localeCompare(bh);
+        if (ah) return -1;
+        if (bh) return 1;
+        return String(a?.sid_number ?? '').localeCompare(String(b?.sid_number ?? ''));
+      });
+  }, [siteSids, sidId]);
+
+  const switchById = React.useMemo(() => {
+    const map = new Map<number, any>();
+    for (const s of switchSids) {
+      map.set(Number(s.id), s);
+    }
+    return map;
+  }, [switchSids]);
+
+  const cardNames = React.useMemo(() => {
+    const list = Array.isArray(nics) ? nics : [];
+    const set = new Set<string>();
+    for (const n of list) {
+      const name = String(n?.card_name ?? '').trim();
+      set.add(name || DEFAULT_NETWORK_CARD_NAME);
+    }
+    if (set.size === 0) set.add(DEFAULT_NETWORK_CARD_NAME);
+
+    const all = Array.from(set);
+    const others = all.filter((c) => c !== DEFAULT_NETWORK_CARD_NAME).sort((a, b) => a.localeCompare(b));
+    return [DEFAULT_NETWORK_CARD_NAME, ...others];
+  }, [nics]);
+
+  React.useEffect(() => {
+    if (!cardNames.includes(networkingCardTab)) {
+      setNetworkingCardTab(cardNames[0] ?? DEFAULT_NETWORK_CARD_NAME);
+      setNetworkingNicTab('0');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardNames.join('|')]);
+
+  const cardNics = React.useMemo(() => {
+    const list = Array.isArray(nics) ? nics : [];
+    const targetCard = String(networkingCardTab ?? DEFAULT_NETWORK_CARD_NAME);
+    const items: Array<{ index: number; nic: any; displayCardName: string }> = [];
+    for (let i = 0; i < list.length; i++) {
+      const nic = list[i];
+      const raw = String(nic?.card_name ?? '').trim();
+      const displayCardName = raw || DEFAULT_NETWORK_CARD_NAME;
+      if (displayCardName !== targetCard) continue;
+      items.push({ index: i, nic, displayCardName });
+    }
+    return items;
+  }, [nics, networkingCardTab]);
+
+  React.useEffect(() => {
+    const idx = Number(networkingNicTab);
+    if (!Number.isFinite(idx) || idx < 0 || idx >= cardNics.length) {
+      setNetworkingNicTab('0');
+    }
+  }, [cardNics.length, networkingNicTab]);
 
   const loadHistory = React.useCallback(async () => {
     if (isCreate) return;
@@ -430,12 +591,18 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
   const savedPasswordRows = React.useMemo(() => {
     if (passwordMode !== 'typed') return [];
     const list = Array.isArray(passwords) ? passwords : [];
-    return list.filter((p: any) => {
-      const hasPw = Boolean(p?.has_password);
-      const user = (p?.username ?? '').toString().trim();
-      return hasPw || user !== '';
-    });
+    return list;
   }, [passwordMode, passwords]);
+
+  const unusedPasswordTypes = React.useMemo(() => {
+    if (passwordMode !== 'typed') return [];
+    const used = new Set<number>();
+    for (const p of Array.isArray(passwords) ? passwords : []) {
+      const id = Number((p as any)?.password_type_id);
+      if (Number.isFinite(id) && id > 0) used.add(id);
+    }
+    return (Array.isArray(passwordTypes) ? passwordTypes : []).filter((t: any) => !used.has(Number(t?.id)));
+  }, [passwordMode, passwords, passwordTypes]);
 
   React.useEffect(() => {
     if (isCreate) return;
@@ -482,7 +649,7 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
     }
   };
 
-  const createTypedPassword = async () => {
+  const addTypedPassword = async () => {
     if (isCreate) return;
     if (!canEdit) {
       setPasswordError('Site admin access required');
@@ -508,7 +675,8 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
       setPasswordSaving(true);
       setPasswordError(null);
 
-      const resp = await apiClient.updateSiteSidPasswordByType(siteId, sidId, typeId, {
+      const resp = await apiClient.createSiteSidTypedPassword(siteId, sidId, {
+        password_type_id: typeId,
         username,
         password,
       });
@@ -518,6 +686,58 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
       setCreatePasswordTypeId('');
       setCreatePasswordUsername('');
       setCreatePasswordValue('');
+
+      await loadPassword();
+      await loadHistory();
+    } catch (e) {
+      setPasswordError(e instanceof Error ? e.message : 'Failed to save');
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
+  const openEditPasswordDialog = (row: any) => {
+    const typeId = Number(row?.password_type_id);
+    if (!Number.isFinite(typeId) || typeId <= 0) return;
+
+    setPasswordError(null);
+    setEditPasswordTypeId(typeId);
+    setEditPasswordTypeName(String(row?.password_type_name ?? 'Password'));
+    setEditPasswordUsername(String(row?.username ?? ''));
+    setEditPasswordValue('');
+    setEditPasswordOpen(true);
+  };
+
+  const saveEditedTypedPassword = async () => {
+    if (isCreate) return;
+    if (!canEdit) {
+      setPasswordError('Site admin access required');
+      return;
+    }
+
+    const typeId = Number(editPasswordTypeId);
+    if (!Number.isFinite(typeId) || typeId <= 0) {
+      setPasswordError('Password type is required');
+      return;
+    }
+
+    const usernameTrimmed = editPasswordUsername.trim();
+    const nextUsername = usernameTrimmed === '' ? null : usernameTrimmed;
+
+    try {
+      setPasswordSaving(true);
+      setPasswordError(null);
+
+      const payload: { username?: string | null; password?: string | null } = { username: nextUsername };
+      if (editPasswordValue.trim() !== '') {
+        payload.password = editPasswordValue;
+      }
+
+      const resp = await apiClient.updateSiteSidPasswordByType(siteId, sidId, typeId, payload);
+      if (!resp.success) throw new Error(resp.error || 'Failed to save');
+
+      setEditPasswordOpen(false);
+      setEditPasswordValue('');
 
       await loadPassword();
       await loadHistory();
@@ -541,10 +761,6 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
         if (!createPrereqsReady) {
           throw new Error('SID prerequisites not configured');
         }
-        const status = String(sid.status ?? '').trim();
-        if (!status) {
-          throw new Error('Status is required');
-        }
       }
 
       const payload: Record<string, any> = {
@@ -563,7 +779,12 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
         os_version: sid.os_version ?? null,
         mgmt_ip: sid.mgmt_ip ?? null,
         mgmt_mac: sid.mgmt_mac ?? null,
+        primary_ip: sid.primary_ip ?? null,
+        subnet_ip: sid.subnet_ip ?? null,
+        gateway_ip: sid.gateway_ip ?? null,
+        switch_port_count: sid.switch_port_count ?? null,
         location_id: sid.location_id ?? null,
+        pdu_power: sid.pdu_power ?? null,
         rack_u: sid.rack_u ?? null,
       };
 
@@ -582,43 +803,166 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
       if (isCreate) {
         const resp = await apiClient.createSiteSid(siteId, payload);
         if (!resp.success || !resp.data?.sid?.id) throw new Error(resp.error || 'Failed to create');
-        navigate(`/sites/${siteId}/sid/${resp.data.sid.id}`);
+
+        const createdSidId = Number(resp.data.sid.id);
+
+        // Persist NICs as part of Create SID (no separate "Save NICs" button)
+        if (canEdit) {
+          try {
+            const nicsResp = await apiClient.replaceSiteSidNics(siteId, createdSidId, {
+              nics: (nics ?? []).map((n) => ({
+                card_name: (n.card_name ?? null) === DEFAULT_NETWORK_CARD_NAME ? null : (n.card_name ?? null),
+                name: n.name,
+                mac_address: n.mac_address ?? null,
+                ip_address: n.ip_address ?? null,
+                site_vlan_id: n.site_vlan_id ?? null,
+                nic_type_id: n.nic_type_id ?? null,
+                nic_speed_id: n.nic_speed_id ?? null,
+                switch_sid_id: n.switch_sid_id ?? null,
+                switch_port: n.switch_port ?? null,
+              })),
+            });
+
+            if (nicsResp.success) {
+              setNics(nicsResp.data?.nics ?? []);
+            }
+          } catch (err) {
+            console.error('[Create SID] Failed to save NICs:', err);
+            toast.error('SID created, but failed to save NICs. You can edit NICs after opening the SID.');
+          }
+        }
+
+        navigate(`/sites/${siteId}/sid/${createdSidId}`);
       } else {
         const resp = await apiClient.updateSiteSid(siteId, sidId, payload);
         if (!resp.success) throw new Error(resp.error || 'Failed to save');
+
+        // Persist NICs as part of Save Edits (no separate "Save NICs" button)
+        if (canEdit) {
+          const nicsResp = await apiClient.replaceSiteSidNics(siteId, sidId, {
+            nics: (nics ?? []).map((n) => ({
+              card_name: (n.card_name ?? null) === DEFAULT_NETWORK_CARD_NAME ? null : (n.card_name ?? null),
+              name: n.name,
+              mac_address: n.mac_address ?? null,
+              ip_address: n.ip_address ?? null,
+              site_vlan_id: n.site_vlan_id ?? null,
+              nic_type_id: n.nic_type_id ?? null,
+              nic_speed_id: n.nic_speed_id ?? null,
+              switch_sid_id: n.switch_sid_id ?? null,
+              switch_port: n.switch_port ?? null,
+            })),
+          });
+
+          if (!nicsResp.success) throw new Error(nicsResp.error || 'Failed to save NICs');
+          setNics(nicsResp.data?.nics ?? []);
+        }
+
         await reload();
       }
     } catch (e) {
+      if (e instanceof ApiError) {
+        const details = e.details;
+        if (Array.isArray(details) && details.length > 0) {
+          const rendered = details
+            .map((d: any) => {
+              const path = Array.isArray(d?.path) ? d.path.join('.') : String(d?.path ?? '').trim();
+              const msg = String(d?.message ?? '').trim();
+              if (path && msg) return `${path}: ${msg}`;
+              return msg || path || JSON.stringify(d);
+            })
+            .filter((s) => s)
+            .join('; ');
+          const message = rendered ? `${e.message}: ${rendered}` : e.message;
+          console.error('[Create/Save SID] Validation error:', { message: e.message, details: e.details, response: e.response });
+          setSaveError(message);
+          return;
+        }
+
+        console.error('[Create/Save SID] API error:', { message: e.message, details: e.details, response: e.response });
+        setSaveError(e.message);
+        return;
+      }
+
+      console.error('[Create/Save SID] Error:', e);
       setSaveError(e instanceof Error ? e.message : 'Failed to save');
     } finally {
       setSaveLoading(false);
     }
   };
 
-  const saveNics = async () => {
-    if (isCreate) return;
-    try {
-      setSaveLoading(true);
-      setSaveError(null);
+  const openAddNetworkCardDialog = () => {
+    setNewNetworkCardName('');
+    setNewNetworkCardError(null);
+    setAddNetworkCardOpen(true);
+  };
 
-      const resp = await apiClient.replaceSiteSidNics(siteId, sidId, {
-        nics: (nics ?? []).map((n) => ({
-          name: n.name,
-          mac_address: n.mac_address ?? null,
-          ip_address: n.ip_address ?? null,
-          site_vlan_id: n.site_vlan_id ?? null,
-          switch_sid_id: n.switch_sid_id ?? null,
-          switch_port: n.switch_port ?? null,
-        })),
-      });
+  const addNetworkCardNamed = (cardName: string) => {
+    const nextName = String(cardName ?? '').trim();
+    if (!nextName) return;
+    setNics((prev) => ([
+      ...(prev ?? []),
+      { card_name: nextName, name: 'NIC1' },
+    ]));
+    setNetworkingCardTab(nextName);
+    setNetworkingNicTab('0');
+  };
 
-      if (!resp.success) throw new Error(resp.error || 'Failed to save NICs');
-      setNics(resp.data?.nics ?? []);
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : 'Failed to save NICs');
-    } finally {
-      setSaveLoading(false);
+  const confirmAddNetworkCard = () => {
+    const name = String(newNetworkCardName ?? '').trim();
+    const existing = new Set((cardNames ?? []).map((c) => String(c ?? '').trim().toLowerCase()));
+
+    if (!name) {
+      setNewNetworkCardError('Name is required');
+      return;
     }
+    if (String(name).trim() === DEFAULT_NETWORK_CARD_NAME) {
+      setNewNetworkCardError('That name is reserved');
+      return;
+    }
+    if (existing.has(name.toLowerCase())) {
+      setNewNetworkCardError('That card name already exists');
+      return;
+    }
+
+    setAddNetworkCardOpen(false);
+    setNewNetworkCardError(null);
+    addNetworkCardNamed(name);
+  };
+
+  const removeSelectedNetworkCard = () => {
+    const cardToRemove = String(networkingCardTab ?? DEFAULT_NETWORK_CARD_NAME);
+    if (cardToRemove === DEFAULT_NETWORK_CARD_NAME) return;
+
+    setPendingNetworkingRemoval({ kind: 'card', cardName: cardToRemove });
+  };
+
+  const addNicToSelectedCard = () => {
+    const nextNum = (cardNics?.length ?? 0) + 1;
+    const nextName = `NIC${nextNum}`;
+    const storedCardName = networkingCardTab === DEFAULT_NETWORK_CARD_NAME ? null : networkingCardTab;
+    setNics((prev) => ([
+      ...(prev ?? []),
+      { card_name: storedCardName, name: nextName },
+    ]));
+    setNetworkingNicTab(String(cardNics.length));
+  };
+
+  const removeSelectedNic = () => {
+    const selectedIdx = Number(networkingNicTab);
+    if (!Number.isFinite(selectedIdx) || selectedIdx < 0 || selectedIdx >= cardNics.length) return;
+
+    const item = cardNics[selectedIdx];
+    const nicLabel = String(item?.nic?.name ?? `NIC${selectedIdx + 1}`);
+
+    const oldLen = cardNics.length;
+    const nextSelectedIdx = oldLen <= 1 ? 0 : (selectedIdx >= oldLen - 1 ? oldLen - 2 : selectedIdx);
+
+    setPendingNetworkingRemoval({
+      kind: 'nic',
+      globalNicIndex: item.index,
+      nextSelectedNicTab: String(Math.max(0, nextSelectedIdx)),
+      label: nicLabel,
+    });
   };
 
   const addNote = async () => {
@@ -632,7 +976,7 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
       const resp = await apiClient.addSiteSidNote(siteId, sidId, { note_text: text, type: 'NOTE' });
       if (!resp.success) throw new Error(resp.error || 'Failed to add note');
       setNewNote('');
-      setNotes((prev) => [resp.data?.note, ...(prev ?? [])].filter(Boolean));
+      setNotes((prev) => sortNotesPinnedFirst([resp.data?.note, ...(prev ?? [])].filter(Boolean)));
     } catch (e) {
       setNoteError(e instanceof Error ? e.message : 'Failed to add note');
     } finally {
@@ -652,15 +996,7 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
 
       setNotes((prev) => {
         const next = prev.map((n) => (n.id === noteId ? updated : n));
-        next.sort((a, b) => {
-          const ap = Number(a?.pinned ?? 0);
-          const bp = Number(b?.pinned ?? 0);
-          if (bp !== ap) return bp - ap;
-          const at = new Date(a?.pinned_at ?? a?.created_at ?? 0).getTime();
-          const bt = new Date(b?.pinned_at ?? b?.created_at ?? 0).getTime();
-          return bt - at;
-        });
-        return next;
+        return sortNotesPinnedFirst(next);
       });
     } catch (e) {
       setNoteError(e instanceof Error ? e.message : 'Failed to update pin');
@@ -682,7 +1018,7 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
       setClosingError(null);
       const resp = await apiClient.addSiteSidNote(siteId, sidId, { note_text: text, type: 'CLOSING' });
       if (!resp.success) throw new Error(resp.error || 'Failed to add closing note');
-      setNotes((prev) => [resp.data?.note, ...(prev ?? [])].filter(Boolean));
+      setNotes((prev) => sortNotesPinnedFirst([resp.data?.note, ...(prev ?? [])].filter(Boolean)));
       setAllowLeave(true);
       setClosingOpen(false);
       const pending = pendingNavigation;
@@ -986,7 +1322,7 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
                           <div className="text-sm text-muted-foreground">No notes yet.</div>
                         ) : (
                           notes.map((n) => {
-                            const isPinned = Boolean(n?.pinned);
+                            const isPinned = isNotePinned(n);
                             const isAdmin = canEdit;
                             const isOwner = user?.id != null && Number(n?.created_by) === Number(user.id);
                             const canPin = isAdmin || isOwner;
@@ -1156,9 +1492,9 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
                                 setCreatePasswordValue('');
                                 setCreatePasswordOpen(true);
                               }}
-                              disabled={!canEdit || passwordLoading || passwordSaving}
+                              disabled={!canEdit || passwordLoading || passwordSaving || unusedPasswordTypes.length === 0}
                             >
-                              Create Password
+                              Add Password
                             </Button>
                           </div>
 
@@ -1175,6 +1511,7 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
                                     <TableHead>Username</TableHead>
                                     <TableHead>Password</TableHead>
                                     <TableHead>Last Updated</TableHead>
+                                    <TableHead className="w-[80px]"></TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -1182,8 +1519,21 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
                                     <TableRow key={`${row?.password_type_id ?? 't'}-${idx}`}>
                                       <TableCell className="font-medium">{row?.password_type_name ?? 'Password'}</TableCell>
                                       <TableCell>{row?.username ? String(row.username) : '—'}</TableCell>
-                                      <TableCell>{row?.has_password ? 'Saved' : '—'}</TableCell>
+                                      <TableCell className="font-mono break-all">
+                                        {row?.password ? String(row.password) : (row?.has_password ? 'Saved' : '—')}
+                                      </TableCell>
                                       <TableCell>{row?.password_updated_at ? new Date(row.password_updated_at).toLocaleString() : '—'}</TableCell>
+                                      <TableCell className="text-right">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => openEditPasswordDialog(row)}
+                                          disabled={!canEdit || passwordLoading || passwordSaving}
+                                          title="Edit"
+                                        >
+                                          <Pencil className="h-4 w-4" />
+                                        </Button>
+                                      </TableCell>
                                     </TableRow>
                                   ))}
                                 </TableBody>
@@ -1194,7 +1544,7 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
                           <Dialog open={createPasswordOpen} onOpenChange={setCreatePasswordOpen}>
                             <DialogContent>
                               <DialogHeader>
-                                <DialogTitle>Create Password</DialogTitle>
+                                <DialogTitle>Add Password</DialogTitle>
                                 <DialogDescription>
                                   Select a password type and save a username/password for this SID.
                                 </DialogDescription>
@@ -1212,7 +1562,7 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
                                       <SelectValue placeholder="Select password type" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      {passwordTypes.map((t) => (
+                                      {unusedPasswordTypes.map((t) => (
                                         <SelectItem key={t.id} value={String(t.id)}>
                                           {t.name}
                                         </SelectItem>
@@ -1251,7 +1601,7 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
                                 >
                                   Cancel
                                 </Button>
-                                <Button onClick={createTypedPassword} disabled={passwordSaving}>
+                                <Button onClick={addTypedPassword} disabled={passwordSaving}>
                                   {passwordSaving ? (
                                     <>
                                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1259,6 +1609,60 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
                                     </>
                                   ) : (
                                     'Save Password'
+                                  )}
+                                </Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+
+                          <Dialog open={editPasswordOpen} onOpenChange={setEditPasswordOpen}>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Edit Password</DialogTitle>
+                                <DialogDescription>
+                                  Update {editPasswordTypeName || 'Password'} for this SID.
+                                </DialogDescription>
+                              </DialogHeader>
+
+                              <div className="space-y-4">
+                                <div className="space-y-2">
+                                  <Label>Username</Label>
+                                  <Input
+                                    value={editPasswordUsername}
+                                    disabled={!canEdit || passwordLoading || passwordSaving}
+                                    onChange={(e) => setEditPasswordUsername(e.target.value)}
+                                    placeholder="e.g. Administrator"
+                                  />
+                                </div>
+
+                                <div className="space-y-2">
+                                  <Label>Password</Label>
+                                  <Input
+                                    type="password"
+                                    value={editPasswordValue}
+                                    disabled={!canEdit || passwordLoading || passwordSaving}
+                                    onChange={(e) => setEditPasswordValue(e.target.value)}
+                                    placeholder="Leave blank to keep current"
+                                  />
+                                </div>
+                              </div>
+
+                              <DialogFooter>
+                                <Button
+                                  variant="outline"
+                                  onClick={() => setEditPasswordOpen(false)}
+                                  disabled={passwordSaving}
+                                >
+                                  Cancel
+                                </Button>
+                                <Button onClick={saveEditedTypedPassword} disabled={passwordSaving}>
+                                  {passwordSaving ? (
+                                    <>
+                                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                      Saving…
+                                    </>
+                                  ) : (
+                                    'Save Changes'
                                   )}
                                 </Button>
                               </DialogFooter>
@@ -1443,7 +1847,7 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
                         <Label>RAM (GB)</Label>
                         <Input
                           type="number"
-                          step="1"
+                          step="0.001"
                           min="0"
                           value={sid.ram_gb ?? ''}
                           disabled={!canModify || (isCreate && !createPrereqsReady)}
@@ -1525,172 +1929,310 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
               <CardTitle>Networking</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-6">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>Hostname</Label>
-                    <Input
-                      value={sid.hostname ?? ''}
-                      disabled={!canModify || (isCreate && !createPrereqsReady)}
-                      onChange={(e) => updateSidLocal({ hostname: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Mgmt IP</Label>
-                    <Input
-                      value={sid.mgmt_ip ?? ''}
-                      disabled={!canModify || (isCreate && !createPrereqsReady)}
-                      onChange={(e) => updateSidLocal({ mgmt_ip: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Mgmt MAC</Label>
-                    <Input
-                      value={sid.mgmt_mac ?? ''}
-                      disabled={!canModify || (isCreate && !createPrereqsReady)}
-                      onChange={(e) => updateSidLocal({ mgmt_mac: e.target.value })}
-                    />
-                  </div>
-                </div>
+              <Tabs value={networkingSubtab} onValueChange={(v) => setNetworkingSubtab(v as any)}>
+                <div className="flex items-start gap-4">
+                  <TabsList className="flex h-auto w-[200px] flex-col items-stretch self-start">
+                    <TabsTrigger value="configuration" className="justify-start">Configuration</TabsTrigger>
+                    <TabsTrigger value="ip_addresses" className="justify-start">IP Addresses</TabsTrigger>
+                  </TabsList>
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label>NICs</Label>
-                    <Button
-                      variant="secondary"
-                      onClick={() => setNics((prev) => ([...(prev ?? []), { name: 'eth0' }]))}
-                      disabled={!canModify || isCreate || (isCreate && !createPrereqsReady)}
-                    >
-                      Add NIC
-                    </Button>
-                  </div>
-
-                  <div className="space-y-3">
-                    {nics.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">No NICs.</div>
-                    ) : (
-                      nics.map((nic, idx) => (
-                        <Card key={`${idx}-${nic.name ?? 'nic'}`}>
-                          <CardContent className="pt-6">
-                            <div className="grid gap-4 md:grid-cols-6">
-                              <div className="space-y-2 md:col-span-1">
-                                <Label>Name</Label>
-                                <Input
-                                  value={nic.name ?? ''}
-                                  disabled={!canEdit}
-                                  onChange={(e) => {
-                                    const v = e.target.value;
-                                    setNics((prev) => prev.map((p, i) => (i === idx ? { ...p, name: v } : p)));
-                                  }}
-                                />
-                              </div>
-                              <div className="space-y-2 md:col-span-1">
-                                <Label>MAC</Label>
-                                <Input
-                                  value={nic.mac_address ?? ''}
-                                  disabled={!canEdit}
-                                  onChange={(e) => {
-                                    const v = e.target.value;
-                                    setNics((prev) => prev.map((p, i) => (i === idx ? { ...p, mac_address: v } : p)));
-                                  }}
-                                />
-                              </div>
-                              <div className="space-y-2 md:col-span-1">
-                                <Label>IP</Label>
-                                <Input
-                                  value={nic.ip_address ?? ''}
-                                  disabled={!canEdit}
-                                  onChange={(e) => {
-                                    const v = e.target.value;
-                                    setNics((prev) => prev.map((p, i) => (i === idx ? { ...p, ip_address: v } : p)));
-                                  }}
-                                />
-                              </div>
-                              <div className="space-y-2 md:col-span-1">
-                                <Label>VLAN</Label>
-                                <Select
-                                  value={nic.site_vlan_id ? String(nic.site_vlan_id) : ''}
-                                  onValueChange={(v) => {
-                                    setNics((prev) => prev.map((p, i) => (i === idx ? { ...p, site_vlan_id: v ? Number(v) : null } : p)));
-                                  }}
-                                  disabled={!canEdit}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="None" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {vlans.map((v) => (
-                                      <SelectItem key={v.id} value={String(v.id)}>
-                                        {v.vlan_id} — {v.name}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div className="space-y-2 md:col-span-1">
-                                <Label>Switch</Label>
-                                <Select
-                                  value={nic.switch_sid_id ? String(nic.switch_sid_id) : ''}
-                                  onValueChange={(v) => {
-                                    setNics((prev) => prev.map((p, i) => (i === idx ? { ...p, switch_sid_id: v ? Number(v) : null } : p)));
-                                  }}
-                                  disabled={!canEdit}
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="None" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {siteSids
-                                      .filter((s) => Number(s.id) !== sidId)
-                                      .map((s) => (
-                                        <SelectItem key={s.id} value={String(s.id)}>
-                                          {s.sid_number}
-                                        </SelectItem>
-                                      ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                              <div className="space-y-2 md:col-span-1">
-                                <Label>Port</Label>
-                                <Input
-                                  value={nic.switch_port ?? ''}
-                                  disabled={!canEdit}
-                                  onChange={(e) => {
-                                    const v = e.target.value;
-                                    setNics((prev) => prev.map((p, i) => (i === idx ? { ...p, switch_port: v } : p)));
-                                  }}
-                                />
-                              </div>
+                  <div className="min-w-0 flex-1">
+                    <TabsContent value="configuration" className="m-0">
+                      <div className="space-y-6">
+                        {isSwitchSid ? (
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                              <Label>Switch Port Count</Label>
+                              <Input
+                                type="number"
+                                min={1}
+                                max={4096}
+                                step={1}
+                                value={sid.switch_port_count ?? ''}
+                                disabled={!canModify || (isCreate && !createPrereqsReady)}
+                                onChange={(e) => {
+                                  const t = e.target.value;
+                                  if (t === '') {
+                                    updateSidLocal({ switch_port_count: null });
+                                    return;
+                                  }
+                                  const n = Number(t);
+                                  updateSidLocal({ switch_port_count: Number.isFinite(n) && n > 0 ? n : null });
+                                }}
+                              />
                             </div>
-                            <div className="mt-4 flex justify-end gap-2">
-                              <Button
-                                variant="ghost"
-                                onClick={() => setNics((prev) => prev.filter((_, i) => i !== idx))}
-                                disabled={!canEdit}
+                          </div>
+                        ) : null}
+
+                        <Tabs
+                          value={networkingCardTab}
+                          onValueChange={(v) => {
+                            if (v === '__newcard') return;
+                            setNetworkingCardTab(v);
+                            setNetworkingNicTab('0');
+                          }}
+                        >
+                          <div className="flex items-start gap-4">
+                            <TabsList className="flex h-auto w-[240px] flex-col items-stretch self-start">
+                              {cardNames.map((c) => (
+                                <TabsTrigger key={c} value={c} className="justify-start">
+                                  {c}
+                                </TabsTrigger>
+                              ))}
+                              <TabsTrigger
+                                value="__newcard"
+                                className="justify-start"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  openAddNetworkCardDialog();
+                                }}
+                                disabled={!canModify || (isCreate && !createPrereqsReady)}
                               >
-                                Remove
-                              </Button>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))
-                    )}
-                  </div>
+                                New +
+                              </TabsTrigger>
+                            </TabsList>
 
-                  <div className="flex justify-end">
-                    <Button onClick={saveNics} disabled={!canEdit || saveLoading || isCreate}>
-                      {saveLoading ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Saving…
-                        </>
-                      ) : (
-                        'Save NICs'
-                      )}
-                    </Button>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex justify-end pb-2">
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={removeSelectedNetworkCard}
+                                  disabled={!canModify || (isCreate && !createPrereqsReady) || networkingCardTab === DEFAULT_NETWORK_CARD_NAME}
+                                >
+                                  Remove Card
+                                </Button>
+                              </div>
+
+                              <Tabs
+                                value={networkingNicTab}
+                                onValueChange={(v) => {
+                                  if (v === '__newnic') return;
+                                  setNetworkingNicTab(v);
+                                }}
+                              >
+                                <TabsList className="flex flex-wrap justify-start">
+                                  {cardNics.map((item, idx) => (
+                                    <TabsTrigger key={`${item.index}-${idx}`} value={String(idx)}>
+                                      {String(item.nic?.name ?? `NIC${idx + 1}`)}
+                                    </TabsTrigger>
+                                  ))}
+                                  <TabsTrigger
+                                    value="__newnic"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      addNicToSelectedCard();
+                                    }}
+                                    disabled={!canModify || (isCreate && !createPrereqsReady)}
+                                  >
+                                    +
+                                  </TabsTrigger>
+                                </TabsList>
+
+                                {cardNics.length === 0 ? (
+                                  <div className="mt-4 text-sm text-muted-foreground">No NICs.</div>
+                                ) : (
+                                  cardNics.map((item, idx) => {
+                                    const nic = item.nic;
+                                    const selectedSwitch = nic?.switch_sid_id ? switchById.get(Number(nic.switch_sid_id)) : null;
+                                    const portCount = Number(selectedSwitch?.switch_port_count ?? nic?.switch_port_count ?? 0);
+                                    const ports = Number.isFinite(portCount) && portCount > 0
+                                      ? Array.from({ length: Math.min(4096, portCount) }, (_, i) => String(i + 1))
+                                      : [];
+
+                                    return (
+                                      <TabsContent key={`${item.index}-${idx}`} value={String(idx)} className="m-0 pt-4">
+                                        <div className="flex justify-end pb-4">
+                                          <Button
+                                            variant="destructive"
+                                            size="sm"
+                                            onClick={removeSelectedNic}
+                                            disabled={!canModify || (isCreate && !createPrereqsReady)}
+                                          >
+                                            Remove NIC
+                                          </Button>
+                                        </div>
+                                        <div className="grid gap-4 md:grid-cols-3">
+                                          <div className="space-y-2">
+                                            <Label>Switch Name</Label>
+                                            <Select
+                                              value={nic?.switch_sid_id ? String(nic.switch_sid_id) : ''}
+                                              onValueChange={(v) => {
+                                                const nextId = v ? Number(v) : null;
+                                                setNics((prev) => prev.map((p, i) => (i === item.index ? { ...p, switch_sid_id: nextId, switch_port: null } : p)));
+                                              }}
+                                              disabled={!canEdit}
+                                            >
+                                              <SelectTrigger>
+                                                <SelectValue placeholder="None" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {switchSids.map((s) => (
+                                                  <SelectItem key={s.id} value={String(s.id)}>
+                                                    {String(s.hostname ?? '').trim()
+                                                      ? `${String(s.hostname).trim()} (${s.sid_number})`
+                                                      : String(s.sid_number)}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+
+                                          <div className="space-y-2">
+                                            <Label>Switch Port</Label>
+                                            <Select
+                                              value={nic?.switch_port ? String(nic.switch_port) : ''}
+                                              onValueChange={(v) => {
+                                                setNics((prev) => prev.map((p, i) => (i === item.index ? { ...p, switch_port: v || null } : p)));
+                                              }}
+                                              disabled={!canEdit || !nic?.switch_sid_id || ports.length === 0}
+                                            >
+                                              <SelectTrigger>
+                                                <SelectValue placeholder={ports.length ? 'Select port' : 'No ports'} />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {ports.map((p) => (
+                                                  <SelectItem key={p} value={p}>
+                                                    {p}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+
+                                          <div className="space-y-2">
+                                            <Label>Switch VLAN</Label>
+                                            <Select
+                                              value={nic?.site_vlan_id ? String(nic.site_vlan_id) : ''}
+                                              onValueChange={(v) => {
+                                                setNics((prev) => prev.map((p, i) => (i === item.index ? { ...p, site_vlan_id: v ? Number(v) : null } : p)));
+                                              }}
+                                              disabled={!canEdit}
+                                            >
+                                              <SelectTrigger>
+                                                <SelectValue placeholder="None" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {vlans.map((v) => (
+                                                  <SelectItem key={v.id} value={String(v.id)}>
+                                                    {v.vlan_id} — {v.name}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+
+                                          <div className="space-y-2">
+                                            <Label>MAC Address</Label>
+                                            <Input
+                                              value={nic?.mac_address ?? ''}
+                                              disabled={!canEdit}
+                                              onChange={(e) => {
+                                                const v = e.target.value;
+                                                setNics((prev) => prev.map((p, i) => (i === item.index ? { ...p, mac_address: v } : p)));
+                                              }}
+                                            />
+                                          </div>
+
+                                          <div className="space-y-2">
+                                            <Label>NIC Type</Label>
+                                            <Select
+                                              value={nic?.nic_type_id ? String(nic.nic_type_id) : ''}
+                                              onValueChange={(v) => {
+                                                setNics((prev) => prev.map((p, i) => (i === item.index ? { ...p, nic_type_id: v ? Number(v) : null } : p)));
+                                              }}
+                                              disabled={!canEdit}
+                                            >
+                                              <SelectTrigger>
+                                                <SelectValue placeholder="None" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {nicTypes.map((t) => (
+                                                  <SelectItem key={t.id} value={String(t.id)}>
+                                                    {t.name}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+
+                                          <div className="space-y-2">
+                                            <Label>NIC Speed</Label>
+                                            <Select
+                                              value={nic?.nic_speed_id ? String(nic.nic_speed_id) : ''}
+                                              onValueChange={(v) => {
+                                                setNics((prev) => prev.map((p, i) => (i === item.index ? { ...p, nic_speed_id: v ? Number(v) : null } : p)));
+                                              }}
+                                              disabled={!canEdit}
+                                            >
+                                              <SelectTrigger>
+                                                <SelectValue placeholder="None" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {nicSpeeds.map((s) => (
+                                                  <SelectItem key={s.id} value={String(s.id)}>
+                                                    {s.name}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+                                        </div>
+                                      </TabsContent>
+                                    );
+                                  })
+                                )}
+                              </Tabs>
+                            </div>
+                          </div>
+                        </Tabs>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="ip_addresses" className="m-0">
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <div className="space-y-2">
+                          <Label>Primary IP</Label>
+                          <Input
+                            value={(sid?.primary_ip ?? '').toString()}
+                            disabled={!canModify || (isCreate && !createPrereqsReady)}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              updateSidLocal({ primary_ip: v.trim() === '' ? null : v });
+                            }}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Subnet IP</Label>
+                          <Input
+                            value={(sid?.subnet_ip ?? '').toString()}
+                            disabled={!canModify || (isCreate && !createPrereqsReady)}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              updateSidLocal({ subnet_ip: v.trim() === '' ? null : v });
+                            }}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Gateway IP</Label>
+                          <Input
+                            value={(sid?.gateway_ip ?? '').toString()}
+                            disabled={!canModify || (isCreate && !createPrereqsReady)}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              updateSidLocal({ gateway_ip: v.trim() === '' ? null : v });
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </TabsContent>
                   </div>
                 </div>
-              </div>
+              </Tabs>
             </CardContent>
           </Card>
         </TabsContent>
@@ -1704,26 +2246,27 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label>Site Location</Label>
-                  <Select
-                    value={sid.location_id ? String(sid.location_id) : ''}
-                    onValueChange={(v) => updateSidLocal({ location_id: v ? Number(v) : null })}
+                  <LocationHierarchyDropdown
+                    locations={locations}
+                    valueLocationId={sid.location_id ? Number(sid.location_id) : null}
+                    placeholder="Unassigned"
                     disabled={!canModify || (isCreate && !createPrereqsReady)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Unassigned" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {locations.map((l) => (
-                        <SelectItem key={l.id} value={String(l.id)}>
-                          {l.effective_label || l.label || 'Location'} — Floor: {l.floor}
-                          {l.suite ? ` | Suite: ${l.suite}` : ''}
-                          {l.row ? ` | Row: ${l.row}` : ''}
-                          {l.rack ? ` | Rack: ${l.rack}` : ''}
-                          {l.area ? ` | Area: ${l.area}` : ''}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onSelect={(id) => updateSidLocal({ location_id: Number(id) })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>PDU SID/Port</Label>
+                  <Input
+                    type="text"
+                    value={(sid.pdu_power ?? '').toString()}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      updateSidLocal({ pdu_power: v.trim() === '' ? null : v });
+                    }}
+                    disabled={!canModify || (isCreate && !createPrereqsReady)}
+                    placeholder="e.g. PDU-A1/12"
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -1805,6 +2348,116 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog
+        open={addNetworkCardOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAddNetworkCardOpen(false);
+            setNewNetworkCardError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Network Card</DialogTitle>
+            <DialogDescription>
+              Enter a descriptive card name (e.g., Intel X520).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="new-network-card-name">Name</Label>
+            <Input
+              id="new-network-card-name"
+              value={newNetworkCardName}
+              onChange={(e) => {
+                setNewNetworkCardName(e.target.value);
+                setNewNetworkCardError(null);
+              }}
+              disabled={!canModify || (isCreate && !createPrereqsReady)}
+              placeholder="e.g., Intel X520"
+            />
+            {newNetworkCardError ? (
+              <div className="text-sm text-destructive">{newNetworkCardError}</div>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAddNetworkCardOpen(false);
+                setNewNetworkCardError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmAddNetworkCard}
+              disabled={!canModify || (isCreate && !createPrereqsReady)}
+            >
+              Add Card
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={pendingNetworkingRemoval !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingNetworkingRemoval(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm removal</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingNetworkingRemoval?.kind === 'card'
+                ? `Remove network card "${pendingNetworkingRemoval.cardName}" and all its NICs?`
+                : pendingNetworkingRemoval?.kind === 'nic'
+                  ? `Remove ${pendingNetworkingRemoval.label}?`
+                  : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+
+                const pending = pendingNetworkingRemoval;
+                setPendingNetworkingRemoval(null);
+                if (!pending) return;
+
+                if (pending.kind === 'card') {
+                  const cardToRemove = pending.cardName;
+                  setNics((prev) => {
+                    const list = Array.isArray(prev) ? prev : [];
+                    return list.filter((n) => {
+                      const raw = String(n?.card_name ?? '').trim();
+                      const display = raw || DEFAULT_NETWORK_CARD_NAME;
+                      return display !== cardToRemove;
+                    });
+                  });
+                  setNetworkingCardTab(DEFAULT_NETWORK_CARD_NAME);
+                  setNetworkingNicTab('0');
+                  return;
+                }
+
+                if (pending.kind === 'nic') {
+                  setNics((prev) => {
+                    const list = Array.isArray(prev) ? prev : [];
+                    return list.filter((_, i) => i !== pending.globalNicIndex);
+                  });
+                  setNetworkingNicTab(pending.nextSelectedNicTab);
+                }
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

@@ -10,6 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../ui/alert-dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -40,6 +41,7 @@ const SiteLocationsManager: React.FC<SiteLocationsManagerProps> = ({ siteId, sit
   const [error, setError] = useState<string | null>(null);
 
   const [editing, setEditing] = useState<SiteLocation | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
 
   const [updateConfirmOpen, setUpdateConfirmOpen] = useState(false);
   const [updateUsage, setUpdateUsage] = useState<{ source_count: number; destination_count: number; total_in_use: number } | null>(null);
@@ -111,14 +113,31 @@ const SiteLocationsManager: React.FC<SiteLocationsManagerProps> = ({ siteId, sit
   useEffect(() => {
     if (!Number.isFinite(siteId) || siteId <= 0) return;
     setEditing(null);
+    setFormOpen(false);
     resetForm();
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId]);
 
+  const closeForm = () => {
+    if (working) return;
+    setFormOpen(false);
+    setEditing(null);
+    resetForm();
+    setError(null);
+  };
+
+  const startAdd = () => {
+    setEditing(null);
+    resetForm();
+    setError(null);
+    setFormOpen(true);
+  };
+
   const startEdit = (loc: SiteLocation) => {
     setEditing(loc);
     setError(null);
+    setFormOpen(true);
 
     const tt = (loc.template_type === 'DOMESTIC' ? 'DOMESTIC' : 'DATACENTRE') as 'DATACENTRE' | 'DOMESTIC';
     setTemplateType(tt);
@@ -131,9 +150,7 @@ const SiteLocationsManager: React.FC<SiteLocationsManagerProps> = ({ siteId, sit
   };
 
   const cancelEdit = () => {
-    setEditing(null);
-    resetForm();
-    setError(null);
+    closeForm();
   };
 
   const buildPayload = () => {
@@ -223,6 +240,7 @@ const SiteLocationsManager: React.FC<SiteLocationsManagerProps> = ({ siteId, sit
       }
 
       setEditing(null);
+      setFormOpen(false);
       resetForm();
       await load();
       onChanged?.();
@@ -248,6 +266,7 @@ const SiteLocationsManager: React.FC<SiteLocationsManagerProps> = ({ siteId, sit
       setUpdateUsage(null);
 
       setEditing(null);
+      setFormOpen(false);
       resetForm();
       await load();
       onChanged?.();
@@ -386,80 +405,85 @@ const SiteLocationsManager: React.FC<SiteLocationsManagerProps> = ({ siteId, sit
       )}
 
       <div className="space-y-4">
-        <div className="rounded-md border p-3 space-y-3">
-          <div className="text-sm font-semibold">{editing ? 'Edit Location' : 'Add Location'}</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Template</Label>
-              <Select
-                value={templateType}
-                onValueChange={(v) => {
-                  const next = v === 'DOMESTIC' ? 'DOMESTIC' : 'DATACENTRE';
-                  setTemplateType(next);
-                  if (next === 'DOMESTIC') {
-                    setSuite('');
-                    setRow('');
-                    setRack('');
-                  } else {
-                    setArea('');
-                  }
-                }}
-                disabled={working}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select template" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="DATACENTRE">Datacentre / Commercial</SelectItem>
-                  <SelectItem value="DOMESTIC">Domestic</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1">
-              <Label>Label</Label>
-              <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Optional nickname" disabled={working} />
-            </div>
-
-            <div className="space-y-1">
-              <Label>Floor</Label>
-              <Input value={floor} onChange={(e) => setFloor(e.target.value)} placeholder="e.g., 1" disabled={working} />
-            </div>
-
-            {templateType === 'DOMESTIC' ? (
-              <div className="space-y-1">
-                <Label>Area</Label>
-                <Input value={area} onChange={(e) => setArea(e.target.value)} placeholder="e.g., Garage" disabled={working} />
-              </div>
-            ) : (
-              <>
-                <div className="space-y-1">
-                  <Label>Suite</Label>
-                  <Input value={suite} onChange={(e) => setSuite(e.target.value)} placeholder="e.g., 1" disabled={working} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Row</Label>
-                  <Input value={row} onChange={(e) => setRow(e.target.value)} placeholder="e.g., A" disabled={working} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Rack</Label>
-                  <Input value={rack} onChange={(e) => setRack(e.target.value)} placeholder="e.g., 1" disabled={working} />
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="flex items-center justify-end gap-2">
-            {editing && (
-              <Button variant="outline" onClick={cancelEdit} disabled={working}>
-                Cancel
-              </Button>
-            )}
-            <Button onClick={handleCreateOrUpdate} disabled={working}>
-              {working ? <Loader2 className="h-4 w-4 animate-spin" /> : editing ? 'Save Changes' : 'Add Location'}
-            </Button>
-          </div>
+        <div className="flex justify-end">
+          <Button onClick={startAdd} disabled={working}>Add Location</Button>
         </div>
+
+        <Dialog open={formOpen} onOpenChange={(next) => (next ? setFormOpen(true) : closeForm())}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{editing ? 'Edit Location' : 'Add Location'}</DialogTitle>
+            </DialogHeader>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Template</Label>
+                <Select
+                  value={templateType}
+                  onValueChange={(v) => {
+                    const next = v === 'DOMESTIC' ? 'DOMESTIC' : 'DATACENTRE';
+                    setTemplateType(next);
+                    if (next === 'DOMESTIC') {
+                      setSuite('');
+                      setRow('');
+                      setRack('');
+                    } else {
+                      setArea('');
+                    }
+                  }}
+                  disabled={working}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select template" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DATACENTRE">Datacentre / Commercial</SelectItem>
+                    <SelectItem value="DOMESTIC">Domestic</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label>Label</Label>
+                <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Optional nickname" disabled={working} />
+              </div>
+
+              <div className="space-y-1">
+                <Label>Floor</Label>
+                <Input value={floor} onChange={(e) => setFloor(e.target.value)} placeholder="e.g., 1" disabled={working} />
+              </div>
+
+              {templateType === 'DOMESTIC' ? (
+                <div className="space-y-1">
+                  <Label>Area</Label>
+                  <Input value={area} onChange={(e) => setArea(e.target.value)} placeholder="e.g., Garage" disabled={working} />
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-1">
+                    <Label>Suite</Label>
+                    <Input value={suite} onChange={(e) => setSuite(e.target.value)} placeholder="e.g., 1" disabled={working} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Row</Label>
+                    <Input value={row} onChange={(e) => setRow(e.target.value)} placeholder="e.g., A" disabled={working} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Rack</Label>
+                    <Input value={rack} onChange={(e) => setRack(e.target.value)} placeholder="e.g., 1" disabled={working} />
+                  </div>
+                </>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={cancelEdit} disabled={working}>Cancel</Button>
+              <Button onClick={handleCreateOrUpdate} disabled={working}>
+                {working ? <Loader2 className="h-4 w-4 animate-spin" /> : editing ? 'Save Changes' : 'Add Location'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <div className="rounded-md border">
           <div className="border-b px-3 py-2 text-sm font-semibold">Existing Locations</div>

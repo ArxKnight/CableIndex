@@ -1,12 +1,22 @@
 import React from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Pencil, Trash2 } from 'lucide-react';
 
 import { apiClient } from '../lib/api';
 import usePermissions from '../hooks/usePermissions';
 import { Button } from '../components/ui/button';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog';
 import {
   Dialog,
   DialogContent,
@@ -27,6 +37,17 @@ import {
   TableRow,
 } from '../components/ui/table';
 import SiteLocationsManager from '../components/sites/SiteLocationsManager';
+
+type PicklistKind =
+  | 'sidType'
+  | 'deviceModel'
+  | 'cpuModel'
+  | 'platform'
+  | 'status'
+  | 'passwordType'
+  | 'vlan'
+  | 'nicType'
+  | 'nicSpeed';
 
 const SiteSidAdminPage: React.FC = () => {
   const location = useLocation();
@@ -49,13 +70,17 @@ const SiteSidAdminPage: React.FC = () => {
   const [statuses, setStatuses] = React.useState<any[]>([]);
   const [passwordTypes, setPasswordTypes] = React.useState<any[]>([]);
   const [vlans, setVlans] = React.useState<any[]>([]);
+  const [nicTypes, setNicTypes] = React.useState<any[]>([]);
+  const [nicSpeeds, setNicSpeeds] = React.useState<any[]>([]);
 
   const [busy, setBusy] = React.useState(false);
   const [opError, setOpError] = React.useState<string | null>(null);
 
-  const [addDialog, setAddDialog] = React.useState<
-    null | 'sidType' | 'deviceModel' | 'cpuModel' | 'platform' | 'status' | 'passwordType' | 'vlan'
-  >(null);
+  const [addDialog, setAddDialog] = React.useState<null | PicklistKind>(null);
+
+  const [editDialog, setEditDialog] = React.useState<null | PicklistKind>(null);
+  const [editRowId, setEditRowId] = React.useState<number | null>(null);
+  const [pendingUpdate, setPendingUpdate] = React.useState<null | { kind: PicklistKind; rowId: number; payload: any; usageCount: number }>(null);
 
   const [newTypeName, setNewTypeName] = React.useState('');
   const [newDeviceManufacturer, setNewDeviceManufacturer] = React.useState('');
@@ -69,12 +94,31 @@ const SiteSidAdminPage: React.FC = () => {
   const [newPasswordTypeName, setNewPasswordTypeName] = React.useState('');
   const [newVlanId, setNewVlanId] = React.useState('');
   const [newVlanName, setNewVlanName] = React.useState('');
+  const [newNicTypeName, setNewNicTypeName] = React.useState('');
+  const [newNicSpeedName, setNewNicSpeedName] = React.useState('');
 
-  const [activeTab, setActiveTab] = React.useState<'types' | 'devices' | 'cpus' | 'platforms' | 'statuses' | 'locations' | 'passwordTypes' | 'vlans'>('types');
+  const [editTypeName, setEditTypeName] = React.useState('');
+  const [editDeviceManufacturer, setEditDeviceManufacturer] = React.useState('');
+  const [editDeviceName, setEditDeviceName] = React.useState('');
+  const [editCpuManufacturer, setEditCpuManufacturer] = React.useState('');
+  const [editCpuName, setEditCpuName] = React.useState('');
+  const [editCpuCores, setEditCpuCores] = React.useState('');
+  const [editCpuThreads, setEditCpuThreads] = React.useState('');
+  const [editPlatformName, setEditPlatformName] = React.useState('');
+  const [editStatusName, setEditStatusName] = React.useState('');
+  const [editPasswordTypeName, setEditPasswordTypeName] = React.useState('');
+  const [editVlanId, setEditVlanId] = React.useState('');
+  const [editVlanName, setEditVlanName] = React.useState('');
+  const [editNicTypeName, setEditNicTypeName] = React.useState('');
+  const [editNicSpeedName, setEditNicSpeedName] = React.useState('');
+
+  const [activeTab, setActiveTab] = React.useState<
+    'types' | 'devices' | 'cpus' | 'platforms' | 'statuses' | 'locations' | 'passwordTypes' | 'vlans' | 'nicTypes' | 'nicSpeeds'
+  >('types');
 
   React.useEffect(() => {
     const tab = new URLSearchParams(location.search).get('tab');
-    const allowed = new Set(['types', 'devices', 'cpus', 'platforms', 'statuses', 'locations', 'passwordTypes', 'vlans']);
+    const allowed = new Set(['types', 'devices', 'cpus', 'platforms', 'statuses', 'locations', 'passwordTypes', 'vlans', 'nicTypes', 'nicSpeeds']);
     if (tab && allowed.has(tab)) {
       setActiveTab(tab as any);
     }
@@ -83,6 +127,43 @@ const SiteSidAdminPage: React.FC = () => {
   const closeAddDialog = () => {
     setAddDialog(null);
     setOpError(null);
+  };
+
+  const closeEditDialog = () => {
+    setEditDialog(null);
+    setEditRowId(null);
+    setOpError(null);
+  };
+
+  const openEditDialog = (kind: PicklistKind, row: any) => {
+    setOpError(null);
+    setEditDialog(kind);
+    setEditRowId(Number(row.id));
+
+    if (kind === 'sidType') {
+      setEditTypeName(String(row.name ?? ''));
+    } else if (kind === 'deviceModel') {
+      setEditDeviceManufacturer(String(row.manufacturer ?? ''));
+      setEditDeviceName(String(row.name ?? ''));
+    } else if (kind === 'cpuModel') {
+      setEditCpuManufacturer(String(row.manufacturer ?? ''));
+      setEditCpuName(String(row.name ?? ''));
+      setEditCpuCores(row.cpu_cores != null ? String(row.cpu_cores) : '');
+      setEditCpuThreads(row.cpu_threads != null ? String(row.cpu_threads) : '');
+    } else if (kind === 'platform') {
+      setEditPlatformName(String(row.name ?? ''));
+    } else if (kind === 'status') {
+      setEditStatusName(String(row.name ?? ''));
+    } else if (kind === 'passwordType') {
+      setEditPasswordTypeName(String(row.name ?? ''));
+    } else if (kind === 'vlan') {
+      setEditVlanId(row.vlan_id != null ? String(row.vlan_id) : '');
+      setEditVlanName(String(row.name ?? ''));
+    } else if (kind === 'nicType') {
+      setEditNicTypeName(String(row.name ?? ''));
+    } else if (kind === 'nicSpeed') {
+      setEditNicSpeedName(String(row.name ?? ''));
+    }
   };
 
   const load = React.useCallback(async () => {
@@ -95,7 +176,7 @@ const SiteSidAdminPage: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const [siteResp, typesResp, dmResp, cpuResp, platformResp, statusesResp, passwordTypesResp, vlanResp] = await Promise.all([
+      const [siteResp, typesResp, dmResp, cpuResp, platformResp, statusesResp, passwordTypesResp, vlanResp, nicTypesResp, nicSpeedsResp] = await Promise.all([
         apiClient.getSite(siteId),
         apiClient.getSiteSidTypes(siteId),
         apiClient.getSiteSidDeviceModels(siteId),
@@ -104,6 +185,8 @@ const SiteSidAdminPage: React.FC = () => {
         apiClient.getSiteSidStatuses(siteId),
         apiClient.getSiteSidPasswordTypes(siteId),
         apiClient.getSiteSidVlans(siteId),
+        apiClient.getSiteSidNicTypes(siteId),
+        apiClient.getSiteSidNicSpeeds(siteId),
       ]);
 
       if (!siteResp.success || !siteResp.data?.site) {
@@ -119,6 +202,8 @@ const SiteSidAdminPage: React.FC = () => {
       setStatuses(statusesResp.success ? (statusesResp.data?.statuses ?? []) : []);
       setPasswordTypes(passwordTypesResp.success ? (passwordTypesResp.data?.password_types ?? []) : []);
       setVlans(vlanResp.success ? (vlanResp.data?.vlans ?? []) : []);
+      setNicTypes(nicTypesResp.success ? (nicTypesResp.data?.nic_types ?? []) : []);
+      setNicSpeeds(nicSpeedsResp.success ? (nicSpeedsResp.data?.nic_speeds ?? []) : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -432,6 +517,185 @@ const SiteSidAdminPage: React.FC = () => {
     }
   };
 
+  const createNicType = async () => {
+    if (!requireAdmin()) return;
+    const name = newNicTypeName.trim();
+    if (!name) {
+      setOpError('Name is required');
+      return;
+    }
+
+    try {
+      setBusy(true);
+      setOpError(null);
+      const resp = await apiClient.createSiteSidNicType(siteId, { name });
+      if (!resp.success) throw new Error(resp.error || 'Failed to create NIC type');
+      setNewNicTypeName('');
+      await load();
+      closeAddDialog();
+    } catch (e) {
+      setOpError(e instanceof Error ? e.message : 'Failed to create NIC type');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteNicType = async (id: number) => {
+    if (!requireAdmin()) return;
+    try {
+      setBusy(true);
+      setOpError(null);
+      const resp = await apiClient.deleteSiteSidNicType(siteId, id);
+      if (!resp.success) throw new Error(resp.error || 'Failed to delete NIC type');
+      await load();
+    } catch (e) {
+      setOpError(e instanceof Error ? e.message : 'Failed to delete NIC type');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createNicSpeed = async () => {
+    if (!requireAdmin()) return;
+    const name = newNicSpeedName.trim();
+    if (!name) {
+      setOpError('Name is required');
+      return;
+    }
+
+    try {
+      setBusy(true);
+      setOpError(null);
+      const resp = await apiClient.createSiteSidNicSpeed(siteId, { name });
+      if (!resp.success) throw new Error(resp.error || 'Failed to create NIC speed');
+      setNewNicSpeedName('');
+      await load();
+      closeAddDialog();
+    } catch (e) {
+      setOpError(e instanceof Error ? e.message : 'Failed to create NIC speed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteNicSpeed = async (id: number) => {
+    if (!requireAdmin()) return;
+    try {
+      setBusy(true);
+      setOpError(null);
+      const resp = await apiClient.deleteSiteSidNicSpeed(siteId, id);
+      if (!resp.success) throw new Error(resp.error || 'Failed to delete NIC speed');
+      await load();
+    } catch (e) {
+      setOpError(e instanceof Error ? e.message : 'Failed to delete NIC speed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const getPicklistUsageCount = async (kind: PicklistKind, rowId: number): Promise<number> => {
+    const safeRowId = Number(rowId);
+    if (!Number.isFinite(safeRowId) || safeRowId <= 0) return 0;
+
+    try {
+      if (kind === 'sidType') {
+        const resp = await apiClient.getSiteSidTypeUsage(siteId, safeRowId);
+        return resp.success ? Number(resp.data?.sids_using ?? 0) : 0;
+      }
+      if (kind === 'deviceModel') {
+        const resp = await apiClient.getSiteSidDeviceModelUsage(siteId, safeRowId);
+        return resp.success ? Number(resp.data?.sids_using ?? 0) : 0;
+      }
+      if (kind === 'cpuModel') {
+        const resp = await apiClient.getSiteSidCpuModelUsage(siteId, safeRowId);
+        return resp.success ? Number(resp.data?.sids_using ?? 0) : 0;
+      }
+      if (kind === 'platform') {
+        const resp = await apiClient.getSiteSidPlatformUsage(siteId, safeRowId);
+        return resp.success ? Number(resp.data?.sids_using ?? 0) : 0;
+      }
+      if (kind === 'status') {
+        const resp = await apiClient.getSiteSidStatusUsage(siteId, safeRowId);
+        return resp.success ? Number(resp.data?.sids_using ?? 0) : 0;
+      }
+      if (kind === 'passwordType') {
+        const resp = await apiClient.getSiteSidPasswordTypeUsage(siteId, safeRowId);
+        return resp.success ? Number(resp.data?.sids_using ?? 0) : 0;
+      }
+      if (kind === 'vlan') {
+        const resp = await apiClient.getSiteSidVlanUsage(siteId, safeRowId);
+        return resp.success ? Number(resp.data?.sids_using ?? 0) : 0;
+      }
+      if (kind === 'nicType') {
+        const resp = await apiClient.getSiteSidNicTypeUsage(siteId, safeRowId);
+        return resp.success ? Number(resp.data?.sids_using ?? 0) : 0;
+      }
+      if (kind === 'nicSpeed') {
+        const resp = await apiClient.getSiteSidNicSpeedUsage(siteId, safeRowId);
+        return resp.success ? Number(resp.data?.sids_using ?? 0) : 0;
+      }
+    } catch {
+      // ignore
+    }
+
+    return 0;
+  };
+
+  const performPicklistUpdate = async (kind: PicklistKind, rowId: number, payload: any) => {
+    if (!requireAdmin()) return;
+
+    try {
+      setBusy(true);
+      setOpError(null);
+
+      if (kind === 'sidType') {
+        const resp = await apiClient.updateSiteSidType(siteId, rowId, payload);
+        if (!resp.success) throw new Error(resp.error || 'Failed to update SID type');
+      } else if (kind === 'deviceModel') {
+        const resp = await apiClient.updateSiteSidDeviceModel(siteId, rowId, payload);
+        if (!resp.success) throw new Error(resp.error || 'Failed to update device model');
+      } else if (kind === 'cpuModel') {
+        const resp = await apiClient.updateSiteSidCpuModel(siteId, rowId, payload);
+        if (!resp.success) throw new Error(resp.error || 'Failed to update CPU model');
+      } else if (kind === 'platform') {
+        const resp = await apiClient.updateSiteSidPlatform(siteId, rowId, payload);
+        if (!resp.success) throw new Error(resp.error || 'Failed to update platform');
+      } else if (kind === 'status') {
+        const resp = await apiClient.updateSiteSidStatus(siteId, rowId, payload);
+        if (!resp.success) throw new Error(resp.error || 'Failed to update status');
+      } else if (kind === 'passwordType') {
+        const resp = await apiClient.updateSiteSidPasswordType(siteId, rowId, payload);
+        if (!resp.success) throw new Error(resp.error || 'Failed to update password type');
+      } else if (kind === 'vlan') {
+        const resp = await apiClient.updateSiteSidVlan(siteId, rowId, payload);
+        if (!resp.success) throw new Error(resp.error || 'Failed to update VLAN');
+      } else if (kind === 'nicType') {
+        const resp = await apiClient.updateSiteSidNicType(siteId, rowId, payload);
+        if (!resp.success) throw new Error(resp.error || 'Failed to update NIC type');
+      } else if (kind === 'nicSpeed') {
+        const resp = await apiClient.updateSiteSidNicSpeed(siteId, rowId, payload);
+        if (!resp.success) throw new Error(resp.error || 'Failed to update NIC speed');
+      }
+
+      await load();
+      closeEditDialog();
+    } catch (e) {
+      setOpError(e instanceof Error ? e.message : 'Failed to save changes');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const requestPicklistUpdate = async (kind: PicklistKind, rowId: number, payload: any) => {
+    if (!requireAdmin()) return;
+    const usage = await getPicklistUsageCount(kind, rowId);
+    if (usage > 0) {
+      setPendingUpdate({ kind, rowId, payload, usageCount: usage });
+      return;
+    }
+    await performPicklistUpdate(kind, rowId, payload);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -483,8 +747,8 @@ const SiteSidAdminPage: React.FC = () => {
       )}
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
-        <TabsList className="grid w-full grid-cols-8">
-          <TabsTrigger value="types">SID Types</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-10">
+          <TabsTrigger value="types">Device Types</TabsTrigger>
           <TabsTrigger value="devices">Device Models</TabsTrigger>
           <TabsTrigger value="cpus">CPU Models</TabsTrigger>
           <TabsTrigger value="platforms">Platforms</TabsTrigger>
@@ -492,12 +756,14 @@ const SiteSidAdminPage: React.FC = () => {
           <TabsTrigger value="locations">Locations</TabsTrigger>
           <TabsTrigger value="passwordTypes">Password Types</TabsTrigger>
           <TabsTrigger value="vlans">VLANs</TabsTrigger>
+          <TabsTrigger value="nicTypes">NIC Types</TabsTrigger>
+          <TabsTrigger value="nicSpeeds">NIC Speeds</TabsTrigger>
         </TabsList>
 
         <TabsContent value="types">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-4">
-              <CardTitle>SID Types</CardTitle>
+              <CardTitle>Device Types</CardTitle>
               <Button
                 onClick={() => {
                   setOpError(null);
@@ -514,7 +780,7 @@ const SiteSidAdminPage: React.FC = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead className="w-[120px]"></TableHead>
+                    <TableHead className="w-[160px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -522,6 +788,13 @@ const SiteSidAdminPage: React.FC = () => {
                     <TableRow key={t.id}>
                       <TableCell className="font-medium">{t.name}</TableCell>
                       <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          onClick={() => openEditDialog('sidType', t)}
+                          disabled={!canAdmin || busy}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" onClick={() => deleteType(t.id)} disabled={!canAdmin || busy}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -556,7 +829,7 @@ const SiteSidAdminPage: React.FC = () => {
                   <TableRow>
                     <TableHead>Manufacturer</TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead className="w-[120px]"></TableHead>
+                    <TableHead className="w-[160px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -565,6 +838,13 @@ const SiteSidAdminPage: React.FC = () => {
                       <TableCell>{m.manufacturer || '—'}</TableCell>
                       <TableCell className="font-medium">{m.name}</TableCell>
                       <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          onClick={() => openEditDialog('deviceModel', m)}
+                          disabled={!canAdmin || busy}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" onClick={() => deleteDeviceModel(m.id)} disabled={!canAdmin || busy}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -601,7 +881,7 @@ const SiteSidAdminPage: React.FC = () => {
                   <TableRow>
                     <TableHead>Manufacturer</TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead className="w-[120px]"></TableHead>
+                    <TableHead className="w-[160px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -610,6 +890,13 @@ const SiteSidAdminPage: React.FC = () => {
                       <TableCell>{m.manufacturer || '—'}</TableCell>
                       <TableCell className="font-medium">{m.name}</TableCell>
                       <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          onClick={() => openEditDialog('cpuModel', m)}
+                          disabled={!canAdmin || busy}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" onClick={() => deleteCpuModel(m.id)} disabled={!canAdmin || busy}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -642,7 +929,7 @@ const SiteSidAdminPage: React.FC = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead className="w-[120px]"></TableHead>
+                    <TableHead className="w-[160px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -650,6 +937,13 @@ const SiteSidAdminPage: React.FC = () => {
                     <TableRow key={p.id}>
                       <TableCell className="font-medium">{p.name}</TableCell>
                       <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          onClick={() => openEditDialog('platform', p)}
+                          disabled={!canAdmin || busy}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" onClick={() => deletePlatform(p.id)} disabled={!canAdmin || busy}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -682,7 +976,7 @@ const SiteSidAdminPage: React.FC = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead className="w-[120px]"></TableHead>
+                    <TableHead className="w-[160px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -690,6 +984,13 @@ const SiteSidAdminPage: React.FC = () => {
                     <TableRow key={s.id}>
                       <TableCell className="font-medium">{s.name}</TableCell>
                       <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          onClick={() => openEditDialog('status', s)}
+                          disabled={!canAdmin || busy}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" onClick={() => deleteStatus(s.id)} disabled={!canAdmin || busy}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -737,7 +1038,7 @@ const SiteSidAdminPage: React.FC = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>
-                    <TableHead className="w-[120px]"></TableHead>
+                    <TableHead className="w-[160px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -745,6 +1046,13 @@ const SiteSidAdminPage: React.FC = () => {
                     <TableRow key={t.id}>
                       <TableCell className="font-medium">{t.name}</TableCell>
                       <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          onClick={() => openEditDialog('passwordType', t)}
+                          disabled={!canAdmin || busy}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" onClick={() => deletePasswordType(t.id)} disabled={!canAdmin || busy}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -779,7 +1087,7 @@ const SiteSidAdminPage: React.FC = () => {
                   <TableRow>
                     <TableHead>VLAN</TableHead>
                     <TableHead>Name</TableHead>
-                    <TableHead className="w-[120px]"></TableHead>
+                    <TableHead className="w-[160px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -788,6 +1096,13 @@ const SiteSidAdminPage: React.FC = () => {
                       <TableCell className="font-medium">{v.vlan_id}</TableCell>
                       <TableCell>{v.name}</TableCell>
                       <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          onClick={() => openEditDialog('vlan', v)}
+                          disabled={!canAdmin || busy}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
                         <Button variant="ghost" onClick={() => deleteVlan(v.id)} disabled={!canAdmin || busy}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -799,7 +1114,420 @@ const SiteSidAdminPage: React.FC = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="nicTypes">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <CardTitle>NIC Types</CardTitle>
+              <Button
+                onClick={() => {
+                  setOpError(null);
+                  setNewNicTypeName('');
+                  setAddDialog('nicType');
+                }}
+                disabled={!canAdmin || busy}
+              >
+                Add NIC Type
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead className="w-[160px]"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {nicTypes.map((t) => (
+                    <TableRow key={t.id}>
+                      <TableCell className="font-medium">{t.name}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          onClick={() => openEditDialog('nicType', t)}
+                          disabled={!canAdmin || busy}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" onClick={() => deleteNicType(t.id)} disabled={!canAdmin || busy}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="nicSpeeds">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <CardTitle>NIC Speeds</CardTitle>
+              <Button
+                onClick={() => {
+                  setOpError(null);
+                  setNewNicSpeedName('');
+                  setAddDialog('nicSpeed');
+                }}
+                disabled={!canAdmin || busy}
+              >
+                Add NIC Speed
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead className="w-[160px]"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {nicSpeeds.map((t) => (
+                    <TableRow key={t.id}>
+                      <TableCell className="font-medium">{t.name}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          onClick={() => openEditDialog('nicSpeed', t)}
+                          disabled={!canAdmin || busy}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" onClick={() => deleteNicSpeed(t.id)} disabled={!canAdmin || busy}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      <Dialog open={editDialog !== null} onOpenChange={(open) => !open && closeEditDialog()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editDialog === 'sidType'
+                ? 'Edit SID Type'
+                : editDialog === 'deviceModel'
+                  ? 'Edit Device Model'
+                  : editDialog === 'cpuModel'
+                    ? 'Edit CPU Model'
+                    : editDialog === 'platform'
+                      ? 'Edit Platform'
+                      : editDialog === 'status'
+                        ? 'Edit Status'
+                        : editDialog === 'passwordType'
+                          ? 'Edit Password Type'
+                          : editDialog === 'vlan'
+                            ? 'Edit VLAN'
+                            : editDialog === 'nicType'
+                              ? 'Edit NIC Type'
+                              : editDialog === 'nicSpeed'
+                                ? 'Edit NIC Speed'
+                            : ''}
+            </DialogTitle>
+            <DialogDescription>Save changes will apply to all SIDs using this value.</DialogDescription>
+          </DialogHeader>
+
+          {editDialog === 'sidType' && (
+            <div className="space-y-2">
+              <Label htmlFor="edit-sid-type">Name</Label>
+              <Input
+                id="edit-sid-type"
+                value={editTypeName}
+                onChange={(e) => setEditTypeName(e.target.value)}
+                disabled={!canAdmin || busy}
+              />
+            </div>
+          )}
+
+          {editDialog === 'deviceModel' && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-device-mfr">Manufacturer</Label>
+                <Input
+                  id="edit-device-mfr"
+                  value={editDeviceManufacturer}
+                  onChange={(e) => setEditDeviceManufacturer(e.target.value)}
+                  disabled={!canAdmin || busy}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-device-name">Name</Label>
+                <Input
+                  id="edit-device-name"
+                  value={editDeviceName}
+                  onChange={(e) => setEditDeviceName(e.target.value)}
+                  disabled={!canAdmin || busy}
+                />
+              </div>
+            </div>
+          )}
+
+          {editDialog === 'cpuModel' && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-cpu-mfr">Manufacturer</Label>
+                <Input
+                  id="edit-cpu-mfr"
+                  value={editCpuManufacturer}
+                  onChange={(e) => setEditCpuManufacturer(e.target.value)}
+                  disabled={!canAdmin || busy}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-cpu-name">Name</Label>
+                <Input
+                  id="edit-cpu-name"
+                  value={editCpuName}
+                  onChange={(e) => setEditCpuName(e.target.value)}
+                  disabled={!canAdmin || busy}
+                />
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-cpu-cores">CPU Cores</Label>
+                  <Input
+                    id="edit-cpu-cores"
+                    type="number"
+                    value={editCpuCores}
+                    onChange={(e) => setEditCpuCores(e.target.value)}
+                    disabled={!canAdmin || busy}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-cpu-threads">CPU Threads</Label>
+                  <Input
+                    id="edit-cpu-threads"
+                    type="number"
+                    value={editCpuThreads}
+                    onChange={(e) => setEditCpuThreads(e.target.value)}
+                    disabled={!canAdmin || busy}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {editDialog === 'platform' && (
+            <div className="space-y-2">
+              <Label htmlFor="edit-platform">Name</Label>
+              <Input
+                id="edit-platform"
+                value={editPlatformName}
+                onChange={(e) => setEditPlatformName(e.target.value)}
+                disabled={!canAdmin || busy}
+              />
+            </div>
+          )}
+
+          {editDialog === 'status' && (
+            <div className="space-y-2">
+              <Label htmlFor="edit-status">Name</Label>
+              <Input
+                id="edit-status"
+                value={editStatusName}
+                onChange={(e) => setEditStatusName(e.target.value)}
+                disabled={!canAdmin || busy}
+              />
+            </div>
+          )}
+
+          {editDialog === 'passwordType' && (
+            <div className="space-y-2">
+              <Label htmlFor="edit-password-type">Name</Label>
+              <Input
+                id="edit-password-type"
+                value={editPasswordTypeName}
+                onChange={(e) => setEditPasswordTypeName(e.target.value)}
+                disabled={!canAdmin || busy}
+              />
+            </div>
+          )}
+
+          {editDialog === 'vlan' && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-vlan-id">VLAN ID</Label>
+                <Input
+                  id="edit-vlan-id"
+                  value={editVlanId}
+                  onChange={(e) => setEditVlanId(e.target.value)}
+                  disabled={!canAdmin || busy}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-vlan-name">Name</Label>
+                <Input
+                  id="edit-vlan-name"
+                  value={editVlanName}
+                  onChange={(e) => setEditVlanName(e.target.value)}
+                  disabled={!canAdmin || busy}
+                />
+              </div>
+            </div>
+          )}
+
+          {editDialog === 'nicType' && (
+            <div className="space-y-2">
+              <Label htmlFor="edit-nic-type">Name</Label>
+              <Input
+                id="edit-nic-type"
+                value={editNicTypeName}
+                onChange={(e) => setEditNicTypeName(e.target.value)}
+                disabled={!canAdmin || busy}
+              />
+            </div>
+          )}
+
+          {editDialog === 'nicSpeed' && (
+            <div className="space-y-2">
+              <Label htmlFor="edit-nic-speed">Name</Label>
+              <Input
+                id="edit-nic-speed"
+                value={editNicSpeedName}
+                onChange={(e) => setEditNicSpeedName(e.target.value)}
+                disabled={!canAdmin || busy}
+              />
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeEditDialog} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!editDialog || !editRowId) return;
+
+                if (editDialog === 'sidType') {
+                  const name = editTypeName.trim();
+                  if (!name) {
+                    setOpError('Name is required');
+                    return;
+                  }
+                  await requestPicklistUpdate('sidType', editRowId, { name });
+                } else if (editDialog === 'deviceModel') {
+                  const name = editDeviceName.trim();
+                  if (!name) {
+                    setOpError('Name is required');
+                    return;
+                  }
+                  await requestPicklistUpdate('deviceModel', editRowId, {
+                    manufacturer: editDeviceManufacturer.trim() || null,
+                    name,
+                  });
+                } else if (editDialog === 'cpuModel') {
+                  const name = editCpuName.trim();
+                  const cpuCores = Number(editCpuCores);
+                  const cpuThreads = Number(editCpuThreads);
+                  if (!name) {
+                    setOpError('Name is required');
+                    return;
+                  }
+                  if (!Number.isFinite(cpuCores) || cpuCores <= 0) {
+                    setOpError('CPU cores must be a positive number');
+                    return;
+                  }
+                  if (!Number.isFinite(cpuThreads) || cpuThreads <= 0) {
+                    setOpError('CPU threads must be a positive number');
+                    return;
+                  }
+                  await requestPicklistUpdate('cpuModel', editRowId, {
+                    manufacturer: editCpuManufacturer.trim() || null,
+                    name,
+                    cpu_cores: cpuCores,
+                    cpu_threads: cpuThreads,
+                  });
+                } else if (editDialog === 'platform') {
+                  const name = editPlatformName.trim();
+                  if (!name) {
+                    setOpError('Name is required');
+                    return;
+                  }
+                  await requestPicklistUpdate('platform', editRowId, { name });
+                } else if (editDialog === 'status') {
+                  const name = editStatusName.trim();
+                  if (!name) {
+                    setOpError('Name is required');
+                    return;
+                  }
+                  await requestPicklistUpdate('status', editRowId, { name });
+                } else if (editDialog === 'passwordType') {
+                  const name = editPasswordTypeName.trim();
+                  if (!name) {
+                    setOpError('Name is required');
+                    return;
+                  }
+                  await requestPicklistUpdate('passwordType', editRowId, { name });
+                } else if (editDialog === 'vlan') {
+                  const vlanId = Number(editVlanId);
+                  const name = editVlanName.trim();
+                  if (!Number.isFinite(vlanId) || vlanId <= 0 || vlanId > 4094) {
+                    setOpError('VLAN ID must be 1-4094');
+                    return;
+                  }
+                  if (!name) {
+                    setOpError('Name is required');
+                    return;
+                  }
+                  await requestPicklistUpdate('vlan', editRowId, { vlan_id: vlanId, name });
+                } else if (editDialog === 'nicType') {
+                  const name = editNicTypeName.trim();
+                  if (!name) {
+                    setOpError('Name is required');
+                    return;
+                  }
+                  await requestPicklistUpdate('nicType', editRowId, { name });
+                } else if (editDialog === 'nicSpeed') {
+                  const name = editNicSpeedName.trim();
+                  if (!name) {
+                    setOpError('Name is required');
+                    return;
+                  }
+                  await requestPicklistUpdate('nicSpeed', editRowId, { name });
+                }
+              }}
+              disabled={!canAdmin || busy}
+            >
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={pendingUpdate !== null} onOpenChange={(open) => !open && setPendingUpdate(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              This picklist value is currently used by {pendingUpdate?.usageCount ?? 0} SIDs. Saving changes will update all of those SIDs.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={async (e) => {
+                e.preventDefault();
+                if (!pendingUpdate) return;
+                await performPicklistUpdate(pendingUpdate.kind, pendingUpdate.rowId, pendingUpdate.payload);
+                setPendingUpdate(null);
+              }}
+            >
+              Save Changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={addDialog !== null} onOpenChange={(open) => !open && closeAddDialog()}>
         <DialogContent>
@@ -817,9 +1545,13 @@ const SiteSidAdminPage: React.FC = () => {
                         ? 'Add Status'
                         : addDialog === 'passwordType'
                           ? 'Add Password Type'
-                    : addDialog === 'vlan'
-                      ? 'Add VLAN'
-                      : ''}
+                          : addDialog === 'vlan'
+                            ? 'Add VLAN'
+                            : addDialog === 'nicType'
+                              ? 'Add NIC Type'
+                              : addDialog === 'nicSpeed'
+                                ? 'Add NIC Speed'
+                                : ''}
             </DialogTitle>
             <DialogDescription>
               {addDialog === 'sidType'
@@ -834,9 +1566,13 @@ const SiteSidAdminPage: React.FC = () => {
                         ? 'Create a new status for this site.'
                         : addDialog === 'passwordType'
                           ? 'Create a new password type for this site.'
-                    : addDialog === 'vlan'
-                      ? 'Create a new VLAN for this site.'
-                      : ''}
+                            : addDialog === 'vlan'
+                              ? 'Create a new VLAN for this site.'
+                              : addDialog === 'nicType'
+                                ? 'Create a new NIC Type option for this site.'
+                                : addDialog === 'nicSpeed'
+                                  ? 'Create a new NIC Speed option for this site.'
+                                  : ''}
             </DialogDescription>
           </DialogHeader>
 
@@ -991,6 +1727,32 @@ const SiteSidAdminPage: React.FC = () => {
             </div>
           )}
 
+          {addDialog === 'nicType' && (
+            <div className="space-y-2">
+              <Label htmlFor="add-nic-type">Name</Label>
+              <Input
+                id="add-nic-type"
+                value={newNicTypeName}
+                onChange={(e) => setNewNicTypeName(e.target.value)}
+                disabled={!canAdmin || busy}
+                placeholder="e.g., RJ45, SFP+, QSFP"
+              />
+            </div>
+          )}
+
+          {addDialog === 'nicSpeed' && (
+            <div className="space-y-2">
+              <Label htmlFor="add-nic-speed">Name</Label>
+              <Input
+                id="add-nic-speed"
+                value={newNicSpeedName}
+                onChange={(e) => setNewNicSpeedName(e.target.value)}
+                disabled={!canAdmin || busy}
+                placeholder="e.g., 1G, 10G, 25G"
+              />
+            </div>
+          )}
+
           <DialogFooter>
             <Button variant="outline" onClick={closeAddDialog} disabled={busy}>
               Cancel
@@ -1004,6 +1766,8 @@ const SiteSidAdminPage: React.FC = () => {
                 else if (addDialog === 'status') await createStatus();
                 else if (addDialog === 'passwordType') await createPasswordType();
                 else if (addDialog === 'vlan') await createVlan();
+                else if (addDialog === 'nicType') await createNicType();
+                else if (addDialog === 'nicSpeed') await createNicSpeed();
               }}
               disabled={!canAdmin || busy}
             >

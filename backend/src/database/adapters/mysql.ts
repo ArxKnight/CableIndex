@@ -3,7 +3,7 @@ import mysql from 'mysql2/promise';
 import { BaseDatabaseAdapter, MySQLConfig } from './base.js';
 
 export class MySQLAdapter extends BaseDatabaseAdapter {
-  private connection: PoolConnection | null = null;
+  private transactionConnection: PoolConnection | null = null;
   private pool: Pool | null = null;
 
   constructor(config: MySQLConfig) {
@@ -31,9 +31,9 @@ export class MySQLAdapter extends BaseDatabaseAdapter {
         });
 
         // Test the connection
-        this.connection = await this.pool.getConnection();
-        await this.connection.ping();
-        this.connection.release();
+        const conn = await this.pool.getConnection();
+        await conn.ping();
+        conn.release();
 
         this.connected = true;
         console.log(`✅ MySQL connected: ${mysqlConfig.host}:${mysqlConfig.port}/${mysqlConfig.database}`);
@@ -80,9 +80,9 @@ export class MySQLAdapter extends BaseDatabaseAdapter {
               timezone: 'Z',
             });
 
-            this.connection = await this.pool.getConnection();
-            await this.connection.ping();
-            this.connection.release();
+            const conn = await this.pool.getConnection();
+            await conn.ping();
+            conn.release();
 
             this.connected = true;
             console.log(`✅ MySQL connected: ${mysqlConfig.host}:${mysqlConfig.port}/${mysqlConfig.database}`);
@@ -104,7 +104,7 @@ export class MySQLAdapter extends BaseDatabaseAdapter {
     if (this.pool) {
       await this.pool.end();
       this.pool = null;
-      this.connection = null;
+      this.transactionConnection = null;
       this.connected = false;
       console.log('✅ MySQL disconnected');
     }
@@ -118,7 +118,7 @@ export class MySQLAdapter extends BaseDatabaseAdapter {
     if (!this.pool) throw new Error('Database not connected');
     
     try {
-      const executor = this.connection ?? this.pool;
+      const executor = this.transactionConnection ?? this.pool;
       const [rows] = await executor.execute<RowDataPacket[]>(sql, params);
       return Array.isArray(rows) ? rows : [rows as any];
     } catch (error) {
@@ -131,7 +131,7 @@ export class MySQLAdapter extends BaseDatabaseAdapter {
     if (!this.pool) throw new Error('Database not connected');
     
     try {
-      const executor = this.connection ?? this.pool;
+      const executor = this.transactionConnection ?? this.pool;
       const [result] = await executor.execute<ResultSetHeader>(sql, params);
       const mysqlResult = result as ResultSetHeader;
       return {
@@ -146,22 +146,22 @@ export class MySQLAdapter extends BaseDatabaseAdapter {
 
   async beginTransaction(): Promise<void> {
     if (!this.pool) throw new Error('Database not connected');
-    this.connection = await this.pool.getConnection();
-    await this.connection.beginTransaction();
+    this.transactionConnection = await this.pool.getConnection();
+    await this.transactionConnection.beginTransaction();
   }
 
   async commit(): Promise<void> {
-    if (!this.connection) throw new Error('No active transaction');
-    await this.connection.commit();
-    this.connection.release();
-    this.connection = null;
+    if (!this.transactionConnection) throw new Error('No active transaction');
+    await this.transactionConnection.commit();
+    this.transactionConnection.release();
+    this.transactionConnection = null;
   }
 
   async rollback(): Promise<void> {
-    if (!this.connection) throw new Error('No active transaction');
-    await this.connection.rollback();
-    this.connection.release();
-    this.connection = null;
+    if (!this.transactionConnection) throw new Error('No active transaction');
+    await this.transactionConnection.rollback();
+    this.transactionConnection.release();
+    this.transactionConnection = null;
   }
 
   getLastInsertId(): number {

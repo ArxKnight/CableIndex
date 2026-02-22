@@ -47,14 +47,40 @@ export class SiteModel {
         throw new Error('Failed to create site');
       }
 
+      const siteId = Number(result.insertId);
+
       await this.adapter.execute(
         `INSERT INTO site_memberships (site_id, user_id, site_role)
          VALUES (?, ?, 'SITE_ADMIN')`,
-        [result.insertId, created_by]
+        [siteId, created_by]
       );
 
+      // Seed default SID Types so the SID Index has useful options immediately.
+      // These can be removed later by a Site Admin or Global Admin.
+      const defaultSidTypeNames = ['Server', 'Switch', 'Patch Panel'] as const;
+      for (const sidTypeName of defaultSidTypeNames) {
+        await this.adapter.execute(
+          `INSERT INTO sid_types (site_id, name, description)
+           VALUES (?, ?, NULL)
+           ON DUPLICATE KEY UPDATE name = name`,
+          [siteId, sidTypeName]
+        );
+      }
+
+      // Seed default SID Statuses so the SID Index has useful options immediately.
+      // These can be removed later by a Site Admin or Global Admin.
+      const defaultSidStatusNames = ['New SID', 'Active', 'Awaiting Decommision', 'Decommisioned'] as const;
+      for (const statusName of defaultSidStatusNames) {
+        await this.adapter.execute(
+          `INSERT INTO sid_statuses (site_id, name, description)
+           VALUES (?, ?, NULL)
+           ON DUPLICATE KEY UPDATE name = name`,
+          [siteId, statusName]
+        );
+      }
+
       await this.adapter.commit();
-      return (await this.findById(Number(result.insertId)))!;
+      return (await this.findById(siteId))!;
     } catch (error) {
       await this.adapter.rollback();
       throw error;

@@ -7,6 +7,7 @@ export type SidActivityAction =
   | 'SID_NOTE_PINNED'
   | 'SID_NOTE_UNPINNED'
   | 'SID_NICS_REPLACED'
+  | 'SID_IPS_REPLACED'
   | 'SID_PASSWORD_UPDATED';
 
 export interface LogSidActivityParams {

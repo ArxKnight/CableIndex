@@ -1,32 +1,6 @@
 import connection from '../connection.js';
 import { DatabaseAdapter } from '../adapters/base.js';
-import { Migration001_InitialSchema } from './001_initial_schema.js';
-import { Migration002_AddRoleToUsers } from './002_add_role_to_users.js';
-import { Migration003_RbacSiteScoping } from './003_rbac_site_scoping.js';
-import * as migration004 from './004_add_fullname_to_invitations.js';
-import { Migration005_SiteLocations } from './005_site_locations.js';
-import { Migration006_CableTypes } from './006_cable_types.js';
-import * as migration007 from './007_add_username_to_invitations.js';
-import * as migration008 from './008_add_username_to_users.js';
-import { Migration009_NormalizeSiteLocationLabels } from './009_normalize_site_location_labels.js';
-import { Migration010_NormalizeLegacyRoles } from './010_normalize_legacy_roles.js';
-import { Migration011_SiteLocationLabelKeyUnique } from './011_site_location_label_key_unique.js';
-import { Migration012_LocationTemplates } from './012_location_templates.js';
-import { Migration013_DropSiteLocationName } from './013_drop_site_location_name.js';
-import { Migration014_UserActivity } from './014_user_activity.js';
-import { Migration015_ActivityLog } from './015_activity_log.js';
-import { Migration016_PasswordResetTokens } from './016_password_reset_tokens.js';
-import { Migration017_SidIndex } from './017_sid_index.js';
-import { Migration018_SiteCountersNextSid } from './018_site_counters_next_sid.js';
-import { Migration019_SidNotesPins } from './019_sid_notes_pins.js';
-import { Migration020_SidCpuModelsCoresThreads } from './020_sid_cpu_models_cores_threads.js';
-import { Migration021_SidRackU } from './021_sid_rack_u.js';
-import { Migration022_SidPlatforms } from './022_sid_platforms.js';
-import { Migration023_SidHistoryPasswords } from './023_sid_history_passwords.js';
-import { Migration024_SidRackUStringRamDecimal } from './024_sid_racku_string_ram_decimal.js';
-import { Migration025_SidRemoveAssetTagSystemNotes } from './025_sid_remove_asset_tag_system_notes.js';
-import { Migration026_SidStatusPicklist } from './026_sid_status_picklist.js';
-import { Migration027_SidPasswordTypes } from './027_sid_password_types.js';
+import { Migration001_BaselineSchema } from './001_baseline_schema.js';
 
 export interface Migration {
   id: string;
@@ -35,56 +9,9 @@ export interface Migration {
   down: (adapter: DatabaseAdapter) => Promise<void>;
 }
 
-const Migration004_AddFullnameToInvitations: Migration = {
-  id: '004',
-  name: 'add_fullname_to_invitations',
-  up: migration004.up,
-  down: migration004.down,
-};
-
-const Migration007_AddUsernameToInvitations: Migration = {
-  id: '007',
-  name: 'add_username_to_invitations',
-  up: migration007.up,
-  down: migration007.down,
-};
-
-const Migration008_AddUsernameToUsers: Migration = {
-  id: '008',
-  name: 'add_username_to_users',
-  up: migration008.up,
-  down: migration008.down,
-};
-
 // List of all migrations in order
 const migrations: Migration[] = [
-  Migration001_InitialSchema,
-  Migration002_AddRoleToUsers,
-  Migration003_RbacSiteScoping,
-  Migration004_AddFullnameToInvitations,
-  Migration005_SiteLocations,
-  Migration006_CableTypes,
-  Migration007_AddUsernameToInvitations,
-  Migration008_AddUsernameToUsers,
-  Migration009_NormalizeSiteLocationLabels,
-  Migration010_NormalizeLegacyRoles,
-  Migration011_SiteLocationLabelKeyUnique,
-  Migration012_LocationTemplates,
-  Migration013_DropSiteLocationName,
-  Migration014_UserActivity,
-  Migration015_ActivityLog,
-  Migration016_PasswordResetTokens,
-  Migration017_SidIndex,
-  Migration018_SiteCountersNextSid,
-  Migration019_SidNotesPins,
-  Migration020_SidCpuModelsCoresThreads,
-  Migration021_SidRackU,
-  Migration022_SidPlatforms,
-  Migration023_SidHistoryPasswords,
-  Migration024_SidRackUStringRamDecimal,
-  Migration025_SidRemoveAssetTagSystemNotes,
-  Migration026_SidStatusPicklist,
-  Migration027_SidPasswordTypes,
+  Migration001_BaselineSchema,
 ];
 
 export const LATEST_MIGRATION_ID = migrations[migrations.length - 1]?.id;

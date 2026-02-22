@@ -10,7 +10,7 @@ import { requireGlobalRole, requireSiteRole, resolveSiteAccess } from '../middle
 import { ApiResponse } from '../types/index.js';
 import { logActivity } from '../services/ActivityLogService.js';
 import { logSidActivity } from '../services/SidActivityLogService.js';
-import { encryptSidSecret, hasSidSecretKeyConfigured } from '../utils/sidSecrets.js';
+import { decryptSidSecret, encryptSidSecret, hasSidSecretKeyConfigured } from '../utils/sidSecrets.js';
 import {
   buildCableReportDocxBuffer,
   formatDateTimeDDMMYYYY_HHMM,
@@ -222,21 +222,99 @@ const createSidSchema = z.object({
   cpu_model_id: z.coerce.number().int().positive().optional().nullable(),
   hostname: z.string().max(255).optional().nullable(),
   serial_number: z.string().max(255).optional().nullable(),
-  // Status is required on create.
+  // Status defaults to "New SID" if omitted/blank.
   status: z.preprocess(
     (v) => (typeof v === 'string' ? v.trim() : v),
-    z.string().min(1, 'Status is required').max(64)
+    z.union([z.string().min(1).max(64), z.literal(''), z.null()]).optional()
   ),
-  cpu_count: z.coerce.number().int().positive().optional().nullable(),
-  cpu_cores: z.coerce.number().int().positive().optional().nullable(),
-  cpu_threads: z.coerce.number().int().positive().optional().nullable(),
-  ram_gb: z.coerce.number().int().positive().optional().nullable(),
+  cpu_count: z.preprocess(
+    (v) => {
+      if (v === undefined || v === null) return v;
+      if (v === '') return null;
+      const n = typeof v === 'number' ? v : Number(v);
+      if (!Number.isFinite(n)) return v;
+      if (n === 0) return null;
+      return v;
+    },
+    z.coerce.number().int().positive().optional().nullable()
+  ),
+  cpu_cores: z.preprocess(
+    (v) => {
+      if (v === undefined || v === null) return v;
+      if (v === '') return null;
+      const n = typeof v === 'number' ? v : Number(v);
+      if (!Number.isFinite(n)) return v;
+      if (n === 0) return null;
+      return v;
+    },
+    z.coerce.number().int().positive().optional().nullable()
+  ),
+  cpu_threads: z.preprocess(
+    (v) => {
+      if (v === undefined || v === null) return v;
+      if (v === '') return null;
+      const n = typeof v === 'number' ? v : Number(v);
+      if (!Number.isFinite(n)) return v;
+      if (n === 0) return null;
+      return v;
+    },
+    z.coerce.number().int().positive().optional().nullable()
+  ),
+  ram_gb: z.preprocess(
+    (v) => {
+      if (v === undefined || v === null) return v;
+      if (v === '') return null;
+      const n = typeof v === 'number' ? v : Number(v);
+      if (!Number.isFinite(n)) return v;
+      if (n === 0) return null;
+      return v;
+    },
+    z
+      .coerce
+      .number()
+      .positive()
+      // DB column is DECIMAL(10,3); keep inputs compatible.
+      .refine((n) => Math.abs(n - Math.round(n * 1000) / 1000) < 1e-9, {
+        message: 'RAM (GB) must have at most 3 decimal places',
+      })
+      .optional()
+      .nullable()
+  ),
   platform_id: z.coerce.number().int().positive().optional().nullable(),
   os_name: z.string().max(255).optional().nullable(),
   os_version: z.string().max(255).optional().nullable(),
   mgmt_ip: z.string().max(64).optional().nullable(),
   mgmt_mac: z.string().max(64).optional().nullable(),
+  primary_ip: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim() : v),
+    z.union([z.string().max(64), z.literal(''), z.null()]).optional()
+  ),
+  subnet_ip: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim() : v),
+    z.union([z.string().max(64), z.literal(''), z.null()]).optional()
+  ),
+  gateway_ip: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim() : v),
+    z.union([z.string().max(64), z.literal(''), z.null()]).optional()
+  ),
+  // Used when this SID represents a network switch, to drive port dropdowns.
+  switch_port_count: z.preprocess(
+    (v) => {
+      if (v === undefined || v === null) return v;
+      if (v === '') return null;
+      const n = typeof v === 'number' ? v : Number(v);
+      if (!Number.isFinite(n)) return v;
+      if (n === 0) return null;
+      return v;
+    },
+    z.coerce.number().int().min(1).max(4096).optional().nullable()
+  ),
   location_id: z.coerce.number().int().positive().optional().nullable(),
+  // Free-text note for power connection, e.g. "PDU-A1/12".
+  pdu_power: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim() : v),
+    z.union([z.string().max(255), z.literal(''), z.null()]).optional()
+  ),
   rack_u: z.preprocess(
     (v) => {
       if (v === undefined) return undefined;
@@ -258,6 +336,17 @@ const updateSidPasswordSchema = z
     // password is never returned; supplying a non-empty string overwrites.
     // null clears, ''/undefined means "no change".
     password: z.union([z.string().max(10000), z.literal(''), z.null()]).optional(),
+  })
+  .passthrough();
+
+const createSidTypedPasswordSchema = z
+  .object({
+    password_type_id: z.coerce.number().min(1, 'Password type is required'),
+    username: z.preprocess(
+      (v) => (typeof v === 'string' ? v.trim() : v),
+      z.string().min(1, 'Username is required').max(255)
+    ),
+    password: z.string().min(1, 'Password is required').max(10000),
   })
   .passthrough();
 
@@ -303,15 +392,43 @@ const setSidNotePinnedSchema = z.object({
   pinned: z.boolean(),
 });
 
+function normalizeTinyIntBoolean(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') {
+    const s = value.trim().toLowerCase();
+    if (s === '1' || s === 'true' || s === 'yes' || s === 'y') return true;
+    if (s === '0' || s === 'false' || s === 'no' || s === 'n' || s === '') return false;
+    const n = Number(s);
+    if (!Number.isNaN(n)) return n === 1;
+    return false;
+  }
+  return false;
+}
+
+function normalizeSidNoteRow(row: any): any {
+  if (!row || typeof row !== 'object') return row;
+  return {
+    ...row,
+    pinned: normalizeTinyIntBoolean((row as any).pinned),
+  };
+}
+
 const replaceSidNicsSchema = z.object({
   nics: z
     .array(
       z
         .object({
+          card_name: z.preprocess(
+            (v) => (typeof v === 'string' ? v.trim() : v),
+            z.union([z.string().max(255), z.literal(''), z.null()]).optional()
+          ),
           name: z.string().min(1).max(255),
           mac_address: z.string().max(64).optional().nullable(),
           ip_address: z.string().max(64).optional().nullable(),
           site_vlan_id: z.coerce.number().int().positive().optional().nullable(),
+          nic_type_id: z.coerce.number().int().positive().optional().nullable(),
+          nic_speed_id: z.coerce.number().int().positive().optional().nullable(),
           switch_sid_id: z.coerce.number().int().positive().optional().nullable(),
           switch_port: z.string().max(255).optional().nullable(),
         })
@@ -330,6 +447,12 @@ const replaceSidNicsSchema = z.object({
     .default([]),
 });
 
+const replaceSidIpAddressesSchema = z.object({
+  ip_addresses: z
+    .array(z.string().max(64))
+    .default([]),
+});
+
 function isDuplicateKeyError(error: unknown): boolean {
   const anyErr = error as any;
   const code = anyErr?.code || anyErr?.errno;
@@ -338,7 +461,16 @@ function isDuplicateKeyError(error: unknown): boolean {
 
 async function assertPicklistRowBelongsToSite(params: {
   adapter: ReturnType<typeof getAdapter>;
-  table: 'sid_types' | 'sid_device_models' | 'sid_cpu_models' | 'sid_platforms' | 'sid_statuses' | 'sid_password_types' | 'site_vlans';
+  table:
+    | 'sid_types'
+    | 'sid_device_models'
+    | 'sid_cpu_models'
+    | 'sid_platforms'
+    | 'sid_statuses'
+    | 'sid_password_types'
+    | 'sid_nic_types'
+    | 'sid_nic_speeds'
+    | 'site_vlans';
   rowId: number;
   siteId: number;
 }): Promise<void> {
@@ -363,7 +495,7 @@ async function getMissingSidCreatePrerequisites(params: {
 }): Promise<string[]> {
   const { adapter, siteId } = params;
   const checks: Array<{ label: string; sql: string; args: any[] }> = [
-    { label: 'SID Types', sql: 'SELECT 1 FROM sid_types WHERE site_id = ? LIMIT 1', args: [siteId] },
+    { label: 'Device Types', sql: 'SELECT 1 FROM sid_types WHERE site_id = ? LIMIT 1', args: [siteId] },
     { label: 'SID Statuses', sql: 'SELECT 1 FROM sid_statuses WHERE site_id = ? LIMIT 1', args: [siteId] },
     { label: 'Platforms', sql: 'SELECT 1 FROM sid_platforms WHERE site_id = ? LIMIT 1', args: [siteId] },
     { label: 'Locations', sql: 'SELECT 1 FROM site_locations WHERE site_id = ? LIMIT 1', args: [siteId] },
@@ -631,6 +763,7 @@ router.get(
           s.serial_number,
           s.status,
           s.rack_u,
+          s.switch_port_count,
           s.sid_type_id,
           st.name as sid_type_name,
           s.device_model_id,
@@ -711,6 +844,21 @@ router.post(
       const rackU = body.rack_u === undefined ? null : normalizeRackU(body.rack_u);
       const adapter = getAdapter();
 
+      // Ensure default statuses exist (useful for new installs and older sites missing picklists).
+      // This keeps SID creation functional and makes "New SID" available for defaulting.
+      const defaultSidStatusNames = ['New SID', 'Active', 'Awaiting Decommision', 'Decommisioned'] as const;
+      for (const statusName of defaultSidStatusNames) {
+        await adapter.execute(
+          `INSERT INTO sid_statuses (site_id, name, description)
+           VALUES (?, ?, NULL)
+           ON DUPLICATE KEY UPDATE name = name`,
+          [siteId, statusName]
+        );
+      }
+
+      const requestedStatus = typeof body.status === 'string' ? body.status.trim() : '';
+      const statusNameToUse = requestedStatus ? requestedStatus : 'New SID';
+
       const missing = await getMissingSidCreatePrerequisites({ adapter, siteId });
       if (missing.length > 0) {
         return res.status(400).json({
@@ -721,7 +869,7 @@ router.post(
       }
 
       try {
-        await assertSidStatusNameBelongsToSite({ adapter, siteId, statusName: body.status });
+        await assertSidStatusNameBelongsToSite({ adapter, siteId, statusName: statusNameToUse });
       } catch (error) {
         if (error instanceof Error && error.message === 'Invalid status') {
           return res.status(400).json({ success: false, error: 'Invalid status' } as ApiResponse);
@@ -772,9 +920,12 @@ router.post(
             platform_id,
             os_name, os_version,
             mgmt_ip, mgmt_mac,
+            primary_ip, subnet_ip, gateway_ip,
+            switch_port_count,
             location_id,
+            pdu_power,
             rack_u
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             siteId,
             sidNumber,
@@ -783,7 +934,7 @@ router.post(
             body.cpu_model_id ?? null,
             body.hostname ?? null,
             body.serial_number ?? null,
-            body.status ?? null,
+            statusNameToUse,
             body.cpu_count ?? null,
             body.cpu_cores ?? null,
             body.cpu_threads ?? null,
@@ -793,7 +944,24 @@ router.post(
             body.os_version ?? null,
             body.mgmt_ip ?? null,
             body.mgmt_mac ?? null,
+            typeof body.primary_ip === 'string'
+              ? body.primary_ip.trim() === ''
+                ? null
+                : body.primary_ip.trim()
+              : (body.primary_ip ?? null),
+            typeof body.subnet_ip === 'string'
+              ? body.subnet_ip.trim() === ''
+                ? null
+                : body.subnet_ip.trim()
+              : (body.subnet_ip ?? null),
+            typeof body.gateway_ip === 'string'
+              ? body.gateway_ip.trim() === ''
+                ? null
+                : body.gateway_ip.trim()
+              : (body.gateway_ip ?? null),
+            body.switch_port_count ?? null,
             body.location_id ?? null,
+            body.pdu_power === '' ? null : (body.pdu_power ?? null),
             rackU,
           ]
         );
@@ -935,7 +1103,7 @@ router.get(
         }
       }
 
-      const notes = await adapter.query(
+      const noteRows = await adapter.query(
         `SELECT
           n.id,
           n.sid_id,
@@ -955,25 +1123,36 @@ router.get(
         [sidId]
       );
 
+      const notes = noteRows.map(normalizeSidNoteRow);
+
       const nics = await adapter.query(
         `SELECT
           n.id,
           n.sid_id,
+          n.card_name,
           n.name,
           n.mac_address,
           n.ip_address,
           n.site_vlan_id,
           v.vlan_id as vlan_id,
           v.name as vlan_name,
+          n.nic_type_id,
+          nt.name as nic_type_name,
+          n.nic_speed_id,
+          ns.name as nic_speed_name,
           c.switch_sid_id,
           sw.sid_number as switch_sid_number,
+          sw.hostname as switch_hostname,
+          sw.switch_port_count as switch_port_count,
           c.switch_port
         FROM sid_nics n
         LEFT JOIN site_vlans v ON v.id = n.site_vlan_id
+        LEFT JOIN sid_nic_types nt ON nt.id = n.nic_type_id
+        LEFT JOIN sid_nic_speeds ns ON ns.id = n.nic_speed_id
         LEFT JOIN sid_connections c ON c.nic_id = n.id
         LEFT JOIN sids sw ON sw.id = c.switch_sid_id
         WHERE n.sid_id = ?
-        ORDER BY n.name ASC`,
+        ORDER BY COALESCE(n.card_name, ''), n.name ASC`,
         [sidId]
       );
 
@@ -1060,35 +1239,38 @@ router.get(
 
       const osTypeId = await getDefaultOsPasswordTypeId({ adapter, siteId });
 
-      const rows = osTypeId
-        ? await adapter.query(
-            `SELECT
-              p.sid_id,
-              p.username,
-              (p.password_ciphertext IS NOT NULL AND p.password_ciphertext <> '') as has_password,
-              p.password_updated_at,
-              p.password_updated_by,
-              u.username as password_updated_by_username,
-              u.email as password_updated_by_email
-            FROM sid_passwords p
-            LEFT JOIN users u ON u.id = p.password_updated_by
-            WHERE p.sid_id = ? AND p.password_type_id = ?`,
-            [sidId, osTypeId]
-          )
-        : await adapter.query(
-            `SELECT
-              p.sid_id,
-              p.username,
-              (p.password_ciphertext IS NOT NULL AND p.password_ciphertext <> '') as has_password,
-              p.password_updated_at,
-              p.password_updated_by,
-              u.username as password_updated_by_username,
-              u.email as password_updated_by_email
-            FROM sid_passwords p
-            LEFT JOIN users u ON u.id = p.password_updated_by
-            WHERE p.sid_id = ?`,
-            [sidId]
-          );
+      if (!osTypeId) {
+        return res.json({
+          success: true,
+          data: {
+            password: {
+              sid_id: sidId,
+              username: null,
+              has_password: false,
+              password_updated_at: null,
+              password_updated_by: null,
+              password_updated_by_username: null,
+              password_updated_by_email: null,
+              key_configured: hasSidSecretKeyConfigured(),
+            },
+          },
+        } as ApiResponse);
+      }
+
+      const rows = await adapter.query(
+        `SELECT
+          p.sid_id,
+          p.username,
+          (p.password_ciphertext IS NOT NULL AND p.password_ciphertext <> '') as has_password,
+          p.password_updated_at,
+          p.password_updated_by,
+          u.username as password_updated_by_username,
+          u.email as password_updated_by_email
+        FROM sid_passwords p
+        LEFT JOIN users u ON u.id = p.password_updated_by
+        WHERE p.sid_id = ? AND p.password_type_id = ?`,
+        [sidId, osTypeId]
+      );
 
       const row = rows[0] as any;
       return res.json({
@@ -1118,7 +1300,8 @@ router.get(
 
 /**
  * GET /api/sites/:id/sids/:sidId/passwords
- * Get credential entries by password type (password itself is never returned)
+ * Get credential entries by password type.
+ * Note: plaintext passwords are only returned to SITE_ADMIN users.
  */
 router.get(
   '/:id/sids/:sidId/passwords',
@@ -1136,79 +1319,156 @@ router.get(
         return res.status(404).json({ success: false, error: 'SID not found' } as ApiResponse);
       }
 
-      // If migration not yet applied, fall back to legacy single-row schema.
-      try {
-        const rows = await adapter.query(
-          `SELECT
-            p.password_type_id,
-            t.name as password_type_name,
-            p.username,
-            (p.password_ciphertext IS NOT NULL AND p.password_ciphertext <> '') as has_password,
-            p.password_updated_at,
-            p.password_updated_by,
-            u.username as password_updated_by_username,
-            u.email as password_updated_by_email
-          FROM sid_passwords p
-          JOIN sid_password_types t ON t.id = p.password_type_id
-          LEFT JOIN users u ON u.id = p.password_updated_by
-          WHERE p.sid_id = ?
-          ORDER BY t.name ASC`,
-          [sidId]
-        );
+      const keyConfigured = hasSidSecretKeyConfigured();
+      const rows = await adapter.query(
+        `SELECT
+          p.password_type_id,
+          t.name as password_type_name,
+          p.username,
+          (p.password_ciphertext IS NOT NULL AND p.password_ciphertext <> '') as has_password,
+          p.password_ciphertext,
+          p.password_updated_at,
+          p.password_updated_by,
+          u.username as password_updated_by_username,
+          u.email as password_updated_by_email
+        FROM sid_passwords p
+        JOIN sid_password_types t ON t.id = p.password_type_id
+        LEFT JOIN users u ON u.id = p.password_updated_by
+        WHERE p.sid_id = ?
+        ORDER BY t.name ASC`,
+        [sidId]
+      );
 
-        return res.json({
-          success: true,
-          data: {
-            passwords: rows,
-            key_configured: hasSidSecretKeyConfigured(),
-          },
-        } as ApiResponse);
-      } catch (error) {
-        if (!isNoSuchTableError(error)) throw error;
+      const passwords = (rows as any[]).map((r: any) => {
+        const ciphertext = r?.password_ciphertext ?? null;
+        let password: string | null = null;
+        if (keyConfigured && ciphertext && String(ciphertext).trim() !== '') {
+          try {
+            password = decryptSidSecret(String(ciphertext));
+          } catch {
+            password = null;
+          }
+        }
 
-        const legacyRows = await adapter.query(
-          `SELECT
-            p.username,
-            (p.password_ciphertext IS NOT NULL AND p.password_ciphertext <> '') as has_password,
-            p.password_updated_at,
-            p.password_updated_by,
-            u.username as password_updated_by_username,
-            u.email as password_updated_by_email
-          FROM sid_passwords p
-          LEFT JOIN users u ON u.id = p.password_updated_by
-          WHERE p.sid_id = ?`,
-          [sidId]
-        );
+        return {
+          password_type_id: r?.password_type_id ?? null,
+          password_type_name: r?.password_type_name ?? null,
+          username: r?.username ?? null,
+          has_password: Boolean(r?.has_password),
+          password,
+          password_updated_at: r?.password_updated_at ?? null,
+          password_updated_by: r?.password_updated_by ?? null,
+          password_updated_by_username: r?.password_updated_by_username ?? null,
+          password_updated_by_email: r?.password_updated_by_email ?? null,
+        };
+      });
 
-        const row = legacyRows[0] as any;
-        const payload = row
-          ? [
-              {
-                password_type_id: null,
-                password_type_name: 'OS Credentials',
-                username: row.username ?? null,
-                has_password: Boolean(row.has_password),
-                password_updated_at: row.password_updated_at ?? null,
-                password_updated_by: row.password_updated_by ?? null,
-                password_updated_by_username: row.password_updated_by_username ?? null,
-                password_updated_by_email: row.password_updated_by_email ?? null,
-              },
-            ]
-          : [];
-
-        return res.json({
-          success: true,
-          data: {
-            passwords: payload,
-            key_configured: hasSidSecretKeyConfigured(),
-          },
-        } as ApiResponse);
-      }
+      return res.json({
+        success: true,
+        data: {
+          passwords,
+          key_configured: keyConfigured,
+        },
+      } as ApiResponse);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
       }
       console.error('Get SID passwords error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+/**
+ * POST /api/sites/:id/sids/:sidId/passwords
+ * Create a new credential entry (does not overwrite existing entries).
+ */
+router.post(
+  '/:id/sids/:sidId/passwords',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req: Request, res: Response) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const { sidId } = sidIdSchema.parse(req.params);
+      const body = createSidTypedPasswordSchema.parse(req.body);
+      const adapter = getAdapter();
+
+      if (!hasSidSecretKeyConfigured()) {
+        return res.status(501).json({
+          success: false,
+          error: 'SID password encryption key is not configured',
+          code: 'SID_PASSWORD_KEY_MISSING',
+        } as any);
+      }
+
+      const sidRows = await adapter.query('SELECT id, sid_number FROM sids WHERE id = ? AND site_id = ?', [sidId, siteId]);
+      const sidRow = sidRows[0] as any;
+      if (!sidRow) {
+        return res.status(404).json({ success: false, error: 'SID not found' } as ApiResponse);
+      }
+
+      const passwordTypeId = Number(body.password_type_id);
+      await assertPicklistRowBelongsToSite({ adapter, table: 'sid_password_types', rowId: passwordTypeId, siteId });
+
+      const typeRows = await adapter.query('SELECT id, name FROM sid_password_types WHERE id = ? AND site_id = ? LIMIT 1', [passwordTypeId, siteId]);
+      const typeRow = typeRows[0] as any;
+      const typeName = (typeRow?.name ?? 'Password').toString();
+
+      const existingRows = await adapter.query(
+        'SELECT sid_id, password_type_id FROM sid_passwords WHERE sid_id = ? AND password_type_id = ? LIMIT 1',
+        [sidId, passwordTypeId]
+      );
+      if (existingRows.length) {
+        return res.status(409).json({
+          success: false,
+          error: 'A password entry for that type already exists. Edit the existing password instead.',
+          code: 'SID_PASSWORD_EXISTS',
+        } as any);
+      }
+
+      const username = normalizePasswordUsername(body.username);
+      if (!username) {
+        return res.status(400).json({ success: false, error: 'Username is required' } as ApiResponse);
+      }
+
+      const passwordToStore = encryptSidSecret(String(body.password));
+
+      await adapter.execute(
+        `INSERT INTO sid_passwords (sid_id, password_type_id, username, password_ciphertext, password_updated_by, password_updated_at)
+         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP(3))`,
+        [sidId, passwordTypeId, username, passwordToStore, req.user!.userId]
+      );
+
+      try {
+        await logSidActivity({
+          actorUserId: req.user!.userId,
+          siteId,
+          sidId,
+          action: 'SID_PASSWORD_UPDATED',
+          summary: `Added ${typeName} for SID ${sidRow.sid_number}`,
+          diff: {
+            password_type_id: passwordTypeId,
+            password_type_name: typeName,
+            username_to: username,
+            password_changed: true,
+          },
+        });
+      } catch {
+        // ignore
+      }
+
+      return res.status(201).json({ success: true, data: { created: true } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Create SID typed password error:', error);
       return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
     }
   }
@@ -1237,12 +1497,19 @@ router.put(
       }
 
       const osTypeId = await getDefaultOsPasswordTypeId({ adapter, siteId });
+      if (!osTypeId) {
+        return res.status(400).json({
+          success: false,
+          error: "Default password type 'OS Credentials' is not configured",
+          code: 'OS_PASSWORD_TYPE_MISSING',
+        } as any);
+      }
       const existingRows = osTypeId
         ? await adapter.query(
             'SELECT sid_id, username, password_ciphertext FROM sid_passwords WHERE sid_id = ? AND password_type_id = ?',
             [sidId, osTypeId]
           )
-        : await adapter.query('SELECT sid_id, username, password_ciphertext FROM sid_passwords WHERE sid_id = ?', [sidId]);
+        : [];
       const existing = existingRows[0] as any | undefined;
 
       const nextUsername =
@@ -1277,30 +1544,17 @@ router.put(
 
       const passwordChanged = wantsSetPassword || wantsClearPassword;
 
-      // Legacy endpoint maps to OS Credentials when available.
-      if (osTypeId) {
-        await adapter.execute(
-          `INSERT INTO sid_passwords (sid_id, password_type_id, username, password_ciphertext, password_updated_by, password_updated_at)
-           VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP(3))
-           ON DUPLICATE KEY UPDATE
-             username = VALUES(username),
-             password_ciphertext = VALUES(password_ciphertext),
-             password_updated_by = VALUES(password_updated_by),
-             password_updated_at = VALUES(password_updated_at)`,
-          [sidId, osTypeId, nextUsername, passwordToStore, req.user!.userId]
-        );
-      } else {
-        await adapter.execute(
-          `INSERT INTO sid_passwords (sid_id, username, password_ciphertext, password_updated_by, password_updated_at)
-           VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP(3))
-           ON DUPLICATE KEY UPDATE
-             username = VALUES(username),
-             password_ciphertext = VALUES(password_ciphertext),
-             password_updated_by = VALUES(password_updated_by),
-             password_updated_at = VALUES(password_updated_at)`,
-          [sidId, nextUsername, passwordToStore, req.user!.userId]
-        );
-      }
+      // Legacy endpoint maps to OS Credentials.
+      await adapter.execute(
+        `INSERT INTO sid_passwords (sid_id, password_type_id, username, password_ciphertext, password_updated_by, password_updated_at)
+         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP(3))
+         ON DUPLICATE KEY UPDATE
+           username = VALUES(username),
+           password_ciphertext = VALUES(password_ciphertext),
+           password_updated_by = VALUES(password_updated_by),
+           password_updated_at = VALUES(password_updated_at)`,
+        [sidId, osTypeId, nextUsername, passwordToStore, req.user!.userId]
+      );
 
       try {
         await logSidActivity({
@@ -1482,6 +1736,9 @@ router.put(
         fields.push(`${key} = ?`);
         if (key === 'sid_number' && typeof value === 'string') {
           params.push(value.trim());
+        } else if ((key === 'primary_ip' || key === 'subnet_ip' || key === 'gateway_ip') && typeof value === 'string') {
+          const cleaned = value.trim();
+          params.push(cleaned === '' ? null : cleaned);
         } else if (key === 'rack_u') {
           params.push(normalizeRackU(value));
         } else {
@@ -1500,6 +1757,14 @@ router.put(
         const nextValue =
           key === 'sid_number' && typeof value === 'string'
             ? value.trim()
+            : (key === 'primary_ip' || key === 'subnet_ip' || key === 'gateway_ip') && typeof value === 'string'
+              ? value.trim() === ''
+                ? null
+                : value.trim()
+            : key === 'pdu_power' && typeof value === 'string'
+              ? value.trim() === ''
+                ? null
+                : value.trim()
             : key === 'rack_u'
               ? normalizeRackU(value)
               : value;
@@ -1521,6 +1786,79 @@ router.put(
         if (beforeNorm === afterNorm) continue;
 
         changes.push({ field: key, from: before, to: nextValue });
+      }
+
+      // Make location changes readable in Update History.
+      // Frontend renders `field: from → to`, so we convert location_id into a formatted path.
+      const locationChange = changes.find((c) => c.field === 'location_id');
+      if (locationChange) {
+        const formatLocationRow = (row: any): string => {
+          const label = String(row?.effective_label ?? row?.label ?? '').trim();
+          const floor = String(row?.floor ?? '').trim();
+          const suite = row?.suite === null || row?.suite === undefined ? '' : String(row.suite).trim();
+          const area = row?.area === null || row?.area === undefined ? '' : String(row.area).trim();
+          const rowKey = row?.row === null || row?.row === undefined ? '' : String(row.row).trim();
+          const rack = row?.rack === null || row?.rack === undefined ? '' : String(row.rack).trim();
+
+          const parts: string[] = [];
+          if (label) parts.push(label);
+          if (floor) parts.push(`Floor: ${floor}`);
+          if (suite) parts.push(`Suite: ${suite}`);
+          if (area) parts.push(`Area: ${area}`);
+          if (rowKey) parts.push(`Row: ${rowKey}`);
+          if (rack) parts.push(`Rack: ${rack}`);
+          return parts.join(' | ');
+        };
+
+        const ids: number[] = [];
+        const fromId = locationChange.from == null ? null : Number(locationChange.from);
+        const toId = locationChange.to == null ? null : Number(locationChange.to);
+        if (Number.isFinite(fromId as any) && (fromId as number) > 0) ids.push(fromId as number);
+        if (Number.isFinite(toId as any) && (toId as number) > 0 && toId !== fromId) ids.push(toId as number);
+
+        const byId = new Map<number, any>();
+        if (ids.length) {
+          try {
+            const rows = await adapter.query(
+              `SELECT
+                 sl.id,
+                 sl.template_type,
+                 sl.floor,
+                 sl.suite,
+                 sl.\`row\` as \`row\`,
+                 sl.rack,
+                 sl.area,
+                 sl.label,
+                 COALESCE(NULLIF(TRIM(sl.label), ''), s.code) AS effective_label
+               FROM site_locations sl
+               JOIN sites s ON s.id = sl.site_id
+               WHERE sl.site_id = ? AND sl.id IN (${ids.map(() => '?').join(',')})`,
+              [siteId, ...ids]
+            );
+            for (const r of rows) {
+              byId.set(Number((r as any).id), r);
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        const fromText =
+          fromId === null || !Number.isFinite(fromId)
+            ? '—'
+            : byId.has(fromId)
+              ? formatLocationRow(byId.get(fromId))
+              : `#${fromId}`;
+        const toText =
+          toId === null || !Number.isFinite(toId)
+            ? '—'
+            : byId.has(toId)
+              ? formatLocationRow(byId.get(toId))
+              : `#${toId}`;
+
+        locationChange.field = 'location';
+        locationChange.from = fromText;
+        locationChange.to = toText;
       }
 
       try {
@@ -1679,7 +2017,7 @@ router.post(
         [noteId]
       );
 
-      return res.status(201).json({ success: true, data: { note: noteRows[0] } } as ApiResponse);
+      return res.status(201).json({ success: true, data: { note: normalizeSidNoteRow(noteRows[0]) } } as ApiResponse);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
@@ -1783,7 +2121,7 @@ router.patch(
         [noteId]
       );
 
-      return res.json({ success: true, data: { note: noteRows[0] } } as ApiResponse);
+      return res.json({ success: true, data: { note: normalizeSidNoteRow(noteRows[0]) } } as ApiResponse);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
@@ -1842,9 +2180,19 @@ router.put(
         await adapter.execute('DELETE FROM sid_nics WHERE sid_id = ?', [sidId]);
 
         for (const nic of body.nics) {
+          const cardName = (nic as any).card_name === '' ? null : ((nic as any).card_name ?? null);
           const inserted = await adapter.execute(
-            'INSERT INTO sid_nics (sid_id, name, mac_address, ip_address, site_vlan_id) VALUES (?, ?, ?, ?, ?)',
-            [sidId, nic.name, nic.mac_address ?? null, nic.ip_address ?? null, nic.site_vlan_id ?? null]
+            'INSERT INTO sid_nics (sid_id, card_name, name, mac_address, ip_address, site_vlan_id, nic_type_id, nic_speed_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [
+              sidId,
+              cardName,
+              nic.name,
+              nic.mac_address ?? null,
+              nic.ip_address ?? null,
+              nic.site_vlan_id ?? null,
+              (nic as any).nic_type_id ?? null,
+              (nic as any).nic_speed_id ?? null,
+            ]
           );
           const nicId = Number(inserted.insertId ?? adapter.getLastInsertId());
 
@@ -1887,21 +2235,30 @@ router.put(
         `SELECT
           n.id,
           n.sid_id,
+          n.card_name,
           n.name,
           n.mac_address,
           n.ip_address,
           n.site_vlan_id,
           v.vlan_id as vlan_id,
           v.name as vlan_name,
+          n.nic_type_id,
+          nt.name as nic_type_name,
+          n.nic_speed_id,
+          ns.name as nic_speed_name,
           c.switch_sid_id,
           sw.sid_number as switch_sid_number,
+          sw.hostname as switch_hostname,
+          sw.switch_port_count as switch_port_count,
           c.switch_port
         FROM sid_nics n
         LEFT JOIN site_vlans v ON v.id = n.site_vlan_id
+        LEFT JOIN sid_nic_types nt ON nt.id = n.nic_type_id
+        LEFT JOIN sid_nic_speeds ns ON ns.id = n.nic_speed_id
         LEFT JOIN sid_connections c ON c.nic_id = n.id
         LEFT JOIN sids sw ON sw.id = c.switch_sid_id
         WHERE n.sid_id = ?
-        ORDER BY n.name ASC`,
+        ORDER BY COALESCE(n.card_name, ''), n.name ASC`,
         [sidId]
       );
 
@@ -1924,6 +2281,122 @@ router.put(
         return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
       }
       console.error('Replace sid nics error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+/**
+ * GET /api/sites/:id/sids/:sidId/ip-addresses
+ * List IP addresses for a SID.
+ */
+router.get(
+  '/:id/sids/:sidId/ip-addresses',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  async (req: Request, res: Response) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const { sidId } = sidIdSchema.parse(req.params);
+      const adapter = getAdapter();
+
+      const existing = await adapter.query('SELECT id FROM sids WHERE id = ? AND site_id = ?', [sidId, siteId]);
+      if (!existing.length) {
+        return res.status(404).json({ success: false, error: 'SID not found' } as ApiResponse);
+      }
+
+      try {
+        const rows = await adapter.query(
+          'SELECT ip_address FROM sid_ip_addresses WHERE sid_id = ? ORDER BY ip_address ASC',
+          [sidId]
+        );
+        const ip_addresses = (rows ?? []).map((r: any) => String(r.ip_address));
+        return res.json({ success: true, data: { ip_addresses } } as ApiResponse);
+      } catch (error) {
+        if (isNoSuchTableError(error)) {
+          return res.json({ success: true, data: { ip_addresses: [] } } as ApiResponse);
+        }
+        throw error;
+      }
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      console.error('Get sid ip addresses error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+/**
+ * PUT /api/sites/:id/sids/:sidId/ip-addresses
+ * Replace IP addresses for a SID.
+ */
+router.put(
+  '/:id/sids/:sidId/ip-addresses',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req: Request, res: Response) => {
+    const adapter = getAdapter();
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const { sidId } = sidIdSchema.parse(req.params);
+      const body = replaceSidIpAddressesSchema.parse(req.body);
+
+      const existing = await adapter.query('SELECT id FROM sids WHERE id = ? AND site_id = ?', [sidId, siteId]);
+      if (!existing.length) {
+        return res.status(404).json({ success: false, error: 'SID not found' } as ApiResponse);
+      }
+
+      const cleaned = Array.from(
+        new Set(
+          (body.ip_addresses ?? [])
+            .map((ip) => String(ip ?? '').trim())
+            .filter((ip) => ip !== '')
+        )
+      ).slice(0, 200);
+
+      await adapter.beginTransaction();
+      try {
+        await adapter.execute('DELETE FROM sid_ip_addresses WHERE sid_id = ?', [sidId]);
+        for (const ip of cleaned) {
+          try {
+            await adapter.execute('INSERT INTO sid_ip_addresses (sid_id, ip_address) VALUES (?, ?)', [sidId, ip]);
+          } catch (error) {
+            if (isDuplicateKeyError(error)) continue;
+            throw error;
+          }
+        }
+        await adapter.commit();
+      } catch (error) {
+        await adapter.rollback();
+        if (isNoSuchTableError(error)) {
+          // Migration not applied yet; return success with no-op.
+          return res.json({ success: true, data: { ip_addresses: cleaned } } as ApiResponse);
+        }
+        throw error;
+      }
+
+      try {
+        await logSidActivity({
+          actorUserId: req.user!.userId,
+          siteId,
+          sidId,
+          action: 'SID_IPS_REPLACED',
+          summary: `Replaced IP addresses for SID ${sidId}`,
+          diff: { ip_count: cleaned.length },
+        });
+      } catch {
+        // ignore
+      }
+
+      return res.json({ success: true, data: { ip_addresses: cleaned } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      console.error('Replace sid ip addresses error:', error);
       return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
     }
   }
@@ -1963,6 +2436,18 @@ const createSidPasswordTypeSchema = z.object({
   description: z.string().max(5000).optional().nullable(),
 });
 const updateSidPasswordTypeSchema = createSidPasswordTypeSchema.partial();
+
+const createSidNicTypeSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().max(5000).optional().nullable(),
+});
+const updateSidNicTypeSchema = createSidNicTypeSchema.partial();
+
+const createSidNicSpeedSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().max(5000).optional().nullable(),
+});
+const updateSidNicSpeedSchema = createSidNicSpeedSchema.partial();
 
 const createVlanSchema = z.object({
   vlan_id: z.coerce.number().int().min(1).max(4094),
@@ -2663,10 +3148,11 @@ router.put(
   requireSiteRole('SITE_ADMIN'),
   async (req, res) => {
     try {
+      const adapter = getAdapter();
       const { id: siteId } = siteIdSchema.parse(req.params);
       const rowId = Number(req.params.rowId);
       const body = updateSidStatusSchema.parse(req.body);
-      await assertPicklistRowBelongsToSite({ adapter: getAdapter(), table: 'sid_statuses', rowId, siteId });
+      await assertPicklistRowBelongsToSite({ adapter, table: 'sid_statuses', rowId, siteId });
 
       const fields: string[] = [];
       const params: any[] = [];
@@ -2679,23 +3165,55 @@ router.put(
         params.push(body.description ?? null);
       }
       if (!fields.length) {
-        const rows = await getAdapter().query('SELECT * FROM sid_statuses WHERE id = ?', [rowId]);
+        const rows = await adapter.query('SELECT * FROM sid_statuses WHERE id = ?', [rowId]);
         return res.json({ success: true, data: { status: rows[0] } } as ApiResponse);
       }
 
+      let previousName: string | null = null;
+      const nextName = body.name !== undefined ? body.name.trim() : null;
+      if (nextName !== null) {
+        const rows = await adapter.query('SELECT name FROM sid_statuses WHERE id = ?', [rowId]);
+        previousName = rows?.[0]?.name ?? null;
+      }
+
       try {
-        await getAdapter().execute(
-          `UPDATE sid_statuses SET ${fields.join(', ')} WHERE id = ? AND site_id = ?`,
-          [...params, rowId, siteId]
-        );
+        await adapter.beginTransaction();
+        await adapter.execute(`UPDATE sid_statuses SET ${fields.join(', ')} WHERE id = ? AND site_id = ?`, [
+          ...params,
+          rowId,
+          siteId,
+        ]);
+
+        // SIDs store status as a string (not a FK). If the picklist status name changes,
+        // update any SIDs currently using the previous value.
+        if (
+          nextName !== null &&
+          previousName !== null &&
+          previousName.trim() !== '' &&
+          nextName !== '' &&
+          nextName !== previousName.trim()
+        ) {
+          await adapter.execute('UPDATE sids SET status = ? WHERE site_id = ? AND TRIM(status) = ?', [
+            nextName,
+            siteId,
+            previousName.trim(),
+          ]);
+        }
+
+        await adapter.commit();
       } catch (error) {
+        try {
+          await adapter.rollback();
+        } catch {
+          // ignore
+        }
         if (isDuplicateKeyError(error)) {
           return res.status(409).json({ success: false, error: 'Duplicate name' } as ApiResponse);
         }
         throw error;
       }
 
-      const rows = await getAdapter().query('SELECT * FROM sid_statuses WHERE id = ?', [rowId]);
+      const rows = await adapter.query('SELECT * FROM sid_statuses WHERE id = ?', [rowId]);
       return res.json({ success: true, data: { status: rows[0] } } as ApiResponse);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -2727,6 +3245,280 @@ router.delete(
         return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
       }
       console.error('Delete status error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+// NIC Types
+router.get(
+  '/:id/sid/nic-types',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      try {
+        const rows = await getAdapter().query('SELECT * FROM sid_nic_types WHERE site_id = ? ORDER BY name ASC', [siteId]);
+        return res.json({ success: true, data: { nic_types: rows } } as ApiResponse);
+      } catch (error) {
+        if (isNoSuchTableError(error)) {
+          return res.json({ success: true, data: { nic_types: [] } } as ApiResponse);
+        }
+        throw error;
+      }
+    } catch (error) {
+      console.error('Get NIC Types error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.post(
+  '/:id/sid/nic-types',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const body = createSidNicTypeSchema.parse(req.body);
+      try {
+        const insert = await getAdapter().execute(
+          'INSERT INTO sid_nic_types (site_id, name, description) VALUES (?, ?, ?)',
+          [siteId, body.name.trim(), body.description ?? null]
+        );
+        const id = Number(insert.insertId ?? getAdapter().getLastInsertId());
+        const rows = await getAdapter().query('SELECT * FROM sid_nic_types WHERE id = ?', [id]);
+        return res.status(201).json({ success: true, data: { nic_type: rows[0] } } as ApiResponse);
+      } catch (error) {
+        if (isNoSuchTableError(error)) {
+          return res.status(400).json({ success: false, error: 'NIC Types not available (database not migrated)' } as ApiResponse);
+        }
+        if (isDuplicateKeyError(error)) {
+          return res.status(409).json({ success: false, error: 'Duplicate name' } as ApiResponse);
+        }
+        throw error;
+      }
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      console.error('Create NIC Type error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.put(
+  '/:id/sid/nic-types/:rowId',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      const body = updateSidNicTypeSchema.parse(req.body);
+      await assertPicklistRowBelongsToSite({ adapter: getAdapter(), table: 'sid_nic_types', rowId, siteId });
+
+      const fields: string[] = [];
+      const params: any[] = [];
+      if (body.name !== undefined) {
+        fields.push('name = ?');
+        params.push(body.name.trim());
+      }
+      if (body.description !== undefined) {
+        fields.push('description = ?');
+        params.push(body.description ?? null);
+      }
+      if (!fields.length) {
+        const rows = await getAdapter().query('SELECT * FROM sid_nic_types WHERE id = ?', [rowId]);
+        return res.json({ success: true, data: { nic_type: rows[0] } } as ApiResponse);
+      }
+
+      try {
+        await getAdapter().execute(`UPDATE sid_nic_types SET ${fields.join(', ')} WHERE id = ? AND site_id = ?`, [
+          ...params,
+          rowId,
+          siteId,
+        ]);
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return res.status(409).json({ success: false, error: 'Duplicate name' } as ApiResponse);
+        }
+        throw error;
+      }
+
+      const rows = await getAdapter().query('SELECT * FROM sid_nic_types WHERE id = ?', [rowId]);
+      return res.json({ success: true, data: { nic_type: rows[0] } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Update NIC Type error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.delete(
+  '/:id/sid/nic-types/:rowId',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      await assertPicklistRowBelongsToSite({ adapter: getAdapter(), table: 'sid_nic_types', rowId, siteId });
+      await getAdapter().execute('DELETE FROM sid_nic_types WHERE id = ? AND site_id = ?', [rowId, siteId]);
+      return res.json({ success: true, data: { deleted: true } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Delete NIC Type error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+// NIC Speeds
+router.get(
+  '/:id/sid/nic-speeds',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      try {
+        const rows = await getAdapter().query('SELECT * FROM sid_nic_speeds WHERE site_id = ? ORDER BY name ASC', [siteId]);
+        return res.json({ success: true, data: { nic_speeds: rows } } as ApiResponse);
+      } catch (error) {
+        if (isNoSuchTableError(error)) {
+          return res.json({ success: true, data: { nic_speeds: [] } } as ApiResponse);
+        }
+        throw error;
+      }
+    } catch (error) {
+      console.error('Get NIC Speeds error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.post(
+  '/:id/sid/nic-speeds',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const body = createSidNicSpeedSchema.parse(req.body);
+      try {
+        const insert = await getAdapter().execute(
+          'INSERT INTO sid_nic_speeds (site_id, name, description) VALUES (?, ?, ?)',
+          [siteId, body.name.trim(), body.description ?? null]
+        );
+        const id = Number(insert.insertId ?? getAdapter().getLastInsertId());
+        const rows = await getAdapter().query('SELECT * FROM sid_nic_speeds WHERE id = ?', [id]);
+        return res.status(201).json({ success: true, data: { nic_speed: rows[0] } } as ApiResponse);
+      } catch (error) {
+        if (isNoSuchTableError(error)) {
+          return res.status(400).json({ success: false, error: 'NIC Speeds not available (database not migrated)' } as ApiResponse);
+        }
+        if (isDuplicateKeyError(error)) {
+          return res.status(409).json({ success: false, error: 'Duplicate name' } as ApiResponse);
+        }
+        throw error;
+      }
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      console.error('Create NIC Speed error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.put(
+  '/:id/sid/nic-speeds/:rowId',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      const body = updateSidNicSpeedSchema.parse(req.body);
+      await assertPicklistRowBelongsToSite({ adapter: getAdapter(), table: 'sid_nic_speeds', rowId, siteId });
+
+      const fields: string[] = [];
+      const params: any[] = [];
+      if (body.name !== undefined) {
+        fields.push('name = ?');
+        params.push(body.name.trim());
+      }
+      if (body.description !== undefined) {
+        fields.push('description = ?');
+        params.push(body.description ?? null);
+      }
+      if (!fields.length) {
+        const rows = await getAdapter().query('SELECT * FROM sid_nic_speeds WHERE id = ?', [rowId]);
+        return res.json({ success: true, data: { nic_speed: rows[0] } } as ApiResponse);
+      }
+
+      try {
+        await getAdapter().execute(`UPDATE sid_nic_speeds SET ${fields.join(', ')} WHERE id = ? AND site_id = ?`, [
+          ...params,
+          rowId,
+          siteId,
+        ]);
+      } catch (error) {
+        if (isDuplicateKeyError(error)) {
+          return res.status(409).json({ success: false, error: 'Duplicate name' } as ApiResponse);
+        }
+        throw error;
+      }
+
+      const rows = await getAdapter().query('SELECT * FROM sid_nic_speeds WHERE id = ?', [rowId]);
+      return res.json({ success: true, data: { nic_speed: rows[0] } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors } as ApiResponse);
+      }
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Update NIC Speed error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.delete(
+  '/:id/sid/nic-speeds/:rowId',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      await assertPicklistRowBelongsToSite({ adapter: getAdapter(), table: 'sid_nic_speeds', rowId, siteId });
+      await getAdapter().execute('DELETE FROM sid_nic_speeds WHERE id = ? AND site_id = ?', [rowId, siteId]);
+      return res.json({ success: true, data: { deleted: true } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Delete NIC Speed error:', error);
       return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
     }
   }
@@ -2857,6 +3649,256 @@ router.delete(
         return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
       }
       console.error('Delete VLAN error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+// --- SID picklist usage counts (site-admin) ---
+router.get(
+  '/:id/sid/types/:rowId/usage',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const adapter = getAdapter();
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      await assertPicklistRowBelongsToSite({ adapter, table: 'sid_types', rowId, siteId });
+      const rows = await adapter.query('SELECT COUNT(*) AS count FROM sids WHERE site_id = ? AND sid_type_id = ?', [siteId, rowId]);
+      const sidsUsing = Number(rows?.[0]?.count ?? 0);
+      return res.json({ success: true, data: { sids_using: sidsUsing } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Get sid type usage error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.get(
+  '/:id/sid/device-models/:rowId/usage',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const adapter = getAdapter();
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      await assertPicklistRowBelongsToSite({ adapter, table: 'sid_device_models', rowId, siteId });
+      const rows = await adapter.query('SELECT COUNT(*) AS count FROM sids WHERE site_id = ? AND device_model_id = ?', [siteId, rowId]);
+      const sidsUsing = Number(rows?.[0]?.count ?? 0);
+      return res.json({ success: true, data: { sids_using: sidsUsing } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Get device model usage error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.get(
+  '/:id/sid/cpu-models/:rowId/usage',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const adapter = getAdapter();
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      await assertPicklistRowBelongsToSite({ adapter, table: 'sid_cpu_models', rowId, siteId });
+      const rows = await adapter.query('SELECT COUNT(*) AS count FROM sids WHERE site_id = ? AND cpu_model_id = ?', [siteId, rowId]);
+      const sidsUsing = Number(rows?.[0]?.count ?? 0);
+      return res.json({ success: true, data: { sids_using: sidsUsing } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Get cpu model usage error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.get(
+  '/:id/sid/platforms/:rowId/usage',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const adapter = getAdapter();
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      await assertPicklistRowBelongsToSite({ adapter, table: 'sid_platforms', rowId, siteId });
+      const rows = await adapter.query('SELECT COUNT(*) AS count FROM sids WHERE site_id = ? AND platform_id = ?', [siteId, rowId]);
+      const sidsUsing = Number(rows?.[0]?.count ?? 0);
+      return res.json({ success: true, data: { sids_using: sidsUsing } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Get platform usage error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.get(
+  '/:id/sid/statuses/:rowId/usage',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const adapter = getAdapter();
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      await assertPicklistRowBelongsToSite({ adapter, table: 'sid_statuses', rowId, siteId });
+      const statusRows = await adapter.query('SELECT name FROM sid_statuses WHERE id = ?', [rowId]);
+      const statusName = String(statusRows?.[0]?.name ?? '').trim();
+      if (!statusName) {
+        return res.json({ success: true, data: { sids_using: 0 } } as ApiResponse);
+      }
+      const rows = await adapter.query('SELECT COUNT(*) AS count FROM sids WHERE site_id = ? AND TRIM(status) = ?', [siteId, statusName]);
+      const sidsUsing = Number(rows?.[0]?.count ?? 0);
+      return res.json({ success: true, data: { sids_using: sidsUsing } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Get status usage error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.get(
+  '/:id/sid/password-types/:rowId/usage',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const adapter = getAdapter();
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      await assertPicklistRowBelongsToSite({ adapter, table: 'sid_password_types', rowId, siteId });
+      const rows = await adapter.query(
+        `SELECT COUNT(DISTINCT s.id) AS count
+         FROM sid_passwords p
+         JOIN sids s ON s.id = p.sid_id
+         WHERE s.site_id = ? AND p.password_type_id = ?`,
+        [siteId, rowId]
+      );
+      const sidsUsing = Number(rows?.[0]?.count ?? 0);
+      return res.json({ success: true, data: { sids_using: sidsUsing } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Get password type usage error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.get(
+  '/:id/sid/vlans/:rowId/usage',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const adapter = getAdapter();
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+      await assertPicklistRowBelongsToSite({ adapter, table: 'site_vlans', rowId, siteId });
+      const rows = await adapter.query(
+        `SELECT COUNT(DISTINCT s.id) AS count
+         FROM sid_nics n
+         JOIN sids s ON s.id = n.sid_id
+         WHERE s.site_id = ? AND n.site_vlan_id = ?`,
+        [siteId, rowId]
+      );
+      const sidsUsing = Number(rows?.[0]?.count ?? 0);
+      return res.json({ success: true, data: { sids_using: sidsUsing } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Get VLAN usage error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.get(
+  '/:id/sid/nic-types/:rowId/usage',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const adapter = getAdapter();
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+
+      await assertPicklistRowBelongsToSite({ adapter, table: 'sid_nic_types', rowId, siteId });
+
+      const rows = await adapter.query(
+        `SELECT COUNT(DISTINCT s.id) AS count
+         FROM sid_nics n
+         JOIN sids s ON s.id = n.sid_id
+         WHERE s.site_id = ? AND n.nic_type_id = ?`,
+        [siteId, rowId]
+      );
+      const sidsUsing = Number(rows?.[0]?.count ?? 0);
+      return res.json({ success: true, data: { sids_using: sidsUsing } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Get NIC type usage error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
+    }
+  }
+);
+
+router.get(
+  '/:id/sid/nic-speeds/:rowId/usage',
+  authenticateToken,
+  resolveSiteAccess(req => Number(req.params.id)),
+  requireSiteRole('SITE_ADMIN'),
+  async (req, res) => {
+    try {
+      const adapter = getAdapter();
+      const { id: siteId } = siteIdSchema.parse(req.params);
+      const rowId = Number(req.params.rowId);
+
+      await assertPicklistRowBelongsToSite({ adapter, table: 'sid_nic_speeds', rowId, siteId });
+
+      const rows = await adapter.query(
+        `SELECT COUNT(DISTINCT s.id) AS count
+         FROM sid_nics n
+         JOIN sids s ON s.id = n.sid_id
+         WHERE s.site_id = ? AND n.nic_speed_id = ?`,
+        [siteId, rowId]
+      );
+      const sidsUsing = Number(rows?.[0]?.count ?? 0);
+      return res.json({ success: true, data: { sids_using: sidsUsing } } as ApiResponse);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Not found') {
+        return res.status(404).json({ success: false, error: 'Not found' } as ApiResponse);
+      }
+      console.error('Get NIC speed usage error:', error);
       return res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
     }
   }

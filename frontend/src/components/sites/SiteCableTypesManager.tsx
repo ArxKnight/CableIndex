@@ -10,6 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../ui/alert-dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -35,6 +36,7 @@ const SiteCableTypesManager: React.FC<SiteCableTypesManagerProps> = ({ siteId, s
   const [description, setDescription] = useState('');
 
   const [editing, setEditing] = useState<CableType | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
 
   const [updateConfirmOpen, setUpdateConfirmOpen] = useState(false);
   const [updateUsageCount, setUpdateUsageCount] = useState<number>(0);
@@ -53,7 +55,6 @@ const SiteCableTypesManager: React.FC<SiteCableTypesManagerProps> = ({ siteId, s
   const resetForm = () => {
     setName('');
     setDescription('');
-    setEditing(null);
   };
 
   const load = async () => {
@@ -72,16 +73,34 @@ const SiteCableTypesManager: React.FC<SiteCableTypesManagerProps> = ({ siteId, s
 
   useEffect(() => {
     if (!Number.isFinite(siteId) || siteId <= 0) return;
+    setEditing(null);
+    setFormOpen(false);
     resetForm();
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId]);
+
+  const closeForm = () => {
+    if (working) return;
+    setFormOpen(false);
+    setEditing(null);
+    resetForm();
+    setError(null);
+  };
+
+  const startAdd = () => {
+    setEditing(null);
+    resetForm();
+    setError(null);
+    setFormOpen(true);
+  };
 
   const startEdit = (ct: CableType) => {
     setEditing(ct);
     setName(ct.name || '');
     setDescription(ct.description || '');
     setError(null);
+    setFormOpen(true);
   };
 
   const runUpdate = async (cableTypeId: number, payload: { name: string; description?: string | null }) => {
@@ -128,6 +147,8 @@ const SiteCableTypesManager: React.FC<SiteCableTypesManagerProps> = ({ siteId, s
         if (!resp.success) throw new Error(resp.error || 'Failed to create cable type');
       }
 
+      setEditing(null);
+      setFormOpen(false);
       resetForm();
       await load();
       onChanged?.();
@@ -150,6 +171,8 @@ const SiteCableTypesManager: React.FC<SiteCableTypesManagerProps> = ({ siteId, s
       setPendingUpdate(null);
       setUpdateUsageCount(0);
 
+      setEditing(null);
+      setFormOpen(false);
       resetForm();
       await load();
       onChanged?.();
@@ -214,42 +237,10 @@ const SiteCableTypesManager: React.FC<SiteCableTypesManagerProps> = ({ siteId, s
       )}
 
       <div className="space-y-4">
-        <div className="rounded-md border p-3 space-y-3">
-          <div className="text-sm font-semibold">{editing ? 'Edit Cable Type' : 'Add Cable Type'}</div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Name *</Label>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g., CAT6, SMF, OM4"
-                disabled={working}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label>Description</Label>
-              <Textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Optional"
-                rows={2}
-                disabled={working}
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2">
-            {editing && (
-              <Button variant="outline" onClick={resetForm} disabled={working}>
-                Cancel
-              </Button>
-            )}
-            <Button onClick={() => void handleSubmit()} disabled={working}>
-              {working ? <Loader2 className="h-4 w-4 animate-spin" /> : editing ? 'Save Changes' : 'Add'}
-            </Button>
-          </div>
+        <div className="flex items-center justify-end">
+          <Button onClick={startAdd} disabled={working}>
+            Add Cable Type
+          </Button>
         </div>
 
         <div className="rounded-md border">
@@ -291,6 +282,55 @@ const SiteCableTypesManager: React.FC<SiteCableTypesManagerProps> = ({ siteId, s
           )}
         </div>
       </div>
+
+      <Dialog
+        open={formOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setFormOpen(true);
+            return;
+          }
+          closeForm();
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editing ? 'Edit Cable Type' : 'Add Cable Type'}</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Name *</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g., CAT6, SMF, OM4"
+                disabled={working}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label>Description</Label>
+              <Textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Optional"
+                rows={2}
+                disabled={working}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeForm} disabled={working}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleSubmit()} disabled={working}>
+              {working ? <Loader2 className="h-4 w-4 animate-spin" /> : editing ? 'Save Changes' : 'Add'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={deleteOpen} onOpenChange={handleDeleteOpenChange}>
         <AlertDialogContent>
