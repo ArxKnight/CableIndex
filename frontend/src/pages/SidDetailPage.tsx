@@ -1939,8 +1939,17 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
                   <div className="min-w-0 flex-1">
                     <TabsContent value="configuration" className="m-0">
                       <div className="space-y-6">
-                        {isSwitchSid ? (
-                          <div className="grid gap-4 md:grid-cols-2">
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label>Hostname</Label>
+                            <Input
+                              value={sid.hostname ?? ''}
+                              disabled={!canModify || (isCreate && !createPrereqsReady)}
+                              onChange={(e) => updateSidLocal({ hostname: e.target.value })}
+                            />
+                          </div>
+
+                          {isSwitchSid ? (
                             <div className="space-y-2">
                               <Label>Switch Port Count</Label>
                               <Input
@@ -1961,8 +1970,8 @@ const SidDetailPage: React.FC<SidDetailPageProps> = ({ mode = 'view' }) => {
                                 }}
                               />
                             </div>
-                          </div>
-                        ) : null}
+                          ) : null}
+                        </div>
 
                         <Tabs
                           value={networkingCardTab}
